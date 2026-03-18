@@ -520,7 +520,10 @@ class LangChainQueryInterpreter:
         if operation == "count":
             return metric
 
-        metric_field = self._resolve_field(layer, raw_metric.get("field"), allowed_kinds={"integer", "numeric", "text"})
+        allowed_kinds = {"integer", "numeric"}
+        if operation in {"max", "min"}:
+            allowed_kinds = {"integer", "numeric", "text"}
+        metric_field = self._resolve_field(layer, raw_metric.get("field"), allowed_kinds=allowed_kinds)
         if metric_field is None:
             return None
         metric.field = metric_field.name

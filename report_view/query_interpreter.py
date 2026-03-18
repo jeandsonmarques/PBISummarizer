@@ -2,7 +2,6 @@ import re
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from .layer_schema_service import normalize_text
 from .result_models import (
     AmbiguityOption,
     ChartSpec,
@@ -12,6 +11,7 @@ from .result_models import (
     ProjectSchema,
     QueryPlan,
 )
+from .text_utils import normalize_text
 
 STOP_WORDS = {
     "a",
@@ -43,7 +43,22 @@ GROUP_SYNONYMS: Dict[str, List[str]] = {
 }
 
 SOURCE_HINTS: Dict[str, List[str]] = {
-    "point": ["ponto", "pontos", "hidrante", "hidrantes", "cliente", "clientes", "sensor", "sensores", "poste", "postes"],
+    "point": [
+        "ponto",
+        "pontos",
+        "hidrante",
+        "hidrantes",
+        "cliente",
+        "clientes",
+        "ligacao",
+        "ligacoes",
+        "economia",
+        "economias",
+        "sensor",
+        "sensores",
+        "poste",
+        "postes",
+    ],
     "line": ["linha", "linhas", "rede", "redes", "trecho", "trechos", "tubulacao", "tubulacoes", "ramal", "ramais", "adutora", "adutoras"],
     "polygon": ["poligono", "poligonos", "area", "areas", "lote", "lotes", "quadra", "quadras", "bairro", "bairros", "municipio", "municipios"],
 }
@@ -516,7 +531,17 @@ class QueryInterpreter:
         return f"{request.metric_label} por {suffix}".strip()
 
     def _contains_any(self, text: str, values: Sequence[str]) -> bool:
-        return any(normalize_text(value) in text for value in values)
+        normalized_text = f" {normalize_text(text)} "
+        for value in values:
+            normalized_value = normalize_text(value)
+            if not normalized_value:
+                continue
+            if " " in normalized_value:
+                if f" {normalized_value} " in normalized_text or normalized_value in normalized_text:
+                    return True
+            elif f" {normalized_value} " in normalized_text:
+                return True
+        return False
 
     def _score_terms(self, haystack: str, terms: Sequence[str]) -> int:
         haystack = f" {normalize_text(haystack)} "

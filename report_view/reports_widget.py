@@ -25,6 +25,7 @@ from .chart_factory import ChartFactory, ReportChartWidget
 from .hybrid_query_interpreter import HybridQueryInterpreter
 from .layer_schema_service import LayerSchemaService
 from .operational_memory_service import build_operational_memory_services
+from .report_ai_engine import ReportAIEngine
 from .report_context_memory import ReportContextMemory
 from .report_executor import ReportExecutor
 from .report_logging import LOG_FILE, log_error, log_info, log_warning
@@ -137,6 +138,7 @@ class AssistantMessageWidget(QWidget):
         self.correct_button = None
         self.incorrect_button = None
         self.choose_button = None
+        self.status_label = None
 
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
 
@@ -172,10 +174,14 @@ class AssistantMessageWidget(QWidget):
         self.preview_limit = PREVIEW_ROWS
         self._reset_content()
 
-        status = QLabel("Analisando dados...", self.content_widget)
-        status.setObjectName("assistantStatus")
-        status.setWordWrap(True)
-        self.content_layout.addWidget(status)
+        self.status_label = QLabel("Pensando na sua pergunta...", self.content_widget)
+        self.status_label.setObjectName("assistantStatus")
+        self.status_label.setWordWrap(True)
+        self.content_layout.addWidget(self.status_label)
+
+    def update_loading_text(self, message: str):
+        if self.status_label is not None:
+            self.status_label.setText(message)
 
     def show_message(self, message: str, message_object_name: str = "assistantText"):
         self.current_result = None
@@ -390,6 +396,7 @@ class AssistantMessageWidget(QWidget):
         self.details_button = None
         self.details_label = None
         self.table_widget = None
+        self.status_label = None
 
     def _create_table_widget(self):
         table = QTableWidget(self.content_widget)
@@ -562,6 +569,9 @@ class ReportsWidget(QWidget):
         self.semantic_alias_service = None
         self.approved_example_service = None
         self.session_id = uuid.uuid4().hex
+        self.ai_engine = None
+        self.active_execution_job = None
+        self.active_execution_token = 0
 
         self._build_ui()
         self._apply_local_styles()
@@ -570,6 +580,8 @@ class ReportsWidget(QWidget):
         self.project_schema = None
         if self.schema_service is not None:
             self.schema_service.clear_cache()
+        if self.ai_engine is not None:
+            self.ai_engine.refresh()
 
     def _build_ui(self):
         root = QVBoxLayout(self)
@@ -895,42 +907,16 @@ class ReportsWidget(QWidget):
     ):
         started_at = perf_counter()
         memory_handle = getattr(response_widget, "memory_handle", None)
+        execution_started = False
         try:
-            project_schema = self._load_project_schema(include_profiles=False)
-            interpretation = self._ensure_query_interpreter().interpret(
+            self._push_loading_status(response_widget, "Pensando na sua pergunta...")
+            engine_payload = self._ensure_ai_engine().interpret_question(
                 question=question,
-                schema=project_schema,
                 overrides=overrides,
-                context_memory=self.context_memory,
-                schema_service=self._ensure_schema_service(),
-                deep_validation=False,
+                memory_handle=memory_handle,
+                status_callback=lambda message: self._push_loading_status(response_widget, message),
             )
-
-            if self._should_retry_with_enriched_schema(interpretation):
-                candidate_layer_ids = self._candidate_layer_ids_from_interpretation(interpretation)
-                log_info(
-                    "[Relatorios] fluxo retry=enriched "
-                    f"question='{question}' candidate_layer_ids={candidate_layer_ids}"
-                )
-                enriched_schema = self._load_project_schema(
-                    include_profiles=True,
-                    layer_ids=candidate_layer_ids,
-                )
-                enriched_interpretation = self._ensure_query_interpreter().interpret(
-                    question=question,
-                    schema=enriched_schema,
-                    overrides=overrides,
-                    context_memory=self.context_memory,
-                    schema_service=self._ensure_schema_service(),
-                    deep_validation=True,
-                )
-                interpretation = self._prefer_enriched_interpretation(
-                    base_result=interpretation,
-                    enriched_result=enriched_interpretation,
-                )
-
-            interpretation = self._rerank_interpretation(question, interpretation)
-            self._safe_register_interpretation(memory_handle, interpretation)
+            interpretation = engine_payload.interpretation
 
             if interpretation.status == "confirm" and interpretation.plan is not None:
                 response_widget.show_confirmation(
@@ -973,6 +959,8 @@ class ReportsWidget(QWidget):
                 interpretation.plan,
                 interpretation.candidate_interpretations,
             )
+            self._push_loading_status(response_widget, "Plano entendido. Executando a consulta...")
+            execution_started = True
             self._execute_plan(question, interpretation.plan, response_widget, memory_handle)
         except Exception as exc:
             detail = self._format_error_detail(exc)
@@ -995,11 +983,8 @@ class ReportsWidget(QWidget):
                 "[Relatorios] fluxo "
                 f"question='{question}' duration_ms={((perf_counter() - started_at) * 1000):.1f}"
             )
-            self.generate_btn.setEnabled(True)
-            self.generate_btn.setText("Gerar")
-            self.question_edit.setEnabled(True)
-            self.question_edit.setFocus()
-            self._scroll_to_bottom()
+            if not execution_started:
+                self._finish_ui_after_run()
 
     def _execute_plan(
         self,
@@ -1009,60 +994,79 @@ class ReportsWidget(QWidget):
         memory_handle=None,
     ):
         try:
-            result = self._ensure_report_executor().execute(plan)
-            if not result.ok:
-                response_widget.show_message(
-                    result.message or "Nao foi possivel gerar esse relatorio.",
-                )
-                self._safe_mark_query_failure(
-                    memory_handle,
-                    error_message=f"execution: {result.message or 'resultado vazio'}",
-                    plan=plan,
-                )
-                return
-
-            result.plan = result.plan or plan
-            try:
-                result.chart_payload = self._ensure_chart_factory().build_payload(result)
-            except Exception as exc:
-                result.chart_payload = None
-                log_warning(
-                    "[Relatorios] falha ao gerar grafico "
-                    f"question='{question}' error={exc}\n{traceback.format_exc()}"
-                )
-                if result.summary.text:
-                    result.summary.text = (
-                        f"{result.summary.text} Nao foi possivel montar o grafico, mas a tabela foi gerada."
-                    )
-            response_widget.show_result(result)
-            self.context_memory.remember_result(question, plan, result)
-            self._safe_mark_query_success(
-                memory_handle,
-                plan,
-                result,
-            )
+            self.active_execution_job = self._ensure_ai_engine().create_execution_job(plan)
+            self.active_execution_token += 1
+            token = self.active_execution_token
+            self._push_loading_status(response_widget, "Executando a consulta nos dados...")
+            self._schedule_execution_step(question, response_widget, memory_handle, token)
         except Exception as exc:
             detail = self._format_error_detail(exc)
-            log_error(
-                "[Relatorios] falha durante a execucao "
-                f"question='{question}' plan={plan.to_dict()} error={exc}\n{traceback.format_exc()}"
-            )
-            self._safe_mark_query_failure(
-                memory_handle,
-                error_message=f"execution_error: {detail}",
-                plan=plan,
-            )
             response_widget.show_message(
                 "Nao foi possivel gerar esse relatorio agora.\n"
                 f"Detalhe tecnico: {detail}\n"
                 f"Log adicional: {LOG_FILE}",
             )
-        finally:
-            self.generate_btn.setEnabled(True)
-            self.generate_btn.setText("Gerar")
-            self.question_edit.setEnabled(True)
-            self.question_edit.setFocus()
+            self._finish_ui_after_run()
+
+    def _schedule_execution_step(self, question: str, response_widget: AssistantMessageWidget, memory_handle, token: int):
+        QTimer.singleShot(
+            0,
+            lambda: self._process_execution_step(
+                question,
+                response_widget,
+                memory_handle,
+                token,
+            ),
+        )
+
+    def _process_execution_step(self, question: str, response_widget: AssistantMessageWidget, memory_handle, token: int):
+        if token != self.active_execution_token or self.active_execution_job is None:
+            return
+
+        try:
+            batch_size = self._batch_size_for_plan(self.active_execution_job.plan)
+            done = self.active_execution_job.step(batch_size=batch_size)
+            response_widget.update_loading_text(self.active_execution_job.progress_text())
+            QApplication.processEvents()
             self._scroll_to_bottom()
+            if not done:
+                self._schedule_execution_step(question, response_widget, memory_handle, token)
+                return
+
+            result = self._ensure_ai_engine().finalize_execution_job(
+                question=question,
+                job=self.active_execution_job,
+                memory_handle=memory_handle,
+            )
+            if not result.ok:
+                response_widget.show_message(
+                    result.message or "Nao foi possivel gerar esse relatorio.",
+                )
+            else:
+                response_widget.show_result(result)
+        except Exception as exc:
+            detail = self._format_error_detail(exc)
+            log_error(
+                "[Relatorios] falha durante a execucao assincrona "
+                f"question='{question}' error={exc}\n{traceback.format_exc()}"
+            )
+            if self.active_execution_job is not None:
+                self._ensure_ai_engine().mark_execution_exception(
+                    plan=self.active_execution_job.plan,
+                    memory_handle=memory_handle,
+                    detail=detail,
+                )
+            response_widget.show_message(
+                "Nao foi possivel gerar esse relatorio agora.\n"
+                f"Detalhe tecnico: {detail}\n"
+                f"Log adicional: {LOG_FILE}",
+            )
+            self.active_execution_job = None
+            self._finish_ui_after_run()
+        finally:
+            if self.active_execution_job is not None and self.active_execution_job.done:
+                self.active_execution_job = None
+                self._finish_ui_after_run()
 
     def _append_history_widget(self, widget: QWidget):
         insert_index = max(0, self.history_layout.count() - 1)
@@ -1081,6 +1085,27 @@ class ReportsWidget(QWidget):
                 self.history_scroll.verticalScrollBar().maximum()
             ),
         )
+
+    def _push_loading_status(self, response_widget: AssistantMessageWidget, message: str):
+        response_widget.update_loading_text(message)
+        QApplication.processEvents()
+        self._scroll_to_bottom()
+
+    def _finish_ui_after_run(self):
+        self.generate_btn.setEnabled(True)
+        self.generate_btn.setText("Gerar")
+        self.question_edit.setEnabled(True)
+        self.question_edit.setFocus()
+        self._scroll_to_bottom()
+
+    def _batch_size_for_plan(self, plan: QueryPlan) -> int:
+        if plan.intent == "spatial_aggregate":
+            return 120
+        if plan.metric.use_geometry:
+            return 220
+        if plan.metric.operation == "count":
+            return 650
+        return 320
 
     def _load_project_schema(
         self,
@@ -1135,6 +1160,20 @@ class ReportsWidget(QWidget):
     def _ensure_query_memory_service(self):
         self._ensure_operational_memory_services()
         return self.query_memory_service
+
+    def _ensure_ai_engine(self):
+        if self.ai_engine is None:
+            self._ensure_operational_memory_services()
+            self.ai_engine = ReportAIEngine(
+                schema_service=self._ensure_schema_service(),
+                query_interpreter=self._ensure_query_interpreter(),
+                report_executor=self._ensure_report_executor(),
+                chart_factory=self._ensure_chart_factory(),
+                context_memory=self.context_memory,
+                query_memory_service=self.query_memory_service,
+                session_id=self.session_id,
+            )
+        return self.ai_engine
 
     def _create_query_history_handle(self, question: str):
         try:

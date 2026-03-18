@@ -42,6 +42,42 @@ DEFAULT_SEMANTIC_ALIASES = (
     ("municipio", "cidade", "location", 0.75, "seed", "sinonimo de agrupamento"),
 )
 
+RERANK_IGNORED_TOKENS = {
+    "a",
+    "com",
+    "da",
+    "das",
+    "de",
+    "do",
+    "dos",
+    "e",
+    "em",
+    "extensao",
+    "grafico",
+    "maior",
+    "mais",
+    "menor",
+    "menos",
+    "metros",
+    "municipio",
+    "municipios",
+    "na",
+    "no",
+    "nos",
+    "o",
+    "os",
+    "pizza",
+    "por",
+    "qual",
+    "quais",
+    "quantidade",
+    "quantos",
+    "quantas",
+    "rede",
+    "redes",
+    "top",
+}
+
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
@@ -95,6 +131,15 @@ def _similarity_score(left: str, right: str) -> float:
     if left in right or right in left:
         score += 0.15
     return min(1.0, score)
+
+
+def _meaningful_query_tokens(value: str) -> List[str]:
+    tokens = []
+    for token in _tokenize(value):
+        if token in RERANK_IGNORED_TOKENS:
+            continue
+        tokens.append(token)
+    return tokens
 
 
 def _candidate_to_payload(candidate: CandidateInterpretation) -> Dict[str, Any]:
@@ -355,8 +400,9 @@ class QueryMemoryService:
         session_id: str,
         user_id: str = "",
         source_context_json: Optional[Dict[str, Any]] = None,
+        normalized_query_override: str = "",
     ) -> QueryHistoryHandle:
-        normalized_query = _normalize_query(raw_query)
+        normalized_query = normalized_query_override or _normalize_query(raw_query)
         handle = QueryHistoryHandle(
             history_id=None,
             session_id=session_id,
@@ -757,6 +803,10 @@ class QueryMemoryService:
         similar_examples: List[ApprovedExampleRecord],
         aliases: List[SemanticAliasRecord],
     ):
+        query_support = self._query_plan_support_score(normalized_query, plan)
+        if query_support <= 0.0:
+            return 0.0, ""
+
         boost = 0.0
         reasons: List[str] = []
         for match in similar_queries:
@@ -793,6 +843,9 @@ class QueryMemoryService:
         if alias_hits:
             boost += min(0.08, alias_hits * 0.02)
             reasons.append(f"aliases:{alias_hits}")
+        boost *= max(0.20, query_support)
+        if query_support < 0.75:
+            reasons.append(f"suporte:{query_support:.2f}")
         return boost, ", ".join(reasons[:4])
 
     def _plan_alignment_score(
@@ -852,6 +905,39 @@ class QueryMemoryService:
             if f" {alias_term} " in padded_query and canonical_term in plan_text:
                 hits += 1
         return hits
+
+    def _query_plan_support_score(self, normalized_query: str, plan: QueryPlan) -> float:
+        query_tokens = _meaningful_query_tokens(normalized_query)
+        if not query_tokens:
+            return 1.0
+
+        plan_text = self.alias_service.apply_aliases(
+            " ".join(
+                [
+                    _normalize_text(plan.intent),
+                    _normalize_text(plan.metric.operation),
+                    _normalize_text(plan.metric.field),
+                    _normalize_text(plan.metric.field_label),
+                    _normalize_text(plan.group_field),
+                    _normalize_text(plan.group_label),
+                    _normalize_text(plan.understanding_text),
+                    _normalize_text(plan.detected_filters_text),
+                    _normalize_text(" ".join(str(item.value) for item in plan.filters)),
+                ]
+            )
+        )
+        plan_tokens = set(_tokenize(plan_text))
+        if not plan_tokens:
+            return 0.0
+
+        supported = 0
+        for token in query_tokens:
+            if token in plan_tokens:
+                supported += 1
+                continue
+            if len(token) >= 3 and any(plan_token.startswith(token) or token.startswith(plan_token) for plan_token in plan_tokens):
+                supported += 1
+        return supported / max(1, len(query_tokens))
 
     def _plan_signature(self, plan: Optional[QueryPlan]) -> str:
         if plan is None:

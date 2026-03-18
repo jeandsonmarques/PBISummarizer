@@ -62,6 +62,40 @@ class ProjectSchema:
 
 
 @dataclass
+class LayerContextProfile:
+    layer_id: str
+    name: str
+    geometry_type: str
+    feature_count: int
+    entity_terms: List[str] = field(default_factory=list)
+    numeric_field_names: List[str] = field(default_factory=list)
+    categorical_field_names: List[str] = field(default_factory=list)
+    location_field_names: List[str] = field(default_factory=list)
+    filter_field_names: List[str] = field(default_factory=list)
+    possible_metrics: List[str] = field(default_factory=list)
+    semantic_tags: List[str] = field(default_factory=list)
+    search_text: str = ""
+    summary_text: str = ""
+
+    def supports_metric(self, metric_key: str) -> bool:
+        return metric_key in self.possible_metrics
+
+
+@dataclass
+class ProjectSchemaContext:
+    layers: List[LayerContextProfile] = field(default_factory=list)
+    summary_text: str = ""
+
+    def layer_by_id(self, layer_id: Optional[str]) -> Optional[LayerContextProfile]:
+        if not layer_id:
+            return None
+        for layer in self.layers:
+            if layer.layer_id == layer_id:
+                return layer
+        return None
+
+
+@dataclass
 class MetricSpec:
     operation: str = "count"
     field: Optional[str] = None
@@ -135,6 +169,7 @@ class QueryPlan:
     chart: ChartSpec = field(default_factory=ChartSpec)
     spatial_relation: Optional[str] = None
     filters: List[FilterSpec] = field(default_factory=list)
+    planning_trace: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         payload = asdict(self)

@@ -1,5 +1,4 @@
 import re
-import unicodedata
 from collections import Counter, defaultdict
 from time import perf_counter
 from typing import Dict, List, Optional, Sequence, Tuple
@@ -9,6 +8,7 @@ from qgis.core import QgsFeatureRequest, QgsProject, QgsVectorLayer, QgsWkbTypes
 
 from .report_logging import log_info
 from .result_models import FieldSchema, FilterSpec, LayerSchema, ProjectSchema
+from .text_utils import contains_hint_tokens, normalize_compact, normalize_text, tokenize_text
 
 LOCATION_FIELD_HINTS = (
     "municipio",
@@ -49,17 +49,17 @@ ENGINEERING_VALUE_HINTS = (
     "mm",
 )
 
+GENERIC_NAME_FIELD_HINTS = (
+    "nome",
+    "name",
+    "nm",
+    "nm_nome",
+    "descricao",
+    "desc",
+)
 
-def normalize_text(value) -> str:
-    text = unicodedata.normalize("NFKD", str(value or ""))
-    text = "".join(char for char in text if not unicodedata.combining(char))
-    text = text.lower()
-    text = re.sub(r"[^a-z0-9_]+", " ", text)
-    return re.sub(r"\s+", " ", text).strip()
-
-
-def normalize_compact(value) -> str:
-    return normalize_text(value).replace(" ", "")
+def _contains_hint_tokens(value: str, hints: Sequence[str]) -> bool:
+    return contains_hint_tokens(value, hints)
 
 
 class LayerSchemaService:
@@ -68,7 +68,7 @@ class LayerSchemaService:
         profile_feature_limit: int = 120,
         top_values_limit: int = 6,
         profile_field_limit: int = 6,
-        feature_scan_limit: int = 120,
+        feature_scan_limit: int = 60,
     ):
         self.profile_feature_limit = max(40, int(profile_feature_limit))
         self.top_values_limit = max(3, int(top_values_limit))
@@ -133,6 +133,8 @@ class LayerSchemaService:
         for candidate in raw_candidates:
             if not isinstance(candidate, dict):
                 continue
+            best_field = None
+            best_match = None
             for field in self._candidate_fields_for_kind(layer_schema, candidate.get("kind")):
                 match = self._match_candidate_on_field(
                     layer,
@@ -145,27 +147,44 @@ class LayerSchemaService:
                 key = (field.name, normalize_text(str(match["value"])), candidate.get("kind"))
                 if key in seen:
                     continue
-                seen.add(key)
-                filters.append(
-                    FilterSpec(
-                        field=field.name,
-                        value=match["value"],
-                        operator="eq",
-                        layer_role="target",
-                    )
+                if best_match is None or float(match.get("score", 0.0)) > float(best_match.get("score", 0.0)):
+                    best_field = field
+                    best_match = dict(match)
+                    if float(best_match.get("score", 0.0)) >= 0.98:
+                        break
+            if best_field is None or best_match is None:
+                continue
+            key = (best_field.name, normalize_text(str(best_match["value"])), candidate.get("kind"))
+            if key in seen:
+                continue
+            if candidate.get("kind") == "location":
+                normalized_value = normalize_text(str(best_match["value"]))
+                if any(
+                    item.get("kind") == "location"
+                    and normalize_text(str(item.get("value"))) == normalized_value
+                    for item in recognized
+                ):
+                    continue
+            seen.add(key)
+            filters.append(
+                FilterSpec(
+                    field=best_field.name,
+                    value=best_match["value"],
+                    operator="eq",
+                    layer_role="target",
                 )
-                recognized.append(
-                    {
-                        "kind": candidate.get("kind"),
-                        "field": field.name,
-                        "field_label": field.label,
-                        "value": match["value"],
-                        "score": match["score"],
-                        "source_text": candidate.get("source_text"),
-                        "match_mode": match.get("mode", "semantic"),
-                    }
-                )
-                break
+            )
+            recognized.append(
+                {
+                    "kind": candidate.get("kind"),
+                    "field": best_field.name,
+                    "field_label": best_field.label,
+                    "value": best_match["value"],
+                    "score": best_match["score"],
+                    "source_text": candidate.get("source_text"),
+                    "match_mode": best_match.get("mode", "semantic"),
+                }
+            )
         log_info(
             "[Relatorios] filtros "
             f"layer={layer_schema.name} allow_feature_scan={allow_feature_scan} "
@@ -233,22 +252,24 @@ class LayerSchemaService:
             if semantic_kind == "location":
                 if getattr(field, "is_location_candidate", False):
                     score += 8
+                elif layer_schema.geometry_type == "polygon" and field.kind == "text" and _contains_hint_tokens(field.search_text, GENERIC_NAME_FIELD_HINTS):
+                    score += 5
                 if field.kind == "text":
                     score += 2
             elif semantic_kind == "diameter":
-                if any(token in search_text for token in ("dn", "diametro", "diam", "bitola")):
+                if _contains_hint_tokens(search_text, ("dn", "diametro", "diam", "bitola")):
                     score += 8
                 if field.kind in {"integer", "numeric"}:
                     score += 3
                 elif field.kind == "text":
                     score += 1
             elif semantic_kind == "material":
-                if any(token in search_text for token in ("material", "classe", "tipo")):
+                if _contains_hint_tokens(search_text, ("material", "classe", "tipo")):
                     score += 8
                 if field.kind == "text":
                     score += 3
             elif semantic_kind == "category":
-                if any(token in search_text for token in ("categoria", "tipo", "classe", "material", "grupo")):
+                if _contains_hint_tokens(search_text, ("categoria", "tipo", "classe", "material", "grupo")):
                     score += 6
                 if field.kind == "text":
                     score += 2
@@ -261,6 +282,8 @@ class LayerSchemaService:
 
     def _build_layer_schema(self, layer: QgsVectorLayer, include_profiles: bool = False) -> LayerSchema:
         fields: List[FieldSchema] = []
+        geometry_type = self._geometry_type(layer)
+        layer_name_norm = normalize_text(layer.name())
         profiles = self._collect_field_profiles(layer) if include_profiles else {}
         qgs_fields = layer.fields()
         for index, field in enumerate(qgs_fields):
@@ -279,12 +302,17 @@ class LayerSchemaService:
             setattr(
                 field_schema,
                 "is_filter_candidate",
-                self._is_filter_candidate(field_name_norm, field_kind),
+                self._is_filter_candidate(field_name_norm, field_kind, layer_name_norm=layer_name_norm, geometry_type=geometry_type),
             )
             setattr(
                 field_schema,
                 "is_location_candidate",
-                self._is_location_candidate(field_name_norm),
+                self._is_location_candidate(
+                    field_name_norm,
+                    field_kind=field_kind,
+                    geometry_type=geometry_type,
+                    layer_name_norm=layer_name_norm,
+                ),
             )
             profile_tokens = []
             if getattr(field_schema, "is_filter_candidate", False) or getattr(field_schema, "is_location_candidate", False):
@@ -300,7 +328,7 @@ class LayerSchemaService:
         return LayerSchema(
             layer_id=layer.id(),
             name=layer.name(),
-            geometry_type=self._geometry_type(layer),
+            geometry_type=geometry_type,
             feature_count=max(0, int(layer.featureCount())),
             fields=fields,
             search_text=normalize_text(" ".join(term for term in search_terms if term)),
@@ -309,12 +337,36 @@ class LayerSchemaService:
     def _collect_field_profiles(self, layer: QgsVectorLayer) -> Dict[str, Dict[str, List[str]]]:
         profiles: Dict[str, Dict[str, List[str]]] = {}
         candidate_fields = []
+        geometry_type = self._geometry_type(layer)
+        layer_name_norm = normalize_text(layer.name())
         for index, field in enumerate(layer.fields()):
             alias = layer.attributeAlias(index) or ""
             field_name_norm = normalize_text(" ".join([field.name(), alias]))
             field_kind = self._field_kind(field)
-            if self._is_filter_candidate(field_name_norm, field_kind):
-                candidate_fields.append((self._profile_field_priority(field_name_norm), field.name(), field_kind))
+            is_location_candidate = self._is_location_candidate(
+                field_name_norm,
+                field_kind=field_kind,
+                geometry_type=geometry_type,
+                layer_name_norm=layer_name_norm,
+            )
+            if self._is_filter_candidate(
+                field_name_norm,
+                field_kind,
+                layer_name_norm=layer_name_norm,
+                geometry_type=geometry_type,
+            ) or is_location_candidate:
+                candidate_fields.append(
+                    (
+                        self._profile_field_priority(
+                            field_name_norm,
+                            field_kind=field_kind,
+                            geometry_type=geometry_type,
+                            layer_name_norm=layer_name_norm,
+                        ),
+                        field.name(),
+                        field_kind,
+                    )
+                )
 
         if not candidate_fields:
             return profiles
@@ -381,12 +433,23 @@ class LayerSchemaService:
         preferred = []
         if kind == "location":
             preferred = [field for field in fields if getattr(field, "is_location_candidate", False)]
+            if layer_schema.geometry_type == "polygon":
+                polygon_text_fields = [
+                    field
+                    for field in layer_schema.fields
+                    if field.kind == "text"
+                    and field not in preferred
+                    and (_contains_hint_tokens(field.search_text, GENERIC_NAME_FIELD_HINTS) or not fields)
+                ]
+                preferred.extend(polygon_text_fields[:4])
         elif kind == "diameter":
-            preferred = [field for field in fields if any(token in field.search_text for token in ("dn", "diametro", "diam"))]
+            preferred = [field for field in fields if _contains_hint_tokens(field.search_text, ("dn", "diametro", "diam", "bitola"))]
         elif kind == "material":
-            preferred = [field for field in fields if any(token in field.search_text for token in ("material", "tipo", "classe"))]
+            preferred = [field for field in fields if _contains_hint_tokens(field.search_text, ("material", "tipo", "classe"))]
         elif kind == "generic":
             preferred = [field for field in fields if not getattr(field, "is_location_candidate", False)]
+        elif layer_schema.geometry_type == "polygon":
+            preferred = [field for field in layer_schema.fields if field.kind == "text"][:4]
         if preferred:
             return preferred + [field for field in fields if field not in preferred]
         return fields
@@ -472,9 +535,9 @@ class LayerSchemaService:
 
         if kind == "location" and getattr(field_schema, "is_location_candidate", False):
             return {"value": self._render_candidate_value(candidate), "score": 0.72, "mode": "semantic"}
-        if kind == "diameter" and any(token in field_schema.search_text for token in ("dn", "diametro", "diam")):
+        if kind == "diameter" and _contains_hint_tokens(field_schema.search_text, ("dn", "diametro", "diam", "bitola")):
             return {"value": self._render_candidate_value(candidate), "score": 0.76, "mode": "semantic"}
-        if kind == "material" and any(token in field_schema.search_text for token in ("material", "tipo", "classe")):
+        if kind == "material" and _contains_hint_tokens(field_schema.search_text, ("material", "tipo", "classe")):
             return {"value": self._render_candidate_value(candidate), "score": 0.70, "mode": "semantic"}
         if kind == "generic" and getattr(field_schema, "is_filter_candidate", False):
             return {"value": self._render_candidate_value(candidate), "score": 0.58, "mode": "semantic"}
@@ -597,21 +660,60 @@ class LayerSchemaService:
             return "date"
         return "other"
 
-    def _is_filter_candidate(self, normalized_name: str, field_kind: str) -> bool:
+    def _is_filter_candidate(
+        self,
+        normalized_name: str,
+        field_kind: str,
+        layer_name_norm: str = "",
+        geometry_type: str = "",
+    ) -> bool:
         if field_kind not in {"text", "integer", "numeric", "date", "datetime"}:
             return False
-        return any(token in normalized_name for token in FILTER_FIELD_HINTS)
+        if _contains_hint_tokens(normalized_name, FILTER_FIELD_HINTS):
+            return True
+        return self._is_location_candidate(
+            normalized_name,
+            field_kind=field_kind,
+            geometry_type=geometry_type,
+            layer_name_norm=layer_name_norm,
+        )
 
-    def _is_location_candidate(self, normalized_name: str) -> bool:
-        return any(token in normalized_name for token in LOCATION_FIELD_HINTS)
+    def _is_location_candidate(
+        self,
+        normalized_name: str,
+        field_kind: str = "other",
+        geometry_type: str = "",
+        layer_name_norm: str = "",
+    ) -> bool:
+        if field_kind not in {"text", "integer", "numeric"}:
+            return False
+        if _contains_hint_tokens(normalized_name, LOCATION_FIELD_HINTS):
+            return True
+        if geometry_type == "polygon" and field_kind == "text":
+            if _contains_hint_tokens(normalized_name, GENERIC_NAME_FIELD_HINTS):
+                return True
+            if _contains_hint_tokens(layer_name_norm, LOCATION_FIELD_HINTS) and _contains_hint_tokens(normalized_name, ("nome", "name", "nm")):
+                return True
+        return False
 
-    def _profile_field_priority(self, normalized_name: str) -> int:
-        if self._is_location_candidate(normalized_name):
+    def _profile_field_priority(
+        self,
+        normalized_name: str,
+        field_kind: str = "text",
+        geometry_type: str = "",
+        layer_name_norm: str = "",
+    ) -> int:
+        if self._is_location_candidate(
+            normalized_name,
+            field_kind=field_kind,
+            geometry_type=geometry_type,
+            layer_name_norm=layer_name_norm,
+        ):
             return 0
-        if any(token in normalized_name for token in ("dn", "diametro", "diam")):
+        if _contains_hint_tokens(normalized_name, ("dn", "diametro", "diam", "bitola")):
             return 1
-        if any(token in normalized_name for token in ("material", "classe", "tipo", "categoria")):
+        if _contains_hint_tokens(normalized_name, ("material", "classe", "tipo", "categoria")):
             return 2
-        if any(token in normalized_name for token in ("status",)):
+        if _contains_hint_tokens(normalized_name, ("status",)):
             return 3
         return 9

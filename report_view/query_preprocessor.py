@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 from difflib import get_close_matches
 from typing import Dict, List, Optional
 
-from .layer_schema_service import normalize_text
+from .text_utils import normalize_text
 
 
 CANONICAL_TERMS = {
@@ -37,12 +37,17 @@ LOCATION_STOP_WORDS = {
     "area",
     "bairro",
     "barra",
+    "bitola",
     "cidade",
     "cidades",
     "com",
     "comprimento",
     "diametro",
     "dn",
+    "essa",
+    "esse",
+    "isso",
+    "isto",
     "extensao",
     "grafico",
     "linha",
@@ -64,6 +69,9 @@ LOCATION_STOP_WORDS = {
     "quantidade",
     "quantos",
     "quantas",
+    "que",
+    "qual",
+    "quais",
     "ramal",
     "ramais",
     "rede",
@@ -222,6 +230,7 @@ class QueryPreprocessor:
             "rede": "da rede",
             "trecho": "dos trechos",
             "ponto": "dos pontos",
+            "ligacao": "das ligacoes",
         }.get(subject, "dos dados")
 
         if group:
@@ -268,13 +277,17 @@ class QueryPreprocessor:
         return count
 
     def _metric_hint(self, text: str) -> str:
-        if any(token in text for token in ("metragem", "metros", "metro", "comprimento", "extensao")):
+        tokens = set(normalize_text(text).split())
+        if any(token in tokens for token in ("metragem", "metros", "metro", "comprimento", "extensao")):
             return "length"
-        if "area" in text:
+        if "area" in tokens:
             return "area"
-        if "media" in text:
+        if "media" in tokens:
             return "avg"
-        if any(token in text for token in ("total", "soma")):
+        if any(token in tokens for token in ("ligacao", "ligacoes", "lote", "lotes", "ponto", "pontos", "hidrante", "hidrantes")):
+            if any(token in tokens for token in ("total", "soma", "somatorio", "quantidade", "quantos", "quantas")):
+                return "count"
+        if any(token in tokens for token in ("total", "soma")):
             return "sum"
         return "count"
 
@@ -283,7 +296,9 @@ class QueryPreprocessor:
             return "rede"
         if "trecho" in text:
             return "trecho"
-        if any(token in text for token in ("ponto", "hidrante", "ligacao")):
+        if any(token in text for token in ("ligacao", "ligacoes")):
+            return "ligacao"
+        if any(token in text for token in ("ponto", "pontos", "hidrante", "hidrantes")):
             return "ponto"
         return ""
 
@@ -376,6 +391,16 @@ class QueryPreprocessor:
             candidate = self._clean_location_fragment(matches[-1].group(1))
             if self._is_probable_location_fragment(candidate):
                 return candidate
+
+        if not any(token in normalized.split() for token in ("maior", "menor", "mais", "menos", "cidade", "municipio", "bairro", "localidade")):
+            bare_tail = re.search(
+                r"\b(?:rede|trecho|trechos|tubulacao|adutora|ramal|ramais|ligacao|ligacoes)\s+([a-z0-9][a-z0-9\s]+)$",
+                normalized,
+            )
+            if bare_tail:
+                candidate = self._clean_location_fragment(bare_tail.group(1))
+                if self._is_probable_location_fragment(candidate):
+                    return candidate
         return ""
 
     def _clean_location_fragment(self, text: str) -> str:

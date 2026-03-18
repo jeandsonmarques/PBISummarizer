@@ -2,7 +2,7 @@ import copy
 import os
 from typing import Dict, List, Optional, Sequence
 
-from .layer_schema_service import LayerSchemaService, normalize_text
+from .layer_schema_service import LayerSchemaService
 from .report_logging import log_info
 from .result_models import (
     CandidateInterpretation,
@@ -13,6 +13,7 @@ from .result_models import (
     ProjectSchema,
     QueryPlan,
 )
+from .text_utils import normalize_text
 
 try:
     from langchain_openai import ChatOpenAI

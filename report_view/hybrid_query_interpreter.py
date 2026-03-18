@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from .langchain_query_interpreter import LangChainQueryInterpreter
-from .layer_schema_service import LayerSchemaService, normalize_text
+from .layer_schema_service import LayerSchemaService
 from .query_preprocessor import PreprocessedQuestion, QueryPreprocessor
 from .query_interpreter import GROUP_SYNONYMS, QueryInterpreter
 from .report_context_memory import ReportContextMemory
@@ -18,6 +18,7 @@ from .result_models import (
     ProjectSchema,
     QueryPlan,
 )
+from .text_utils import normalize_text
 
 
 STOP_TERMS = {
@@ -80,6 +81,7 @@ LENGTH_TERMS = (
 )
 
 MATERIAL_TERMS = ("pvc", "pead", "pba", "fofo", "ferro", "aco", "fibrocimento")
+SERVICE_TERMS = ("agua", "esgoto", "drenagem", "pluvial", "sanitario")
 
 LOCATION_TERMS = (
     "municipio",
@@ -95,7 +97,20 @@ LOCATION_TERMS = (
 
 ENGINEERING_LAYER_HINTS = {
     "line": ("rede", "redes", "trecho", "trechos", "tubulacao", "tubulacoes", "adutora", "adutoras", "ramal", "ramais"),
-    "point": ("ponto", "pontos", "hidrante", "hidrantes", "valvula", "valvulas", "ligacao", "ligacoes"),
+    "point": (
+        "ponto",
+        "pontos",
+        "hidrante",
+        "hidrantes",
+        "valvula",
+        "valvulas",
+        "ligacao",
+        "ligacoes",
+        "cliente",
+        "clientes",
+        "economia",
+        "economias",
+    ),
     "polygon": ("bairro", "bairros", "municipio", "municipios", "cidade", "cidades", "setor", "setores", "localidade", "localidades"),
 }
 
@@ -111,11 +126,17 @@ LOCATION_REJECT_TOKENS = {
     "area",
     "bairro",
     "barra",
+    "bitola",
     "cidade",
     "cidades",
     "com",
     "comprimento",
+    "diametro",
     "dn",
+    "essa",
+    "esse",
+    "isso",
+    "isto",
     "extensao",
     "grafico",
     "linha",
@@ -137,11 +158,17 @@ LOCATION_REJECT_TOKENS = {
     "quantidade",
     "quantos",
     "quantas",
+    "que",
+    "qual",
+    "quais",
     "ramal",
     "ramais",
     "rede",
     "redes",
     "setor",
+    "agua",
+    "esgoto",
+    "camada",
     "tem",
     "top",
     "trecho",
@@ -216,7 +243,7 @@ class HybridQueryInterpreter:
             preprocessed=preprocessed,
         )
         self._apply_preprocessed_metadata(filter_aware_result.plan, preprocessed)
-        filter_aware_result = self._prefer_local_result(attribute_result, filter_aware_result)
+        filter_aware_result = self._prefer_attribute_result(preprocessed, attribute_result, filter_aware_result)
 
         local_result = self.local_interpreter.interpret(analysis_question, schema, overrides=overrides)
         local_result = self._enrich_local_result(local_result, question, context_plan)
@@ -269,6 +296,48 @@ class HybridQueryInterpreter:
         if primary_result.status == "ambiguous" and primary_result.candidate_interpretations and not fallback_result.candidate_interpretations:
             return primary_result
         return fallback_result
+
+    def _prefer_attribute_result(
+        self,
+        preprocessed: Optional[PreprocessedQuestion],
+        attribute_result: InterpretationResult,
+        fallback_result: InterpretationResult,
+    ) -> InterpretationResult:
+        if (
+            preprocessed is None
+            or not preprocessed.attribute_hint
+            or preprocessed.value_mode not in {"distribution", "max", "min"}
+        ):
+            return self._prefer_local_result(attribute_result, fallback_result)
+
+        valid_statuses = {"ok", "confirm", "ambiguous"}
+        if attribute_result.status not in valid_statuses:
+            return fallback_result
+        if fallback_result.status not in valid_statuses:
+            return attribute_result
+
+        attribute_plan = attribute_result.plan
+        fallback_plan = fallback_result.plan
+        if attribute_plan is None:
+            return fallback_result
+
+        if preprocessed.value_mode in {"max", "min"}:
+            if fallback_plan is None or fallback_plan.metric.operation not in {"max", "min"}:
+                return attribute_result
+
+        if preprocessed.value_mode == "distribution":
+            attribute_group = normalize_text(attribute_plan.group_field or "")
+            fallback_group = normalize_text(fallback_plan.group_field if fallback_plan is not None else "")
+            if attribute_group and attribute_group != fallback_group:
+                return attribute_result
+
+        if preprocessed.attribute_hint == "diameter":
+            fallback_metric_field = normalize_text(fallback_plan.metric.field if fallback_plan is not None else "")
+            fallback_group = normalize_text(fallback_plan.group_field if fallback_plan is not None else "")
+            if not any(token in f"{fallback_metric_field} {fallback_group}" for token in ("dn", "diam", "diametro", "bitola")):
+                return attribute_result
+
+        return self._prefer_local_result(attribute_result, fallback_result)
 
     def _merge_results(
         self,
@@ -330,6 +399,7 @@ class HybridQueryInterpreter:
         for layer_schema, layer_score in ranked_layers[:3]:
             candidate = self._build_direct_candidate(
                 question=question,
+                schema=schema,
                 layer_schema=layer_schema,
                 parsed_request=parsed_request,
                 layer_terms=layer_terms,
@@ -451,6 +521,7 @@ class HybridQueryInterpreter:
         for layer_schema, layer_score in ranked_layers[:3]:
             candidate = self._build_attribute_candidate(
                 question=question,
+                schema=schema,
                 layer_schema=layer_schema,
                 raw_filters=raw_filters,
                 layer_score=layer_score,
@@ -565,6 +636,7 @@ class HybridQueryInterpreter:
     def _build_attribute_candidate(
         self,
         question: str,
+        schema: ProjectSchema,
         layer_schema: LayerSchema,
         raw_filters: Sequence[Dict],
         layer_score: int,
@@ -585,6 +657,20 @@ class HybridQueryInterpreter:
                 allow_feature_scan=deep_validation,
             )
         unresolved_filters = self._find_unresolved_filters(raw_filters, recognized_filters)
+        (
+            filters,
+            recognized_filters,
+            unresolved_filters,
+            boundary_layer,
+        ) = self._promote_location_filters_to_boundary(
+            schema=schema,
+            layer_schema=layer_schema,
+            filters=filters,
+            recognized_filters=recognized_filters,
+            unresolved_filters=unresolved_filters,
+            schema_service=schema_service,
+            deep_validation=deep_validation,
+        )
 
         if preprocessed.value_mode in {"max", "min"}:
             metric = MetricSpec(
@@ -601,6 +687,8 @@ class HybridQueryInterpreter:
                 original_question=question,
                 target_layer_id=layer_schema.layer_id,
                 target_layer_name=layer_schema.name,
+                boundary_layer_id=boundary_layer.layer_id if boundary_layer is not None else None,
+                boundary_layer_name=boundary_layer.name if boundary_layer is not None else "",
                 metric=metric,
                 filters=filters,
             )
@@ -611,6 +699,8 @@ class HybridQueryInterpreter:
                 original_question=question,
                 target_layer_id=layer_schema.layer_id,
                 target_layer_name=layer_schema.name,
+                boundary_layer_id=boundary_layer.layer_id if boundary_layer is not None else None,
+                boundary_layer_name=boundary_layer.name if boundary_layer is not None else "",
                 group_field=attribute_field.name,
                 group_label=attribute_field.label,
                 group_field_kind=attribute_field.kind,
@@ -645,6 +735,7 @@ class HybridQueryInterpreter:
     def _build_direct_candidate(
         self,
         question: str,
+        schema: ProjectSchema,
         layer_schema: LayerSchema,
         parsed_request,
         layer_terms: Sequence[str],
@@ -667,6 +758,48 @@ class HybridQueryInterpreter:
             )
 
         unresolved_filters = self._find_unresolved_filters(raw_filters, recognized_filters)
+        (
+            filters,
+            recognized_filters,
+            unresolved_filters,
+            boundary_layer,
+        ) = self._promote_location_filters_to_boundary(
+            schema=schema,
+            layer_schema=layer_schema,
+            filters=filters,
+            recognized_filters=recognized_filters,
+            unresolved_filters=unresolved_filters,
+            schema_service=schema_service,
+            deep_validation=deep_validation,
+        )
+
+        if self._should_build_metric_insight(parsed_request, raw_filters, filters):
+            plan = QueryPlan(
+                intent="value_insight",
+                original_question=question,
+                target_layer_id=layer_schema.layer_id,
+                target_layer_name=layer_schema.name,
+                boundary_layer_id=boundary_layer.layer_id if boundary_layer is not None else None,
+                boundary_layer_name=boundary_layer.name if boundary_layer is not None else "",
+                metric=metric,
+                filters=filters,
+            )
+            plan.chart.title = metric.label
+            confidence = self._score_candidate_confidence(
+                plan=plan,
+                layer_score=layer_score,
+                recognized_filters=recognized_filters,
+                unresolved_filters=unresolved_filters,
+                question=question,
+            )
+            return _ResolvedPlanCandidate(
+                plan=plan,
+                confidence=confidence,
+                layer_score=layer_score,
+                recognized_filters=recognized_filters,
+                unresolved_filters=unresolved_filters,
+            )
+
         group_field, group_kind, group_label = self._pick_group_field(
             layer_schema,
             parsed_request,
@@ -681,6 +814,8 @@ class HybridQueryInterpreter:
             original_question=question,
             target_layer_id=layer_schema.layer_id,
             target_layer_name=layer_schema.name,
+            boundary_layer_id=boundary_layer.layer_id if boundary_layer is not None else None,
+            boundary_layer_name=boundary_layer.name if boundary_layer is not None else "",
             group_field=group_field,
             group_label=group_label,
             group_field_kind=group_kind,
@@ -762,6 +897,94 @@ class HybridQueryInterpreter:
             confidence += 0.08
         confidence -= min(0.30, len(unresolved_filters) * 0.14)
         return max(0.0, min(0.98, confidence))
+
+    def _should_build_metric_insight(
+        self,
+        parsed_request,
+        raw_filters: Sequence[Dict],
+        filters: Sequence[FilterSpec],
+    ) -> bool:
+        if parsed_request is None:
+            return False
+        if parsed_request.group_concept or parsed_request.group_terms:
+            return False
+        if parsed_request.top_n:
+            return False
+        if parsed_request.metric_operation not in {"count", "length", "area", "sum", "avg"}:
+            return False
+        return bool(raw_filters or filters)
+
+    def _promote_location_filters_to_boundary(
+        self,
+        schema: ProjectSchema,
+        layer_schema: LayerSchema,
+        filters: Sequence[FilterSpec],
+        recognized_filters: Sequence[Dict],
+        unresolved_filters: Sequence[Dict],
+        schema_service: Optional[LayerSchemaService],
+        deep_validation: bool,
+    ):
+        location_candidates = [item for item in unresolved_filters if str(item.get("kind") or "").lower() == "location"]
+        if not location_candidates or schema_service is None:
+            return list(filters), list(recognized_filters), list(unresolved_filters), None
+
+        best_boundary = None
+        best_filters: List[FilterSpec] = []
+        best_recognized: List[Dict] = []
+        best_unresolved = list(location_candidates)
+        for candidate_layer in schema.layers:
+            if candidate_layer.layer_id == layer_schema.layer_id or candidate_layer.geometry_type != "polygon":
+                continue
+            boundary_filters, boundary_recognized = schema_service.match_query_filters(
+                candidate_layer,
+                location_candidates,
+                allow_feature_scan=deep_validation and candidate_layer.feature_count <= 500,
+            )
+            if not boundary_recognized:
+                continue
+            boundary_unresolved = self._find_unresolved_filters(location_candidates, boundary_recognized)
+            score = len(boundary_recognized) * 10 - len(boundary_unresolved)
+            score += self._score_terms(candidate_layer.search_text, ("municipio", "cidade", "bairro", "localidade"))
+            if best_boundary is None or score > best_boundary[0]:
+                best_boundary = (score, candidate_layer)
+                best_filters = [
+                    FilterSpec(
+                        field=item.field,
+                        value=item.value,
+                        operator=item.operator,
+                        layer_role="boundary",
+                    )
+                    for item in boundary_filters
+                ]
+                best_recognized = [dict(item, layer_role="boundary") for item in boundary_recognized]
+                best_unresolved = boundary_unresolved
+
+        if best_boundary is None:
+            return list(filters), list(recognized_filters), list(unresolved_filters), None
+
+        unresolved_keys = {
+            (
+                str(item.get("kind") or ""),
+                normalize_text(item.get("source_text") or item.get("text") or ""),
+            )
+            for item in location_candidates
+        }
+        remaining_unresolved = [
+            item
+            for item in unresolved_filters
+            if (
+                str(item.get("kind") or ""),
+                normalize_text(item.get("source_text") or item.get("text") or ""),
+            )
+            not in unresolved_keys
+        ] + list(best_unresolved)
+
+        return (
+            list(filters) + best_filters,
+            list(recognized_filters) + best_recognized,
+            remaining_unresolved,
+            best_boundary[1],
+        )
 
     def _resolve_metric(
         self,
@@ -892,6 +1115,18 @@ class HybridQueryInterpreter:
             if self._is_probable_location_phrase(location_text):
                 append_candidate("location", location_text, location_text)
 
+        if not any(token in normalized.split() for token in ("maior", "menor", "mais", "menos", "cidade", "municipio", "bairro", "localidade")):
+            for match in re.finditer(
+                r"\b(?:rede|trecho|trechos|tubulacao|adutora|ramal|ramais|ligacao|ligacoes)\s+([a-z0-9][a-z0-9\s]+)$",
+                normalized,
+            ):
+                tail_text = normalize_text(match.group(1))
+                if any(fragment in tail_text for fragment in (" em ", " no ", " na ", " camada ")):
+                    continue
+                location_text = self._clean_location_phrase(tail_text)
+                if self._is_probable_location_phrase(location_text):
+                    append_candidate("location", location_text, location_text)
+
         tail_matches = list(re.finditer(r"\b(?:em|no|na)\s+([a-z0-9][a-z0-9\s]+)$", normalized))
         if tail_matches:
             tail_text = self._clean_location_phrase(tail_matches[-1].group(1))
@@ -938,8 +1173,22 @@ class HybridQueryInterpreter:
     def _clean_location_phrase(self, text: str) -> str:
         cleaned = normalize_text(text)
         tokens = []
-        blocked = set(STOP_TERMS) | set(LENGTH_TERMS) | {"rede", "redes", "trecho", "trechos", "tubulacao", "tubulacoes", "adutora", "adutoras", "ramal", "ramais"}
+        blocked = set(STOP_TERMS) | set(LENGTH_TERMS) | set(SERVICE_TERMS) | {
+            "rede",
+            "redes",
+            "trecho",
+            "trechos",
+            "tubulacao",
+            "tubulacoes",
+            "adutora",
+            "adutoras",
+            "ramal",
+            "ramais",
+            "camada",
+        }
         for token in cleaned.split():
+            if token == "camada":
+                break
             if token in blocked:
                 continue
             if token in MATERIAL_TERMS:

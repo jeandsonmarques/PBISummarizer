@@ -1,0 +1,60 @@
+{
+  "type": "FeatureCollection",
+  "name": "infra_linhas",
+  "crs": {
+    "type": "name",
+    "properties": {
+      "name": "EPSG:4326"
+    }
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "segmento": "A1",
+        "capacidade_mw": 32
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -46.7364,
+            -23.4697
+          ],
+          [
+            -46.7124,
+            -23.5101
+          ],
+          [
+            -46.6895,
+            -23.5413
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "segmento": "B3",
+        "capacidade_mw": 18
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -46.5797,
+            -23.5712
+          ],
+          [
+            -46.5451,
+            -23.5933
+          ],
+          [
+            -46.5223,
+            -23.6211
+          ]
+        ]
+      }
+    }
+  ]
+}

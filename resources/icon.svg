@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="panelA" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFE89B"/>
+      <stop offset="100%" stop-color="#F0B73C"/>
+    </linearGradient>
+    <linearGradient id="panelB" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFD96A"/>
+      <stop offset="100%" stop-color="#E79C23"/>
+    </linearGradient>
+    <linearGradient id="panelC" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFC652"/>
+      <stop offset="100%" stop-color="#C3650D"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="48" fill="#FFF7E3"/>
+  <rect x="28" y="118" width="96" height="120" rx="36" fill="url(#panelA)"/>
+  <rect x="98" y="70" width="102" height="168" rx="36" fill="url(#panelB)"/>
+  <rect x="162" y="22" width="76" height="216" rx="32" fill="url(#panelC)"/>
+</svg>

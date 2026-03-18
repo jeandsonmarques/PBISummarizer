@@ -1,0 +1,57 @@
+{
+  "type": "FeatureCollection",
+  "name": "clientes_sp",
+  "crs": {
+    "type": "name",
+    "properties": {
+      "name": "EPSG:4326"
+    }
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "cliente_id": 101,
+        "nome": "Loja Augusta",
+        "faturamento": 820000
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -46.6559,
+          -23.5568
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "cliente_id": 205,
+        "nome": "Loja Paulista",
+        "faturamento": 640000
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -46.6621,
+          -23.5634
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "cliente_id": 330,
+        "nome": "Loja Moema",
+        "faturamento": 540000
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -46.6652,
+          -23.6031
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,78 @@
+/* Shared square-corner rules applied only to widgets whose ancestor has squareScope=true */
+
+[squareScope="true"],
+[squareScope="true"] * {
+    border-radius: 0px;
+}
+
+[squareScope="true"] QPushButton,
+[squareScope="true"] QPushButton:hover,
+[squareScope="true"] QPushButton:pressed,
+[squareScope="true"] QPushButton:disabled,
+[squareScope="true"] QPushButton[variant="secondary"],
+[squareScope="true"] QPushButton[variant="secondary"]:hover,
+[squareScope="true"] QPushButton[variant="ghost"],
+[squareScope="true"] QPushButton[variant="ghost"]:hover,
+[squareScope="true"] QToolButton,
+[squareScope="true"] QToolButton:hover,
+[squareScope="true"] QToolButton:pressed {
+    border-radius: 0px;
+}
+
+[squareScope="true"] QLineEdit,
+[squareScope="true"] QLineEdit:focus,
+[squareScope="true"] QComboBox,
+[squareScope="true"] QComboBox:focus,
+[squareScope="true"] QComboBox QAbstractItemView,
+[squareScope="true"] QPlainTextEdit,
+[squareScope="true"] QTextEdit,
+[squareScope="true"] QSpinBox,
+[squareScope="true"] QDoubleSpinBox {
+    border-radius: 0px;
+}
+
+[squareScope="true"] QFrame,
+[squareScope="true"] QGroupBox,
+[squareScope="true"] QWidget#headerCard,
+[squareScope="true"] QWidget.card {
+    border-radius: 0px;
+}
+
+[squareScope="true"] QTabWidget::pane,
+[squareScope="true"] QTabBar::tab,
+[squareScope="true"] QTabBar::tab:selected,
+[squareScope="true"] QTabBar::tab:hover {
+    border-radius: 0px;
+    border-top-left-radius: 0px;
+    border-top-right-radius: 0px;
+}
+
+[squareScope="true"] QTableView,
+[squareScope="true"] QTreeView,
+[squareScope="true"] QListView,
+[squareScope="true"] QListWidget,
+[squareScope="true"] QTableWidget,
+[squareScope="true"] QHeaderView::section,
+[squareScope="true"] QListWidget::item,
+[squareScope="true"] QTreeWidget::item {
+    border-radius: 0px;
+}
+
+[squareScope="true"] QProgressBar,
+[squareScope="true"] QProgressBar::chunk {
+    border-radius: 0px;
+}
+
+[squareScope="true"] QScrollBar::handle:vertical,
+[squareScope="true"] QScrollBar::handle:vertical:hover,
+[squareScope="true"] QScrollBar::handle:horizontal,
+[squareScope="true"] QScrollBar::handle:horizontal:hover {
+    border-radius: 0px;
+}
+
+[squareScope="true"] QSlider::groove:horizontal,
+[squareScope="true"] QSlider::handle:horizontal,
+[squareScope="true"] QSlider::groove:vertical,
+[squareScope="true"] QSlider::handle:vertical {
+    border-radius: 0px;
+}

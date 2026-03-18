@@ -1,0 +1,54 @@
+{
+  "type": "FeatureCollection",
+  "name": "sensores_manaus",
+  "crs": {
+    "type": "name",
+    "properties": {
+      "name": "EPSG:4326"
+    }
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "sensor_id": "AM-01",
+        "temperatura_c": 31.5
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -60.0214,
+          -3.0982
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "sensor_id": "AM-07",
+        "temperatura_c": 30.2
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -60.0131,
+          -3.0824
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "sensor_id": "AM-11",
+        "temperatura_c": 29.7
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -60.0433,
+          -3.0915
+        ]
+      }
+    }
+  ]
+}

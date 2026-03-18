@@ -1,0 +1,17 @@
+﻿{
+  "name": "cloud-api",
+  "private": true,
+  "scripts": {
+    "prisma:generate": "prisma generate",
+    "prisma:deploy": "prisma migrate deploy",
+    "prisma:seed": "node prisma/seed.js",
+    "prisma:check": "npx prisma validate"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.19.0",
+    "bcryptjs": "^2.4.3"
+  },
+  "devDependencies": {
+    "prisma": "^5.19.0"
+  }
+}

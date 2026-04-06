@@ -70,6 +70,7 @@ class ReportAIEngine:
         self.context_merge_engine = context_merge_engine or ContextMergeEngine()
         self.ollama_fallback_service = ollama_fallback_service or OllamaFallbackService()
         self.session_id = session_id or ""
+        self.interface_mode = "auto"
         self.schema_context_builder = SchemaContextBuilder()
         self.operation_planner = OperationPlanner()
         self._schema_context_cache: Dict[tuple, ProjectSchemaContext] = {}
@@ -81,6 +82,12 @@ class ReportAIEngine:
         if self.ollama_fallback_service is not None:
             self.ollama_fallback_service.clear_cache()
 
+    def set_interface_mode(self, mode: str):
+        normalized = str(mode or "auto").strip().lower()
+        if normalized not in {"auto", "local", "analytic", "ollama"}:
+            normalized = "auto"
+        self.interface_mode = normalized
+
     def interpret_question(
         self,
         question: str,
@@ -89,6 +96,8 @@ class ReportAIEngine:
         status_callback: Optional[Callable[[str], None]] = None,
     ) -> EngineInterpretationPayload:
         started_at = perf_counter()
+        interface_mode = str(self.interface_mode or "auto").strip().lower()
+        use_deep_validation = interface_mode == "analytic"
         normalized_question = question
         if self.dictionary_service is not None:
             self._emit_status(status_callback, "Normalizando termos tecnicos...")
@@ -135,12 +144,15 @@ class ReportAIEngine:
             brief=brief,
             schema_link_result=light_links,
             overrides=overrides,
-            deep_validation=False,
+            deep_validation=use_deep_validation,
             status_callback=status_callback,
         )
-        schema_level = "light"
+        schema_level = "light_deep" if use_deep_validation else "light"
 
-        if self._should_retry_with_enriched_schema(interpretation):
+        should_enrich = interface_mode != "local" and (
+            interface_mode == "analytic" or self._should_retry_with_enriched_schema(interpretation)
+        )
+        if should_enrich:
             self._emit_status(status_callback, "Aprofundando a analise dos dados...")
             layer_ids = self._candidate_layer_ids_from_interpretation(interpretation, brief)
             log_info(
@@ -196,17 +208,19 @@ class ReportAIEngine:
             active_context,
             context_memory=self.context_memory,
         )
-        interpretation = self._maybe_apply_ollama_fallback(
-            question=question,
-            normalized_question=normalized_question,
-            effective_question=effective_question,
-            interpretation=interpretation,
-            schema=active_schema,
-            schema_context=active_context,
-            brief=brief,
-            conversation_context=conversation_context,
-            schema_level=schema_level,
-        )
+        if interface_mode != "local":
+            interpretation = self._maybe_apply_ollama_fallback(
+                question=question,
+                normalized_question=normalized_question,
+                effective_question=effective_question,
+                interpretation=interpretation,
+                schema=active_schema,
+                schema_context=active_context,
+                brief=brief,
+                conversation_context=conversation_context,
+                schema_level=schema_level,
+                force=interface_mode == "ollama",
+            )
         if interpretation.plan is not None:
             interpretation.plan.original_question = question
             trace = dict(interpretation.plan.planning_trace or {})
@@ -639,11 +653,12 @@ class ReportAIEngine:
         brief: PlanningBrief,
         conversation_context: ConversationContextPayload,
         schema_level: str,
+        force: bool = False,
     ) -> InterpretationResult:
         if self.ollama_fallback_service is None:
             return interpretation
         current_confidence = float(getattr(interpretation, "confidence", 0.0) or 0.0)
-        if not self.ollama_fallback_service.should_use_fallback(current_confidence, effective_question):
+        if not force and not self.ollama_fallback_service.should_use_fallback(current_confidence, effective_question):
             return interpretation
 
         fallback_schema = schema

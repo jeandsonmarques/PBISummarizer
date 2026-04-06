@@ -5,9 +5,10 @@ from string import Template
 from time import perf_counter
 from typing import Dict, List, Optional
 
-from qgis.PyQt.QtCore import QTimer, Qt
-from qgis.PyQt.QtGui import QColor
+from qgis.PyQt.QtCore import QTimer, Qt, pyqtSignal
+from qgis.PyQt.QtGui import QColor, QTextOption
 from qgis.PyQt.QtWidgets import (
+    QAction,
     QApplication,
     QAbstractItemView,
     QFrame,
@@ -15,15 +16,19 @@ from qgis.PyQt.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
-    QLineEdit,
+    QMenu,
     QPushButton,
     QScrollArea,
     QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
+    QTextEdit,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
+from qgis.core import QgsProject
+from qgis.utils import iface
 
 from ..palette import COLORS, TYPOGRAPHY
 from .chart_factory import ChartFactory, ReportChartWidget
@@ -46,7 +51,7 @@ EXAMPLE_QUERIES = [
 
 PREVIEW_ROWS = 6
 MAX_TABLE_ROWS = 50
-REPORTS_FONT_SCALE = 1.2
+REPORTS_FONT_SCALE = 1.0
 
 
 REPORTS_STYLE_TEMPLATE = Template(
@@ -58,14 +63,33 @@ REPORTS_STYLE_TEMPLATE = Template(
     QWidget#conversationViewport,
     QWidget#footerSuggestions,
     QFrame#promptDock {
-        background: ${surface};
+        background: ${page_bg};
     }
     QWidget#reportsRoot,
     QWidget#reportsRoot * {
         font-family: ${font_ui_stack};
     }
     QFrame#reportsHeader {
-        background: ${surface};
+        background: transparent;
+        border: none;
+    }
+    QToolButton#contextButton {
+        background: transparent;
+        border: none;
+        color: ${text_primary};
+        font-size: ${font_section_title_px}px;
+        font-weight: ${font_weight_semibold};
+        padding: 6px 8px;
+        border-radius: 10px;
+    }
+    QToolButton#contextButton:hover {
+        background: ${hover_tint};
+    }
+    QLabel#reportsStatusLabel {
+        color: ${text_muted};
+        font-size: ${font_secondary_px}px;
+        font-weight: ${font_weight_regular};
+        padding-right: 4px;
     }
     QLabel#reportsTitle {
         color: ${text_primary};
@@ -78,9 +102,8 @@ REPORTS_STYLE_TEMPLATE = Template(
         font-weight: ${font_weight_regular};
     }
     QFrame#chatShell {
-        background: ${surface};
-        border: 1px solid ${border_subtle};
-        border-radius: 30px;
+        background: transparent;
+        border: none;
     }
     QFrame#visualShell {
         background: ${surface};
@@ -93,7 +116,7 @@ REPORTS_STYLE_TEMPLATE = Template(
     }
     QLabel#visualPanelBadge,
     QLabel#assistantBadge {
-        color: ${accent};
+        color: ${text_muted};
         font-size: ${font_caption_px}px;
         font-weight: ${font_weight_semibold};
     }
@@ -168,10 +191,10 @@ REPORTS_STYLE_TEMPLATE = Template(
         border: 1px solid ${border_soft};
         color: ${text_primary};
         min-height: 30px;
-        padding: 4px 12px;
+        padding: 0 12px;
         border-radius: 14px;
         font-size: ${font_button_px}px;
-        font-weight: ${font_weight_semibold};
+        font-weight: ${font_weight_medium};
     }
     QPushButton#visualPanelButton:hover,
     QPushButton#clearChatButton:hover,
@@ -196,9 +219,9 @@ REPORTS_STYLE_TEMPLATE = Template(
     QPushButton[filterChip="true"] {
         background: ${surface};
         border: 1px solid ${border_soft};
-        color: ${text_primary};
+        color: ${text_secondary};
         min-height: 30px;
-        padding: 4px 12px;
+        padding: 0 12px;
         border-radius: 15px;
         font-size: ${font_chip_px}px;
         font-weight: ${font_weight_medium};
@@ -210,52 +233,85 @@ REPORTS_STYLE_TEMPLATE = Template(
         color: ${text_primary};
     }
     QFrame#userBubble {
-        background: qlineargradient(
-            x1:0, y1:0, x2:1, y2:1,
-            stop:0 rgba(13, 20, 36, 0.98),
-            stop:1 rgba(24, 35, 58, 0.98)
-        );
-        border: 1px solid rgba(81, 97, 125, 0.22);
-        border-radius: 22px;
+        background: ${user_bubble};
+        border: 1px solid ${border_soft};
+        border-radius: 18px;
     }
     QLabel#userBubbleText {
-        color: #F8FBFF;
+        color: ${text_primary};
     }
     QFrame#assistantCard {
-        background: ${surface};
-        border: 1px solid ${border_subtle};
-        border-radius: 26px;
+        background: transparent;
+        border: none;
+        border-radius: 0px;
     }
     QFrame#promptShell {
         background: ${surface};
         border: 1px solid ${border_subtle};
-        border-radius: 24px;
+        border-radius: 22px;
     }
-    QLineEdit#promptInput {
+    QTextEdit#promptInput {
         background: transparent;
         border: none;
-        padding: 13px 8px;
-        min-height: 30px;
-        font-size: ${font_body_px}px;
+        padding: 6px 2px 6px 2px;
+        min-height: 36px;
+        font-size: ${font_input_px}px;
         font-weight: ${font_weight_regular};
         color: ${text_primary};
+        selection-background-color: ${selection_bg};
     }
-    QLineEdit#promptInput:focus {
+    QTextEdit#promptInput:focus {
         border: none;
+    }
+    QToolButton#plusButton,
+    QToolButton#engineButton {
+        background: ${surface};
+        border: 1px solid ${border_soft};
+        color: ${text_primary};
+        border-radius: 16px;
+        padding: 6px 12px;
+        font-size: ${font_chip_px}px;
+        min-height: 18px;
+    }
+    QToolButton#plusButton {
+        min-width: 32px;
+        max-width: 32px;
+        padding: 4px 0;
+        font-size: 18px;
+        font-weight: ${font_weight_medium};
+    }
+    QToolButton#plusButton:hover,
+    QToolButton#engineButton:hover {
+        background: ${surface_hover};
+        border-color: ${border_hover};
     }
     QPushButton#sendButton {
         background: ${send_bg};
         color: #FFFFFF;
         border: none;
-        border-radius: 17px;
-        min-width: 100px;
-        min-height: 42px;
+        border-radius: 18px;
+        min-width: 92px;
+        min-height: 40px;
         padding: 0 16px;
         font-size: ${font_button_px}px;
         font-weight: ${font_weight_semibold};
     }
     QPushButton#sendButton:hover {
         background: ${send_bg_hover};
+    }
+    QMenu {
+        background: ${surface};
+        border: 1px solid ${border_subtle};
+        border-radius: 12px;
+        padding: 8px;
+    }
+    QMenu::item {
+        padding: 8px 12px;
+        border-radius: 8px;
+        color: ${text_primary};
+    }
+    QMenu::item:selected {
+        background: ${surface_hover};
     }
     QWidget#reportsRoot QScrollBar:vertical {
         background: transparent;
@@ -280,11 +336,14 @@ def _reports_style_context() -> Dict[str, str]:
         return str(int(round(float(value) * REPORTS_FONT_SCALE)))
 
     return {
+        "page_bg": "#F7F7F8",
         "surface": COLORS.get("color_surface", "#FFFFFF"),
         "surface_hover": "#F8FAFC",
         "border_soft": "rgba(15, 23, 42, 0.08)",
         "border_subtle": "rgba(15, 23, 42, 0.10)",
         "border_hover": "#D7DEE8",
+        "hover_tint": "rgba(17, 24, 39, 0.06)",
+        "user_bubble": "#ECECF1",
         "text_primary": "#0F172A",
         "text_secondary": "#475569",
         "text_muted": "#64748B",
@@ -292,6 +351,7 @@ def _reports_style_context() -> Dict[str, str]:
         "accent": COLORS.get("color_secondary", "#2B7DE9"),
         "send_bg": "#10182B",
         "send_bg_hover": "#1A2740",
+        "selection_bg": "#DBEAFE",
         "scrollbar_handle": "rgba(100, 116, 139, 0.28)",
         "font_ui_stack": TYPOGRAPHY.get(
             "font_ui_stack",
@@ -304,6 +364,7 @@ def _reports_style_context() -> Dict[str, str]:
         "font_caption_px": _scaled_font(TYPOGRAPHY.get("font_caption_px", 11)),
         "font_button_px": _scaled_font(TYPOGRAPHY.get("font_button_px", 13)),
         "font_chip_px": _scaled_font(TYPOGRAPHY.get("font_chip_px", 12)),
+        "font_input_px": _scaled_font(14),
         "font_weight_regular": str(TYPOGRAPHY.get("font_weight_regular", 400)),
         "font_weight_medium": str(TYPOGRAPHY.get("font_weight_medium", 500)),
         "font_weight_semibold": str(TYPOGRAPHY.get("font_weight_semibold", 600)),
@@ -329,6 +390,42 @@ def _clear_layout(layout):
             _clear_layout(child_layout)
 
 
+class AutoResizeTextEdit(QTextEdit):
+    sendRequested = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAcceptRichText(False)
+        self.setWordWrapMode(QTextOption.WrapAtWordBoundaryOrAnywhere)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+        self.setMinimumHeight(48)
+        self.setMaximumHeight(132)
+        self.textChanged.connect(self._update_height)
+        self._update_height()
+
+    def _update_height(self):
+        new_height = 48
+        try:
+            doc_height = float(self.document().size().height())
+            new_height = int(doc_height + 18)
+        except Exception:
+            new_height = 48
+        new_height = max(48, min(132, new_height))
+        try:
+            self.setFixedHeight(new_height)
+        except Exception:
+            pass
+
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter) and not (event.modifiers() & Qt.ShiftModifier):
+            event.accept()
+            self.sendRequested.emit()
+            return
+        super().keyPressEvent(event)
+
+
 class SuggestionChipButton(QPushButton):
     def __init__(self, text: str, callback, parent=None):
         super().__init__(text, parent)
@@ -345,8 +442,8 @@ class EmptyConversationWidget(QFrame):
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 28, 24, 28)
-        layout.setSpacing(14)
+        layout.setContentsMargins(8, 18, 8, 18)
+        layout.setSpacing(10)
 
         title = QLabel("Converse com os dados do projeto", self)
         title.setObjectName("emptyTitle")
@@ -354,7 +451,7 @@ class EmptyConversationWidget(QFrame):
         layout.addWidget(title)
 
         subtitle = QLabel(
-            "Faca uma pergunta simples e receba um resumo, um grafico e uma tabela discreta.",
+            "Escolha a base no topo esquerdo e faca uma pergunta sobre o projeto, uma camada, o banco ou o contexto cloud.",
             self,
         )
         subtitle.setObjectName("emptySubtitle")
@@ -376,7 +473,7 @@ class UserMessageWidget(QWidget):
         self.bubble = QFrame(self)
         self.bubble.setObjectName("userBubble")
         self.bubble.setMaximumWidth(860)
-        _apply_soft_shadow(self.bubble, blur_radius=22, offset_y=6, alpha=22)
+        _apply_soft_shadow(self.bubble, blur_radius=16, offset_y=3, alpha=10)
         bubble_layout = QVBoxLayout(self.bubble)
         bubble_layout.setContentsMargins(16, 12, 16, 12)
         bubble_layout.setSpacing(4)
@@ -437,12 +534,12 @@ class AssistantMessageWidget(QWidget):
         self.card = QFrame(self)
         self.card.setObjectName("assistantCard")
         self.card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
-        _apply_soft_shadow(self.card, blur_radius=26, offset_y=8, alpha=24)
+        self.card.setGraphicsEffect(None)
         card_layout = QVBoxLayout(self.card)
-        card_layout.setContentsMargins(18, 16, 18, 16)
+        card_layout.setContentsMargins(0, 0, 0, 0)
         card_layout.setSpacing(12)
 
-        self.badge_label = QLabel("Relatorios", self.card)
+        self.badge_label = QLabel("Summarizer", self.card)
         self.badge_label.setObjectName("assistantBadge")
         card_layout.addWidget(self.badge_label)
 
@@ -1138,9 +1235,17 @@ class ReportsWidget(QWidget):
         self.ai_engine = None
         self.active_execution_job = None
         self.active_execution_token = 0
+        self.context_source = "project"
+        self.ai_mode = "auto"
+        self.context_layer_mode = ""
+        self.context_layer_id = ""
+        self.context_layer_name = ""
+        self.project_context_enabled = False
 
         self._build_ui()
         self._apply_local_styles()
+        self._refresh_context_header()
+        self._refresh_prompt_state()
         QTimer.singleShot(0, self._preload_dictionary)
 
     def refresh_from_model(self):
@@ -1152,8 +1257,8 @@ class ReportsWidget(QWidget):
 
     def _build_ui(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(14, 18, 14, 16)
-        root.setSpacing(0)
+        root.setContentsMargins(18, 14, 18, 14)
+        root.setSpacing(10)
 
         workspace_row = QHBoxLayout()
         workspace_row.setContentsMargins(0, 0, 0, 0)
@@ -1172,17 +1277,28 @@ class ReportsWidget(QWidget):
 
         header = QFrame(self.workspace)
         header.setObjectName("reportsHeader")
-        header_layout = QVBoxLayout(header)
+        header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(0, 0, 0, 0)
-        header_layout.setSpacing(4)
+        header_layout.setSpacing(8)
 
-        title = QLabel("Relatorios", header)
-        title.setObjectName("reportsTitle")
-        header_layout.addWidget(title)
+        self.context_button = QToolButton(header)
+        self.context_button.setObjectName("contextButton")
+        self.context_button.setPopupMode(QToolButton.InstantPopup)
+        self.context_button.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self.context_button.setCursor(Qt.PointingHandCursor)
+        self.context_button.setMenu(self._build_context_menu())
+        header_layout.addWidget(self.context_button, 0, Qt.AlignLeft)
+        header_layout.addStretch(1)
 
-        subtitle = QLabel("Pergunte algo sobre os dados do projeto", header)
-        subtitle.setObjectName("reportsSubtitle")
-        header_layout.addWidget(subtitle)
+        self.status_label = QLabel("", header)
+        self.status_label.setObjectName("reportsStatusLabel")
+        header_layout.addWidget(self.status_label, 0, Qt.AlignRight)
+
+        self.clear_chat_btn = QPushButton("Limpar", header)
+        self.clear_chat_btn.setObjectName("clearChatButton")
+        self.clear_chat_btn.clicked.connect(self._clear_chat_history)
+        self.clear_chat_btn.setEnabled(False)
+        header_layout.addWidget(self.clear_chat_btn, 0, Qt.AlignRight)
         workspace_layout.addWidget(header, 0)
 
         self.chat_column = QWidget(self.workspace)
@@ -1190,32 +1306,14 @@ class ReportsWidget(QWidget):
         self.chat_column.setAttribute(Qt.WA_StyledBackground, True)
         chat_column_layout = QVBoxLayout(self.chat_column)
         chat_column_layout.setContentsMargins(0, 0, 0, 0)
-        chat_column_layout.setSpacing(14)
+        chat_column_layout.setSpacing(12)
 
         self.chat_shell = QFrame(self.chat_column)
         self.chat_shell.setObjectName("chatShell")
         self.chat_shell.setAttribute(Qt.WA_StyledBackground, True)
         chat_shell_layout = QVBoxLayout(self.chat_shell)
-        chat_shell_layout.setContentsMargins(18, 18, 18, 18)
-        chat_shell_layout.setSpacing(14)
-
-        chat_toolbar = QFrame(self.chat_shell)
-        chat_toolbar.setObjectName("chatToolbar")
-        chat_toolbar_layout = QHBoxLayout(chat_toolbar)
-        chat_toolbar_layout.setContentsMargins(0, 0, 0, 0)
-        chat_toolbar_layout.setSpacing(10)
-
-        chat_toolbar_label = QLabel("Conversa atual", chat_toolbar)
-        chat_toolbar_label.setObjectName("chatToolbarLabel")
-        chat_toolbar_layout.addWidget(chat_toolbar_label, 0)
-        chat_toolbar_layout.addStretch(1)
-
-        self.clear_chat_btn = QPushButton("Limpar", chat_toolbar)
-        self.clear_chat_btn.setObjectName("clearChatButton")
-        self.clear_chat_btn.clicked.connect(self._clear_chat_history)
-        self.clear_chat_btn.setEnabled(False)
-        chat_toolbar_layout.addWidget(self.clear_chat_btn, 0)
-        chat_shell_layout.addWidget(chat_toolbar)
+        chat_shell_layout.setContentsMargins(0, 0, 0, 0)
+        chat_shell_layout.setSpacing(0)
 
         self.history_scroll = QScrollArea(self)
         self.history_scroll.setObjectName("conversationScroll")
@@ -1230,8 +1328,8 @@ class ReportsWidget(QWidget):
         self.history_viewport.setAttribute(Qt.WA_StyledBackground, True)
         self.history_viewport.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
         self.history_layout = QVBoxLayout(self.history_viewport)
-        self.history_layout.setContentsMargins(2, 2, 2, 2)
-        self.history_layout.setSpacing(16)
+        self.history_layout.setContentsMargins(0, 8, 0, 8)
+        self.history_layout.setSpacing(18)
 
         self.empty_state = EmptyConversationWidget(self.history_viewport)
         self.history_layout.addWidget(self.empty_state)
@@ -1262,26 +1360,300 @@ class ReportsWidget(QWidget):
         prompt_shell = QFrame(self.prompt_dock)
         prompt_shell.setObjectName("promptShell")
         prompt_shell.setAttribute(Qt.WA_StyledBackground, True)
-        _apply_soft_shadow(prompt_shell, blur_radius=26, offset_y=6, alpha=16)
-        prompt_layout = QHBoxLayout(prompt_shell)
-        prompt_layout.setContentsMargins(16, 12, 12, 12)
-        prompt_layout.setSpacing(10)
+        _apply_soft_shadow(prompt_shell, blur_radius=20, offset_y=4, alpha=10)
+        prompt_layout = QVBoxLayout(prompt_shell)
+        prompt_layout.setContentsMargins(12, 10, 12, 10)
+        prompt_layout.setSpacing(8)
 
-        self.question_edit = QLineEdit(prompt_shell)
+        controls_row = QHBoxLayout()
+        controls_row.setContentsMargins(0, 0, 0, 0)
+        controls_row.setSpacing(8)
+
+        self.plus_button = QToolButton(prompt_shell)
+        self.plus_button.setObjectName("plusButton")
+        self.plus_button.setText("+")
+        self.plus_button.setCursor(Qt.PointingHandCursor)
+        self.plus_button.setPopupMode(QToolButton.InstantPopup)
+        self.plus_menu = QMenu(self.plus_button)
+        self.plus_menu.aboutToShow.connect(self._populate_plus_menu)
+        self.plus_button.setMenu(self.plus_menu)
+        controls_row.addWidget(self.plus_button, 0)
+
+        self.engine_button = QToolButton(prompt_shell)
+        self.engine_button.setObjectName("engineButton")
+        self.engine_button.setCursor(Qt.PointingHandCursor)
+        self.engine_button.setPopupMode(QToolButton.InstantPopup)
+        self.engine_button.setMenu(self._build_engine_menu())
+        controls_row.addWidget(self.engine_button, 0)
+        controls_row.addStretch(1)
+        prompt_layout.addLayout(controls_row)
+
+        input_row = QHBoxLayout()
+        input_row.setContentsMargins(0, 0, 0, 0)
+        input_row.setSpacing(10)
+
+        self.question_edit = AutoResizeTextEdit(prompt_shell)
         self.question_edit.setObjectName("promptInput")
-        self.question_edit.setPlaceholderText("Pergunte algo sobre os dados do projeto")
-        self.question_edit.returnPressed.connect(self.generate_report)
-        prompt_layout.addWidget(self.question_edit, 1)
+        self.question_edit.sendRequested.connect(self.generate_report)
+        input_row.addWidget(self.question_edit, 1)
 
         self.generate_btn = QPushButton("Gerar", prompt_shell)
         self.generate_btn.setObjectName("sendButton")
         self.generate_btn.clicked.connect(self.generate_report)
-        prompt_layout.addWidget(self.generate_btn, 0)
+        self.generate_btn.setMinimumWidth(86)
+        input_row.addWidget(self.generate_btn, 0)
+
+        prompt_layout.addLayout(input_row)
         prompt_dock_layout.addWidget(prompt_shell)
 
         chat_column_layout.addWidget(self.prompt_dock, 0)
         workspace_layout.addWidget(self.chat_column, 1)
         QTimer.singleShot(0, self._update_responsive_layout)
+
+    def _build_context_menu(self):
+        menu = QMenu(self)
+
+        project_action = QAction("Projeto atual", menu)
+        project_action.triggered.connect(lambda: self._set_context_source("project"))
+        menu.addAction(project_action)
+
+        postgres_action = QAction("Banco PostgreSQL", menu)
+        postgres_action.triggered.connect(lambda: self._set_context_source("postgres"))
+        menu.addAction(postgres_action)
+
+        cloud_action = QAction("Cloud do plugin", menu)
+        cloud_action.triggered.connect(lambda: self._set_context_source("cloud"))
+        menu.addAction(cloud_action)
+        return menu
+
+    def _build_engine_menu(self):
+        menu = QMenu(self)
+
+        auto_action = QAction("IA automatica", menu)
+        auto_action.triggered.connect(lambda: self._set_ai_mode("auto"))
+        menu.addAction(auto_action)
+
+        local_action = QAction("Local rapido", menu)
+        local_action.triggered.connect(lambda: self._set_ai_mode("local"))
+        menu.addAction(local_action)
+
+        analytic_action = QAction("Analitico", menu)
+        analytic_action.triggered.connect(lambda: self._set_ai_mode("analytic"))
+        menu.addAction(analytic_action)
+
+        ollama_action = QAction("Ollama local", menu)
+        ollama_action.triggered.connect(lambda: self._set_ai_mode("ollama"))
+        menu.addAction(ollama_action)
+        return menu
+
+    def _populate_plus_menu(self):
+        self.plus_menu.clear()
+
+        layer_menu = self.plus_menu.addMenu("Adicionar camada especifica")
+        limit_menu = self.plus_menu.addMenu("Limitar analise a uma camada")
+        layers = self._project_layers()
+        if not layers:
+            empty_layer = QAction("Nenhuma camada carregada", layer_menu)
+            empty_layer.setEnabled(False)
+            layer_menu.addAction(empty_layer)
+            empty_limit = QAction("Nenhuma camada carregada", limit_menu)
+            empty_limit.setEnabled(False)
+            limit_menu.addAction(empty_limit)
+        else:
+            for layer in layers:
+                attach_action = QAction(layer["name"], layer_menu)
+                attach_action.triggered.connect(
+                    lambda checked=False, payload=layer: self._set_context_layer("attach", payload)
+                )
+                layer_menu.addAction(attach_action)
+
+                limit_action = QAction(layer["name"], limit_menu)
+                limit_action.triggered.connect(
+                    lambda checked=False, payload=layer: self._set_context_layer("restrict", payload)
+                )
+                limit_menu.addAction(limit_action)
+
+        active_layer = self._active_layer()
+        active_action = QAction("Anexar camada atual selecionada", self.plus_menu)
+        active_action.setEnabled(active_layer is not None)
+        active_action.triggered.connect(self._attach_active_layer)
+        self.plus_menu.addAction(active_action)
+
+        project_context_action = QAction("Incluir contexto extra do projeto", self.plus_menu)
+        project_context_action.setCheckable(True)
+        project_context_action.setChecked(self.project_context_enabled)
+        project_context_action.triggered.connect(
+            lambda checked=False: self._toggle_project_context()
+        )
+        self.plus_menu.addAction(project_context_action)
+
+        if self.context_layer_name or self.project_context_enabled:
+            self.plus_menu.addSeparator()
+            clear_action = QAction("Limpar contexto extra", self.plus_menu)
+            clear_action.triggered.connect(self._clear_extra_context)
+            self.plus_menu.addAction(clear_action)
+
+    def _set_context_source(self, source: str):
+        self.context_source = str(source or "project").strip().lower()
+        self._refresh_context_header()
+        self._refresh_prompt_state()
+
+    def _set_ai_mode(self, mode: str):
+        self.ai_mode = str(mode or "auto").strip().lower()
+        if self.ai_engine is not None:
+            self.ai_engine.set_interface_mode(self.ai_mode)
+        self._refresh_context_header()
+        self._refresh_prompt_state()
+
+    def _set_context_layer(self, mode: str, layer_meta: Dict[str, str]):
+        self.context_layer_mode = str(mode or "").strip().lower()
+        self.context_layer_id = str(layer_meta.get("id") or "")
+        self.context_layer_name = str(layer_meta.get("name") or "")
+        self._refresh_context_header()
+        self._refresh_prompt_state()
+
+    def _attach_active_layer(self):
+        layer = self._active_layer()
+        if layer is None:
+            return
+        self._set_context_layer(
+            "focus",
+            {"id": str(getattr(layer, "id", lambda: "")() or ""), "name": str(getattr(layer, "name", lambda: "")() or "")},
+        )
+
+    def _toggle_project_context(self):
+        self.project_context_enabled = not self.project_context_enabled
+        self._refresh_context_header()
+        self._refresh_prompt_state()
+
+    def _clear_extra_context(self):
+        self.context_layer_mode = ""
+        self.context_layer_id = ""
+        self.context_layer_name = ""
+        self.project_context_enabled = False
+        self._refresh_context_header()
+        self._refresh_prompt_state()
+
+    def _context_source_label(self) -> str:
+        return {
+            "project": "Projeto atual",
+            "postgres": "Banco PostgreSQL",
+            "cloud": "Cloud do plugin",
+        }.get(self.context_source, "Projeto atual")
+
+    def _ai_mode_label(self) -> str:
+        return {
+            "auto": "IA: Automatica",
+            "local": "IA: Local rapido",
+            "analytic": "IA: Analitico",
+            "ollama": "IA: Ollama local",
+        }.get(self.ai_mode, "IA: Automatica")
+
+    def _context_status_label(self) -> str:
+        if self.context_source == "postgres":
+            try:
+                from ..browser_integration import connection_registry
+
+                total = len(connection_registry.all_connections() or [])
+                if total:
+                    return f"PostgreSQL ativo · {total} conexao(oes)"
+            except Exception:
+                pass
+            return "PostgreSQL ativo · sem conexao configurada"
+
+        if self.context_source == "cloud":
+            try:
+                from ..cloud_session import cloud_session
+
+                if cloud_session.is_authenticated():
+                    total = sum(
+                        len(connection.get("layers") or [])
+                        for connection in (cloud_session.cloud_connections() or [])
+                    )
+                    return f"Cloud ativo · {total} camada(s)"
+            except Exception:
+                pass
+            return "Cloud ativo · login necessario"
+
+        try:
+            total_layers = len(self._project_layers())
+        except Exception:
+            total_layers = 0
+        return f"Projeto atual · {total_layers} camada(s)"
+
+    def _context_placeholder(self) -> str:
+        base = {
+            "project": "Pergunte qualquer coisa sobre o projeto e as camadas abertas...",
+            "postgres": "Pergunte algo sobre as conexoes PostgreSQL e os dados abertos...",
+            "cloud": "Pergunte algo sobre as camadas do cloud e o projeto atual...",
+        }.get(self.context_source, "Pergunte qualquer coisa sobre o projeto...")
+        if self.context_layer_name:
+            return f"{base} Camada em foco: {self.context_layer_name}."
+        return base
+
+    def _refresh_context_header(self):
+        if getattr(self, "context_button", None) is not None:
+            self.context_button.setText(self._context_source_label())
+
+        parts = [self._context_status_label(), self._ai_mode_label()]
+        if self.context_layer_name:
+            layer_prefix = "Camada" if self.context_layer_mode != "restrict" else "Limite"
+            parts.append(f"{layer_prefix}: {self.context_layer_name}")
+        if self.project_context_enabled:
+            parts.append("Contexto extra ativo")
+        if getattr(self, "status_label", None) is not None:
+            self.status_label.setText("  |  ".join(parts))
+
+    def _refresh_prompt_state(self):
+        if getattr(self, "question_edit", None) is not None:
+            self.question_edit.setPlaceholderText(self._context_placeholder())
+        if getattr(self, "engine_button", None) is not None:
+            self.engine_button.setText(self._ai_mode_label())
+
+    def _project_layers(self) -> List[Dict[str, str]]:
+        layers = []
+        try:
+            project = QgsProject.instance()
+            for layer in (project.mapLayers().values() if project is not None else []):
+                name_getter = getattr(layer, "name", None)
+                layer_name = str(name_getter() if callable(name_getter) else "")
+                layer_id_getter = getattr(layer, "id", None)
+                layer_id = str(layer_id_getter() if callable(layer_id_getter) else "")
+                if layer_name:
+                    layers.append({"id": layer_id, "name": layer_name})
+        except Exception:
+            return []
+        return sorted(layers, key=lambda item: item["name"].lower())
+
+    def _active_layer(self):
+        try:
+            return iface.activeLayer()
+        except Exception:
+            return None
+
+    def _build_effective_question(self, question: str) -> str:
+        hints = []
+        if self.context_source == "postgres":
+            hints.append("Priorize as camadas e conexoes PostgreSQL abertas no projeto.")
+        elif self.context_source == "cloud":
+            hints.append("Priorize as camadas do cloud carregadas no projeto.")
+        else:
+            hints.append("Considere o projeto atual aberto no QGIS.")
+
+        if self.context_layer_name:
+            if self.context_layer_mode == "restrict":
+                hints.append(f"Limite a analise apenas a camada {self.context_layer_name}.")
+            elif self.context_layer_mode == "focus":
+                hints.append(f"Use a camada atual {self.context_layer_name} como foco principal.")
+            else:
+                hints.append(f"Considere tambem a camada {self.context_layer_name} como contexto adicional.")
+
+        if self.project_context_enabled:
+            hints.append("Inclua o contexto geral do projeto e as relacoes entre camadas abertas.")
+
+        if not hints:
+            return question
+        return f"{question}\n\nContexto adicional:\n- " + "\n- ".join(hints)
 
     def _apply_local_styles(self):
         self.setObjectName("reportsRoot")
@@ -1300,15 +1672,15 @@ class ReportsWidget(QWidget):
         root_layout = self.layout()
         if root_layout is not None:
             width = max(self.width(), 900)
-            side_margin = 10 if width < 1024 else 14 if width < 1440 else 18
-            root_layout.setContentsMargins(side_margin, 18, side_margin, 16)
+            side_margin = 16 if width < 1024 else 28 if width < 1440 else 44
+            root_layout.setContentsMargins(side_margin, 14, side_margin, 14)
 
         available_width = self.history_scroll.viewport().width() or self.chat_shell.width() or self.workspace.width()
         if not available_width:
             return
 
-        assistant_max = max(720, available_width - 28)
-        user_max = max(420, int(assistant_max * 0.76))
+        assistant_max = max(760, min(980, available_width - 24))
+        user_max = max(420, min(720, int(assistant_max * 0.72)))
 
         for widget in self.history_viewport.findChildren(AssistantMessageWidget):
             widget.set_card_max_width(assistant_max)
@@ -1316,14 +1688,15 @@ class ReportsWidget(QWidget):
             widget.set_bubble_max_width(user_max)
 
     def generate_report(self):
-        question = (self.question_edit.text() or "").strip()
-        if not question:
+        visible_question = (self.question_edit.toPlainText() or "").strip()
+        if not visible_question:
             self.question_edit.setFocus()
             return
 
+        question = self._build_effective_question(visible_question)
         self.question_edit.clear()
         self._set_history_started(True)
-        self._append_history_widget(UserMessageWidget(question, self.history_viewport))
+        self._append_history_widget(UserMessageWidget(visible_question, self.history_viewport))
         response_widget = AssistantMessageWidget(
             self._retry_with_choice,
             self._execute_plan_choice,
@@ -1338,7 +1711,7 @@ class ReportsWidget(QWidget):
         self._start_run(question, response_widget, overrides=None)
 
     def _use_example(self, query: str):
-        self.question_edit.setText(query)
+        self.question_edit.setPlainText(query)
         self.generate_report()
 
     def _retry_with_choice(self, question: str, overrides: Dict[str, str], response_widget: AssistantMessageWidget):
@@ -1662,6 +2035,7 @@ class ReportsWidget(QWidget):
         self.generate_btn.setText("Gerar")
         self.question_edit.setEnabled(True)
         self.clear_chat_btn.setEnabled(self.history_count > 0)
+        self._refresh_context_header()
         self.question_edit.setFocus()
         self._scroll_to_bottom()
 
@@ -1687,6 +2061,7 @@ class ReportsWidget(QWidget):
             self.ai_engine.session_id = self.session_id
         self.question_edit.clear()
         self._set_history_started(False)
+        self._refresh_context_header()
         self.question_edit.setFocus()
         self.history_scroll.verticalScrollBar().setValue(0)
 
@@ -1805,6 +2180,7 @@ class ReportsWidget(QWidget):
                 conversation_memory_service=self.conversation_memory_service,
                 session_id=self.session_id,
             )
+        self.ai_engine.set_interface_mode(self.ai_mode)
         return self.ai_engine
 
     def _create_query_history_handle(self, question: str):

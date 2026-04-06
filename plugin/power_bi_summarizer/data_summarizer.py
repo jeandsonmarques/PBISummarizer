@@ -225,7 +225,7 @@ class PowerBISummarizerDialog(QDialog):
         self.ui = Ui_PowerBISummarizerDialog()
         self.ui.setupUi(self)
         self._square_scopes = []
-        for attr in ("pageResultados", "pageRelatorios"):
+        for attr in ("pageResultados",):
             scope = getattr(self.ui, attr, None)
             if scope is not None:
                 scope.setProperty("squareScope", True)
@@ -244,8 +244,9 @@ class PowerBISummarizerDialog(QDialog):
         self.setWindowIcon(svg_icon("Power-BI.svg"))
 
         context = palette_context()
-        base_font = QFont(context.get("font_family", "Montserrat"), context.get("font_body_size", 11))
-        base_font.setWeight(QFont.Medium)
+        base_font = QFont(context.get("font_family", "Segoe UI"))
+        base_font.setPixelSize(int(context.get("font_body_px", 13)))
+        base_font.setWeight(QFont.Normal)
         self.setFont(base_font)
 
         self.export_manager = ExportManager()
@@ -296,7 +297,9 @@ class PowerBISummarizerDialog(QDialog):
             self.summary_message_widget = QTextEdit(self.ui.results_body)
             self.summary_message_widget.setReadOnly(True)
             self.summary_message_widget.setStyleSheet(
-                "font-family: 'Segoe UI', 'Montserrat', sans-serif; font-size: 10.5pt;"
+                Template(
+                    "font-family: ${font_ui_stack}; font-size: ${font_body_px}px;"
+                ).safe_substitute(context)
             )
             self.summary_message_widget.setVisible(False)
             layout.addWidget(self.summary_message_widget)

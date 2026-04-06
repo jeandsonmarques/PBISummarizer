@@ -1,11 +1,12 @@
 from copy import deepcopy
 import uuid
 import traceback
+from string import Template
 from time import perf_counter
 from typing import Dict, List, Optional
 
 from qgis.PyQt.QtCore import QTimer, Qt
-from qgis.PyQt.QtGui import QColor, QLinearGradient, QPainter, QRadialGradient
+from qgis.PyQt.QtGui import QColor
 from qgis.PyQt.QtWidgets import (
     QApplication,
     QAbstractItemView,
@@ -24,6 +25,7 @@ from qgis.PyQt.QtWidgets import (
     QWidget,
 )
 
+from ..palette import COLORS, TYPOGRAPHY
 from .chart_factory import ChartFactory, ReportChartWidget
 from .dictionary_service import build_dictionary_service
 from .hybrid_query_interpreter import HybridQueryInterpreter
@@ -44,6 +46,264 @@ EXAMPLE_QUERIES = [
 
 PREVIEW_ROWS = 6
 MAX_TABLE_ROWS = 50
+
+
+REPORTS_STYLE_TEMPLATE = Template(
+    """
+    QWidget#reportsRoot,
+    QWidget#reportsWorkspace,
+    QWidget#chatColumn,
+    QWidget#conversationViewportHost,
+    QWidget#conversationViewport,
+    QWidget#footerSuggestions,
+    QFrame#promptDock {
+        background: ${surface};
+    }
+    QWidget#reportsRoot,
+    QWidget#reportsRoot * {
+        font-family: ${font_ui_stack};
+    }
+    QFrame#reportsHeader {
+        background: ${surface};
+    }
+    QLabel#reportsTitle {
+        color: ${text_primary};
+        font-size: ${font_page_title_px}px;
+        font-weight: ${font_weight_semibold};
+    }
+    QLabel#reportsSubtitle {
+        color: ${text_secondary};
+        font-size: ${font_secondary_px}px;
+        font-weight: ${font_weight_regular};
+    }
+    QFrame#chatShell {
+        background: ${surface};
+        border: 1px solid ${border_subtle};
+        border-radius: 30px;
+    }
+    QFrame#visualShell {
+        background: ${surface};
+        border: 1px solid ${border_subtle};
+        border-radius: 28px;
+    }
+    QFrame#visualTopBar {
+        background: transparent;
+        border: none;
+    }
+    QLabel#visualPanelBadge,
+    QLabel#assistantBadge {
+        color: ${accent};
+        font-size: ${font_caption_px}px;
+        font-weight: ${font_weight_semibold};
+    }
+    QLabel#visualPanelTitle,
+    QLabel#assistantSummary,
+    QLabel#emptyTitle {
+        color: ${text_primary};
+        font-size: ${font_section_title_px}px;
+        font-weight: ${font_weight_semibold};
+    }
+    QLabel#visualPanelSummary,
+    QLabel#assistantText,
+    QLabel#assistantStatus,
+    QLabel#userBubbleText {
+        color: ${text_primary};
+        font-size: ${font_body_px}px;
+        font-weight: ${font_weight_regular};
+    }
+    QLabel#visualPanelText,
+    QLabel#assistantHelper,
+    QLabel#emptySubtitle,
+    QLabel#reportsSubtitle {
+        color: ${text_secondary};
+        font-size: ${font_secondary_px}px;
+        font-weight: ${font_weight_regular};
+    }
+    QLabel#visualPanelMeta,
+    QLabel#chatToolbarLabel {
+        color: ${text_muted};
+        font-size: ${font_caption_px}px;
+        font-weight: ${font_weight_medium};
+    }
+    QFrame#visualPanelChartShell,
+    QFrame#assistantChartShell {
+        background: ${surface};
+        border: 1px solid ${border_soft};
+        border-radius: 18px;
+    }
+    QTableWidget#visualPanelTable,
+    QTableWidget#assistantTable {
+        background: transparent;
+        border: none;
+        color: ${text_primary};
+        font-size: ${font_body_px}px;
+        gridline-color: transparent;
+        selection-background-color: transparent;
+        alternate-background-color: transparent;
+    }
+    QTableWidget#visualPanelTable::item,
+    QTableWidget#assistantTable::item {
+        padding: 7px 8px;
+        border-bottom: 1px solid ${border_soft};
+    }
+    QHeaderView::section {
+        background: transparent;
+        color: ${text_muted};
+        border: none;
+        border-bottom: 1px solid ${border_soft};
+        padding: 8px 8px;
+        font-size: ${font_secondary_px}px;
+        font-weight: ${font_weight_semibold};
+    }
+    QFrame#chatToolbar {
+        background: transparent;
+        border: none;
+    }
+    QPushButton#visualPanelButton,
+    QPushButton#clearChatButton,
+    QPushButton[actionButton="true"],
+    QPushButton[optionButton="true"] {
+        background: ${surface};
+        border: 1px solid ${border_soft};
+        color: ${text_primary};
+        min-height: 30px;
+        padding: 4px 12px;
+        border-radius: 14px;
+        font-size: ${font_button_px}px;
+        font-weight: ${font_weight_semibold};
+    }
+    QPushButton#visualPanelButton:hover,
+    QPushButton#clearChatButton:hover,
+    QPushButton[actionButton="true"]:hover,
+    QPushButton[optionButton="true"]:hover {
+        background: ${surface_hover};
+        border-color: ${border_hover};
+    }
+    QPushButton#clearChatButton:disabled {
+        color: ${text_disabled};
+        border-color: ${border_soft};
+    }
+    QScrollArea#conversationScroll {
+        background: transparent;
+        border: none;
+    }
+    QFrame#emptyConversation {
+        background: transparent;
+        border: none;
+    }
+    QPushButton[chip="true"],
+    QPushButton[filterChip="true"] {
+        background: ${surface};
+        border: 1px solid ${border_soft};
+        color: ${text_primary};
+        min-height: 30px;
+        padding: 4px 12px;
+        border-radius: 15px;
+        font-size: ${font_chip_px}px;
+        font-weight: ${font_weight_medium};
+    }
+    QPushButton[chip="true"]:hover,
+    QPushButton[filterChip="true"]:hover {
+        background: ${surface_hover};
+        border-color: ${border_hover};
+        color: ${text_primary};
+    }
+    QFrame#userBubble {
+        background: qlineargradient(
+            x1:0, y1:0, x2:1, y2:1,
+            stop:0 rgba(13, 20, 36, 0.98),
+            stop:1 rgba(24, 35, 58, 0.98)
+        );
+        border: 1px solid rgba(81, 97, 125, 0.22);
+        border-radius: 22px;
+    }
+    QLabel#userBubbleText {
+        color: #F8FBFF;
+    }
+    QFrame#assistantCard {
+        background: ${surface};
+        border: 1px solid ${border_subtle};
+        border-radius: 26px;
+    }
+    QFrame#promptShell {
+        background: ${surface};
+        border: 1px solid ${border_subtle};
+        border-radius: 24px;
+    }
+    QLineEdit#promptInput {
+        background: transparent;
+        border: none;
+        padding: 13px 8px;
+        min-height: 30px;
+        font-size: ${font_body_px}px;
+        font-weight: ${font_weight_regular};
+        color: ${text_primary};
+    }
+    QLineEdit#promptInput:focus {
+        border: none;
+    }
+    QPushButton#sendButton {
+        background: ${send_bg};
+        color: #FFFFFF;
+        border: none;
+        border-radius: 17px;
+        min-width: 100px;
+        min-height: 42px;
+        padding: 0 16px;
+        font-size: ${font_button_px}px;
+        font-weight: ${font_weight_semibold};
+    }
+    QPushButton#sendButton:hover {
+        background: ${send_bg_hover};
+    }
+    QWidget#reportsRoot QScrollBar:vertical {
+        background: transparent;
+        width: 10px;
+        margin: 2px 0 2px 0;
+    }
+    QWidget#reportsRoot QScrollBar::handle:vertical {
+        background: ${scrollbar_handle};
+        border-radius: 5px;
+        min-height: 30px;
+    }
+    QWidget#reportsRoot QScrollBar::add-line:vertical,
+    QWidget#reportsRoot QScrollBar::sub-line:vertical {
+        height: 0;
+    }
+    """
+)
+
+
+def _reports_style_context() -> Dict[str, str]:
+    return {
+        "surface": COLORS.get("color_surface", "#FFFFFF"),
+        "surface_hover": "#F8FAFC",
+        "border_soft": "rgba(15, 23, 42, 0.08)",
+        "border_subtle": "rgba(15, 23, 42, 0.10)",
+        "border_hover": "#D7DEE8",
+        "text_primary": "#0F172A",
+        "text_secondary": "#475569",
+        "text_muted": "#64748B",
+        "text_disabled": "#94A3B8",
+        "accent": COLORS.get("color_secondary", "#2B7DE9"),
+        "send_bg": "#10182B",
+        "send_bg_hover": "#1A2740",
+        "scrollbar_handle": "rgba(100, 116, 139, 0.28)",
+        "font_ui_stack": TYPOGRAPHY.get(
+            "font_ui_stack",
+            '"Segoe UI Variable Text", "Segoe UI", Arial, sans-serif',
+        ),
+        "font_page_title_px": str(TYPOGRAPHY.get("font_page_title_px", 24)),
+        "font_section_title_px": str(TYPOGRAPHY.get("font_section_title_px", 16)),
+        "font_body_px": str(TYPOGRAPHY.get("font_body_px", 13)),
+        "font_secondary_px": str(TYPOGRAPHY.get("font_secondary_px", 12)),
+        "font_caption_px": str(TYPOGRAPHY.get("font_caption_px", 11)),
+        "font_button_px": str(TYPOGRAPHY.get("font_button_px", 13)),
+        "font_chip_px": str(TYPOGRAPHY.get("font_chip_px", 12)),
+        "font_weight_regular": str(TYPOGRAPHY.get("font_weight_regular", 400)),
+        "font_weight_medium": str(TYPOGRAPHY.get("font_weight_medium", 500)),
+        "font_weight_semibold": str(TYPOGRAPHY.get("font_weight_semibold", 600)),
+    }
 
 
 def _apply_soft_shadow(widget, blur_radius: int = 28, offset_y: int = 8, alpha: int = 26):
@@ -77,8 +337,8 @@ class EmptyConversationWidget(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("emptyConversation")
+        self.setAttribute(Qt.WA_StyledBackground, True)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
-        _apply_soft_shadow(self, blur_radius=24, offset_y=6, alpha=20)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 28, 24, 28)
@@ -648,6 +908,7 @@ class ActiveResultPanel(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("visualShell")
+        self.setAttribute(Qt.WA_StyledBackground, True)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.current_result: Optional[QueryResult] = None
         self.preview_limit = PREVIEW_ROWS
@@ -852,6 +1113,7 @@ class ActiveResultPanel(QFrame):
 class ReportsWidget(QWidget):
     def __init__(self, plugin=None, parent=None):
         super().__init__(parent)
+        self.setAttribute(Qt.WA_StyledBackground, True)
         self.plugin = plugin
         self.visual_panel = None
         self.schema_service = None
@@ -895,6 +1157,7 @@ class ReportsWidget(QWidget):
 
         self.workspace = QWidget(self)
         self.workspace.setObjectName("reportsWorkspace")
+        self.workspace.setAttribute(Qt.WA_StyledBackground, True)
         self.workspace.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         workspace_layout = QVBoxLayout(self.workspace)
         workspace_layout.setContentsMargins(0, 0, 0, 0)
@@ -920,12 +1183,14 @@ class ReportsWidget(QWidget):
 
         self.chat_column = QWidget(self.workspace)
         self.chat_column.setObjectName("chatColumn")
+        self.chat_column.setAttribute(Qt.WA_StyledBackground, True)
         chat_column_layout = QVBoxLayout(self.chat_column)
         chat_column_layout.setContentsMargins(0, 0, 0, 0)
         chat_column_layout.setSpacing(14)
 
         self.chat_shell = QFrame(self.chat_column)
         self.chat_shell.setObjectName("chatShell")
+        self.chat_shell.setAttribute(Qt.WA_StyledBackground, True)
         chat_shell_layout = QVBoxLayout(self.chat_shell)
         chat_shell_layout.setContentsMargins(18, 18, 18, 18)
         chat_shell_layout.setSpacing(14)
@@ -941,7 +1206,7 @@ class ReportsWidget(QWidget):
         chat_toolbar_layout.addWidget(chat_toolbar_label, 0)
         chat_toolbar_layout.addStretch(1)
 
-        self.clear_chat_btn = QPushButton("Limpar chat", chat_toolbar)
+        self.clear_chat_btn = QPushButton("Limpar", chat_toolbar)
         self.clear_chat_btn.setObjectName("clearChatButton")
         self.clear_chat_btn.clicked.connect(self._clear_chat_history)
         self.clear_chat_btn.setEnabled(False)
@@ -953,9 +1218,12 @@ class ReportsWidget(QWidget):
         self.history_scroll.setWidgetResizable(True)
         self.history_scroll.setFrameShape(QScrollArea.NoFrame)
         self.history_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.history_scroll.viewport().setObjectName("conversationViewportHost")
+        self.history_scroll.viewport().setAttribute(Qt.WA_StyledBackground, True)
 
         self.history_viewport = QWidget(self.history_scroll)
         self.history_viewport.setObjectName("conversationViewport")
+        self.history_viewport.setAttribute(Qt.WA_StyledBackground, True)
         self.history_viewport.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
         self.history_layout = QVBoxLayout(self.history_viewport)
         self.history_layout.setContentsMargins(2, 2, 2, 2)
@@ -971,11 +1239,14 @@ class ReportsWidget(QWidget):
 
         self.prompt_dock = QFrame(self.chat_column)
         self.prompt_dock.setObjectName("promptDock")
+        self.prompt_dock.setAttribute(Qt.WA_StyledBackground, True)
         prompt_dock_layout = QVBoxLayout(self.prompt_dock)
         prompt_dock_layout.setContentsMargins(0, 0, 0, 0)
         prompt_dock_layout.setSpacing(10)
 
         self.footer_suggestions = QWidget(self.prompt_dock)
+        self.footer_suggestions.setObjectName("footerSuggestions")
+        self.footer_suggestions.setAttribute(Qt.WA_StyledBackground, True)
         footer_suggestions_layout = QHBoxLayout(self.footer_suggestions)
         footer_suggestions_layout.setContentsMargins(0, 0, 0, 0)
         footer_suggestions_layout.setSpacing(8)
@@ -986,6 +1257,7 @@ class ReportsWidget(QWidget):
 
         prompt_shell = QFrame(self.prompt_dock)
         prompt_shell.setObjectName("promptShell")
+        prompt_shell.setAttribute(Qt.WA_StyledBackground, True)
         _apply_soft_shadow(prompt_shell, blur_radius=26, offset_y=6, alpha=16)
         prompt_layout = QHBoxLayout(prompt_shell)
         prompt_layout.setContentsMargins(16, 12, 12, 12)
@@ -1010,328 +1282,10 @@ class ReportsWidget(QWidget):
     def _apply_local_styles(self):
         self.setObjectName("reportsRoot")
         self.setStyleSheet(
-            """
-            QWidget#reportsRoot {
-                background: transparent;
-            }
-            QWidget#reportsWorkspace {
-                background: transparent;
-            }
-            QWidget#chatColumn {
-                background: transparent;
-            }
-            QFrame#reportsHeader {
-                background: transparent;
-            }
-            QLabel#reportsTitle {
-                color: #0B1220;
-                font-size: 22px;
-                font-weight: 600;
-            }
-            QLabel#reportsSubtitle {
-                color: #66758E;
-                font-size: 13px;
-            }
-            QFrame#chatShell {
-                background: qlineargradient(
-                    x1:0, y1:0, x2:1, y2:1,
-                    stop:0 rgba(255, 255, 255, 0.60),
-                    stop:1 rgba(248, 251, 255, 0.70)
-                );
-                border: 1px solid rgba(222, 230, 245, 0.92);
-                border-radius: 30px;
-            }
-            QFrame#visualShell {
-                background: qlineargradient(
-                    x1:0, y1:0, x2:1, y2:1,
-                    stop:0 rgba(255, 255, 255, 0.74),
-                    stop:1 rgba(246, 249, 255, 0.82)
-                );
-                border: 1px solid rgba(222, 230, 245, 0.96);
-                border-radius: 28px;
-            }
-            QFrame#visualTopBar {
-                background: transparent;
-                border: none;
-            }
-            QLabel#visualPanelBadge {
-                color: #315CCF;
-                font-size: 11px;
-                font-weight: 700;
-            }
-            QLabel#visualPanelTitle {
-                color: #0B1220;
-                font-size: 17px;
-                font-weight: 600;
-            }
-            QLabel#visualPanelSummary {
-                color: #24344C;
-                font-size: 14px;
-                font-weight: 500;
-            }
-            QLabel#visualPanelText,
-            QLabel#visualPanelMeta {
-                color: #71819B;
-                font-size: 12px;
-            }
-            QFrame#visualPanelChartShell {
-                background: rgba(248, 251, 255, 0.90);
-                border: 1px solid rgba(229, 236, 247, 0.96);
-                border-radius: 18px;
-            }
-            QTableWidget#visualPanelTable {
-                background: transparent;
-                border: none;
-                color: #213047;
-                gridline-color: transparent;
-                selection-background-color: transparent;
-                alternate-background-color: transparent;
-            }
-            QTableWidget#visualPanelTable::item {
-                padding: 7px 8px;
-                border-bottom: 1px solid rgba(236, 241, 248, 0.94);
-            }
-            QPushButton#visualPanelButton {
-                background: rgba(255, 255, 255, 0.74);
-                border: 1px solid rgba(214, 223, 238, 0.95);
-                color: #3B4A62;
-                min-height: 30px;
-                padding: 4px 12px;
-                border-radius: 14px;
-                font-size: 14px;
-                font-weight: 500;
-            }
-            QPushButton#visualPanelButton:hover {
-                background: rgba(251, 253, 255, 0.98);
-                border-color: #B8C9F0;
-            }
-            QFrame#chatToolbar {
-                background: transparent;
-                border: none;
-            }
-            QLabel#chatToolbarLabel {
-                color: #6B7891;
-                font-size: 12px;
-                font-weight: 600;
-            }
-            QPushButton#clearChatButton {
-                background: rgba(255, 255, 255, 0.76);
-                border: 1px solid rgba(212, 221, 238, 0.95);
-                color: #3A4860;
-                min-height: 30px;
-                padding: 4px 13px;
-                border-radius: 15px;
-                font-size: 14px;
-                font-weight: 600;
-            }
-            QPushButton#clearChatButton:hover {
-                background: rgba(255, 255, 255, 0.95);
-                border-color: #B9C9F3;
-                color: #0F172A;
-            }
-            QPushButton#clearChatButton:disabled {
-                color: #94A3B8;
-                border-color: rgba(226, 232, 240, 0.8);
-            }
-            QScrollArea#conversationScroll,
-            QWidget#conversationViewport {
-                background: transparent;
-                border: none;
-            }
-            QFrame#emptyConversation {
-                background: rgba(255, 255, 255, 0.58);
-                border: 1px solid rgba(224, 232, 244, 0.95);
-                border-radius: 24px;
-            }
-            QLabel#emptyTitle {
-                color: #0B1220;
-                font-size: 19px;
-                font-weight: 600;
-            }
-            QLabel#emptySubtitle {
-                color: #66758E;
-                font-size: 13px;
-            }
-            QPushButton[chip="true"] {
-                background: rgba(255, 255, 255, 0.72);
-                border: 1px solid rgba(223, 231, 244, 0.96);
-                color: #3E4C64;
-                min-height: 30px;
-                padding: 4px 12px;
-                border-radius: 15px;
-                font-size: 13px;
-                font-weight: 500;
-            }
-            QPushButton[chip="true"]:hover {
-                background: rgba(250, 252, 255, 0.98);
-                border-color: #B7C8F0;
-                color: #2246A8;
-            }
-            QPushButton[filterChip="true"] {
-                background: rgba(246, 249, 255, 0.98);
-                border: 1px solid rgba(204, 217, 241, 0.96);
-                color: #3D4B63;
-                min-height: 28px;
-                padding: 3px 10px;
-                border-radius: 14px;
-                font-size: 13px;
-                font-weight: 500;
-            }
-            QPushButton[filterChip="true"]:hover {
-                background: rgba(250, 252, 255, 1.0);
-                border-color: #9EB6ED;
-                color: #2246A8;
-            }
-            QFrame#userBubble {
-                background: qlineargradient(
-                    x1:0, y1:0, x2:1, y2:1,
-                    stop:0 rgba(13, 20, 36, 0.98),
-                    stop:1 rgba(24, 35, 58, 0.98)
-                );
-                border: 1px solid rgba(81, 97, 125, 0.22);
-                border-radius: 22px;
-            }
-            QLabel#userBubbleText {
-                color: #F8FBFF;
-                font-size: 14px;
-            }
-            QFrame#assistantCard {
-                background: rgba(255, 255, 255, 0.78);
-                border: 1px solid rgba(224, 232, 244, 0.96);
-                border-radius: 26px;
-            }
-            QLabel#assistantBadge {
-                color: #315CCF;
-                font-size: 11px;
-                font-weight: 700;
-            }
-            QLabel#assistantSummary {
-                color: #0B1220;
-                font-size: 16px;
-                font-weight: 600;
-            }
-            QLabel#assistantText,
-            QLabel#assistantStatus {
-                color: #36475F;
-                font-size: 14px;
-            }
-            QLabel#assistantHelper {
-                color: #71819B;
-                font-size: 12px;
-            }
-            QFrame#assistantChartShell {
-                background: rgba(248, 251, 255, 0.88);
-                border: 1px solid rgba(229, 236, 247, 0.96);
-                border-radius: 20px;
-            }
-            QTableWidget#assistantTable {
-                background: transparent;
-                border: none;
-                color: #213047;
-                gridline-color: transparent;
-                selection-background-color: transparent;
-                alternate-background-color: transparent;
-            }
-            QTableWidget#assistantTable::item {
-                padding: 7px 8px;
-                border-bottom: 1px solid rgba(236, 241, 248, 0.94);
-            }
-            QHeaderView::section {
-                background: transparent;
-                color: #71819B;
-                border: none;
-                border-bottom: 1px solid rgba(230, 236, 245, 0.96);
-                padding: 8px 8px;
-                font-weight: 600;
-            }
-            QPushButton[actionButton="true"],
-            QPushButton[optionButton="true"] {
-                background: rgba(255, 255, 255, 0.74);
-                border: 1px solid rgba(214, 223, 238, 0.95);
-                color: #3B4A62;
-                min-height: 30px;
-                padding: 4px 12px;
-                border-radius: 14px;
-                font-size: 14px;
-                font-weight: 500;
-            }
-            QPushButton[actionButton="true"]:hover,
-            QPushButton[optionButton="true"]:hover {
-                background: rgba(251, 253, 255, 0.98);
-                border-color: #B8C9F0;
-            }
-            QFrame#promptDock {
-                background: transparent;
-            }
-            QFrame#promptShell {
-                background: rgba(255, 255, 255, 0.84);
-                border: 1px solid rgba(223, 231, 243, 0.98);
-                border-radius: 24px;
-            }
-            QLineEdit#promptInput {
-                background: transparent;
-                border: none;
-                padding: 13px 8px;
-                min-height: 30px;
-                font-size: 15px;
-                color: #0B1220;
-            }
-            QLineEdit#promptInput:focus {
-                border: none;
-            }
-            QPushButton#sendButton {
-                background: #10182B;
-                color: #FFFFFF;
-                border: none;
-                border-radius: 17px;
-                min-width: 100px;
-                min-height: 42px;
-                padding: 0 16px;
-                font-size: 14px;
-                font-weight: 650;
-            }
-            QPushButton#sendButton:hover {
-                background: #1A2740;
-            }
-            QWidget#reportsRoot QScrollBar:vertical {
-                background: transparent;
-                width: 10px;
-                margin: 2px 0 2px 0;
-            }
-            QWidget#reportsRoot QScrollBar::handle:vertical {
-                background: rgba(118, 132, 166, 0.32);
-                border-radius: 5px;
-                min-height: 30px;
-            }
-            QWidget#reportsRoot QScrollBar::add-line:vertical,
-            QWidget#reportsRoot QScrollBar::sub-line:vertical {
-                height: 0;
-            }
-            """
+            REPORTS_STYLE_TEMPLATE.safe_substitute(_reports_style_context())
         )
 
     def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-
-        base = QLinearGradient(0, 0, self.width(), self.height())
-        base.setColorAt(0.0, QColor(245, 241, 255))
-        base.setColorAt(0.44, QColor(239, 246, 255))
-        base.setColorAt(1.0, QColor(250, 252, 255))
-        painter.fillRect(self.rect(), base)
-
-        accents = [
-            ((int(self.width() * 0.16), int(self.height() * 0.10)), int(min(self.width(), self.height()) * 0.26), QColor(204, 189, 255, 60)),
-            ((int(self.width() * 0.90), int(self.height() * 0.18)), int(min(self.width(), self.height()) * 0.22), QColor(176, 212, 255, 50)),
-            ((int(self.width() * 0.74), int(self.height() * 0.84)), int(min(self.width(), self.height()) * 0.18), QColor(223, 232, 255, 44)),
-        ]
-        for (cx, cy), radius, color in accents:
-            glow = QRadialGradient(cx, cy, radius)
-            glow.setColorAt(0.0, color)
-            glow.setColorAt(0.7, QColor(color.red(), color.green(), color.blue(), max(10, color.alpha() // 3)))
-            glow.setColorAt(1.0, QColor(color.red(), color.green(), color.blue(), 0))
-            painter.fillRect(self.rect(), glow)
-
         super().paintEvent(event)
 
     def resizeEvent(self, event):

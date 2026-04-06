@@ -1,13 +1,13 @@
 /* Power BI Desktop inspired style for PowerBISummarizer */
 
 * {
-    font-family: "${font_family}", "Segoe UI", Arial, sans-serif;
+    font-family: ${font_ui_stack};
     color: ${color_text_primary};
 }
 
 QWidget {
     background-color: ${color_app_bg};
-    font-size: ${font_body_size}pt;
+    font-size: ${font_body_px}px;
 }
 
 QMainWindow,
@@ -57,35 +57,34 @@ QWidget[card="true"] {
 }
 
 QLabel[cardTitle="true"] {
-    font-size: ${font_section_size}pt;
-    font-weight: 600;
+    font-size: ${font_section_title_px}px;
+    font-weight: ${font_weight_semibold};
     color: ${color_text_primary};
 }
 
 /* Typography --------------------------------------------------------------- */
 QLabel[role="appTitle"] {
-    font-family: "Segoe UI";
-    font-size: 11pt;
-    font-weight: 600;
+    font-size: ${font_caption_px}px;
+    font-weight: ${font_weight_semibold};
     color: #333333;
 }
 
 QLabel[role="title"] {
-    font-size: ${font_title_size}pt;
-    font-weight: 700;
+    font-size: ${font_page_title_px}px;
+    font-weight: ${font_weight_semibold};
     color: ${color_text_primary};
 }
 
 QLabel[role="subtitle"],
 QLabel.section-title {
-    font-size: ${font_section_size}pt;
-    font-weight: 600;
+    font-size: ${font_section_title_px}px;
+    font-weight: ${font_weight_semibold};
     color: ${color_text_primary};
 }
 
 QLabel[role="helper"] {
-    font-size: ${font_small_size}pt;
-    font-weight: 400;
+    font-size: ${font_secondary_px}px;
+    font-weight: ${font_weight_regular};
     color: ${color_text_secondary};
 }
 
@@ -94,8 +93,8 @@ QLabel[role="badge"] {
     padding: 4px 10px;
     background-color: rgba(43, 125, 233, 0.12);
     color: ${color_secondary};
-    font-size: ${font_small_size}pt;
-    font-weight: 600;
+    font-size: ${font_chip_px}px;
+    font-weight: ${font_weight_semibold};
 }
 
 QLabel[role="badge"][state="warning"] {
@@ -114,7 +113,8 @@ QPushButton {
     padding: 8px 16px;
     border-radius: ${radius_button}px;
     border: 1px solid transparent;
-    font-weight: 600;
+    font-size: ${font_button_px}px;
+    font-weight: ${font_weight_semibold};
     background-color: ${color_primary};
     color: #1A1A1A;
 }
@@ -187,15 +187,16 @@ QTabBar::tab {
     min-height: ${tab_height}px;
     margin-right: 4px;
     padding: 8px 14px;
+    font-size: ${font_secondary_px}px;
     color: ${color_text_secondary};
-    font-weight: 500;
+    font-weight: ${font_weight_medium};
     background: transparent;
     border-bottom: 3px solid transparent;
 }
 
 QTabBar::tab:selected {
     color: ${color_text_primary};
-    font-weight: 700;
+    font-weight: ${font_weight_semibold};
     border-bottom: 3px solid ${color_primary};
     background: rgba(242, 200, 17, 0.08);
     border-top-left-radius: ${radius_surface}px;
@@ -331,7 +332,7 @@ QToolTip {
     color: #ffffff;
     border-radius: 6px;
     padding: 6px 8px;
-    font-size: ${font_small_size}pt;
+    font-size: ${font_caption_px}px;
 }
 
 /* Message boxes ------------------------------------------------------------ */
@@ -340,7 +341,7 @@ QMessageBox {
 }
 
 QMessageBox QLabel {
-    font-size: ${font_body_size}pt;
+    font-size: ${font_body_px}px;
     color: ${color_text_primary};
 }
 
@@ -356,8 +357,8 @@ QMessageBox QLabel {
 }
 
 QLabel[ribbonGroupTitle="true"] {
-    font-size: ${font_small_size}pt;
-    font-weight: 600;
+    font-size: ${font_caption_px}px;
+    font-weight: ${font_weight_semibold};
     color: ${color_text_secondary};
     margin-left: 2px;
 }
@@ -367,7 +368,7 @@ QToolButton[ribbonButton="true"] {
     border: 1px solid transparent;
     border-radius: 6px;
     padding: 4px 6px;
-    font-size: 9pt;
+    font-size: ${font_caption_px}px;
     color: ${color_text_primary};
     qproperty-wordWrap: true;
     qproperty-iconSize: 20px 20px;

@@ -27,12 +27,24 @@ COLORS = {
 
 TYPOGRAPHY = {
     "font_family": "Segoe UI",
+    "font_ui_stack": '"Segoe UI Variable Text", "Segoe UI", "SF Pro Text", "Helvetica Neue", Arial, sans-serif',
+    "font_mono_stack": '"Cascadia Mono", "SF Mono", Consolas, "Liberation Mono", monospace',
     "font_base_size": 11,
     "font_title_size": 18,
     "font_subtitle_size": 14,
     "font_section_size": 13,
     "font_body_size": 11,
     "font_small_size": 10,
+    "font_page_title_px": 24,
+    "font_section_title_px": 16,
+    "font_body_px": 13,
+    "font_secondary_px": 12,
+    "font_caption_px": 11,
+    "font_button_px": 13,
+    "font_chip_px": 12,
+    "font_weight_regular": 400,
+    "font_weight_medium": 500,
+    "font_weight_semibold": 600,
 }
 
 MISC = {

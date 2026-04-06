@@ -6,8 +6,12 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
+try:
+    from ..utils.runtime_paths import runtime_state_file
+except ImportError:  # pragma: no cover - supports running report_view as a top-level package
+    from utils.runtime_paths import runtime_state_file
 
-MEMORY_DB_FILE = Path(__file__).resolve().parent.parent / "relatorios_memory.sqlite3"
+MEMORY_DB_FILE = runtime_state_file("relatorios_memory.sqlite3")
 
 
 class OperationalMemoryStore:

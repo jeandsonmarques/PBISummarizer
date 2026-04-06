@@ -1,13 +1,16 @@
+from copy import deepcopy
 import uuid
 import traceback
 from time import perf_counter
 from typing import Dict, List, Optional
 
 from qgis.PyQt.QtCore import QTimer, Qt
+from qgis.PyQt.QtGui import QColor, QLinearGradient, QPainter, QRadialGradient
 from qgis.PyQt.QtWidgets import (
     QApplication,
     QAbstractItemView,
     QFrame,
+    QGraphicsDropShadowEffect,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -22,6 +25,7 @@ from qgis.PyQt.QtWidgets import (
 )
 
 from .chart_factory import ChartFactory, ReportChartWidget
+from .dictionary_service import build_dictionary_service
 from .hybrid_query_interpreter import HybridQueryInterpreter
 from .layer_schema_service import LayerSchemaService
 from .operational_memory_service import build_operational_memory_services
@@ -40,6 +44,14 @@ EXAMPLE_QUERIES = [
 
 PREVIEW_ROWS = 6
 MAX_TABLE_ROWS = 50
+
+
+def _apply_soft_shadow(widget, blur_radius: int = 28, offset_y: int = 8, alpha: int = 26):
+    effect = QGraphicsDropShadowEffect(widget)
+    effect.setBlurRadius(blur_radius)
+    effect.setOffset(0, offset_y)
+    effect.setColor(QColor(15, 23, 42, alpha))
+    widget.setGraphicsEffect(effect)
 
 
 def _clear_layout(layout):
@@ -66,6 +78,7 @@ class EmptyConversationWidget(QFrame):
         super().__init__(parent)
         self.setObjectName("emptyConversation")
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+        _apply_soft_shadow(self, blur_radius=24, offset_y=6, alpha=20)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 28, 24, 28)
@@ -96,19 +109,23 @@ class UserMessageWidget(QWidget):
         row.setSpacing(0)
         row.addStretch(1)
 
-        bubble = QFrame(self)
-        bubble.setObjectName("userBubble")
-        bubble.setMaximumWidth(560)
-        bubble_layout = QVBoxLayout(bubble)
+        self.bubble = QFrame(self)
+        self.bubble.setObjectName("userBubble")
+        self.bubble.setMaximumWidth(860)
+        _apply_soft_shadow(self.bubble, blur_radius=22, offset_y=6, alpha=22)
+        bubble_layout = QVBoxLayout(self.bubble)
         bubble_layout.setContentsMargins(16, 12, 16, 12)
         bubble_layout.setSpacing(4)
 
-        label = QLabel(text, bubble)
+        label = QLabel(text, self.bubble)
         label.setObjectName("userBubbleText")
         label.setWordWrap(True)
         bubble_layout.addWidget(label)
 
-        row.addWidget(bubble, 0)
+        row.addWidget(self.bubble, 0)
+
+    def set_bubble_max_width(self, width: int):
+        self.bubble.setMaximumWidth(max(360, width))
 
 
 class AssistantMessageWidget(QWidget):
@@ -118,6 +135,9 @@ class AssistantMessageWidget(QWidget):
         execute_plan_callback,
         feedback_callback=None,
         choose_interpretation_callback=None,
+        visual_result_callback=None,
+        filter_choice_callback=None,
+        select_map_callback=None,
         parent=None,
     ):
         super().__init__(parent)
@@ -125,6 +145,9 @@ class AssistantMessageWidget(QWidget):
         self.execute_plan_callback = execute_plan_callback
         self.feedback_callback = feedback_callback
         self.choose_interpretation_callback = choose_interpretation_callback
+        self.visual_result_callback = visual_result_callback
+        self.filter_choice_callback = filter_choice_callback
+        self.select_map_callback = select_map_callback
         self.current_question = ""
         self.current_result: Optional[QueryResult] = None
         self.current_plan: Optional[QueryPlan] = None
@@ -135,6 +158,7 @@ class AssistantMessageWidget(QWidget):
         self.details_button = None
         self.details_label = None
         self.table_widget = None
+        self.select_map_button = None
         self.correct_button = None
         self.incorrect_button = None
         self.choose_button = None
@@ -148,7 +172,8 @@ class AssistantMessageWidget(QWidget):
 
         self.card = QFrame(self)
         self.card.setObjectName("assistantCard")
-        self.card.setMaximumWidth(880)
+        self.card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+        _apply_soft_shadow(self.card, blur_radius=26, offset_y=8, alpha=24)
         card_layout = QVBoxLayout(self.card)
         card_layout.setContentsMargins(18, 16, 18, 16)
         card_layout.setSpacing(12)
@@ -158,13 +183,17 @@ class AssistantMessageWidget(QWidget):
         card_layout.addWidget(self.badge_label)
 
         self.content_widget = QWidget(self.card)
+        self.content_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
         self.content_layout = QVBoxLayout(self.content_widget)
         self.content_layout.setContentsMargins(0, 0, 0, 0)
         self.content_layout.setSpacing(12)
         card_layout.addWidget(self.content_widget)
 
-        row.addWidget(self.card, 0)
+        row.addWidget(self.card, 14)
         row.addStretch(1)
+
+    def set_card_max_width(self, width: int):
+        self.card.setMaximumWidth(max(620, width))
 
     def show_loading(self, question: str):
         self.current_question = question
@@ -325,6 +354,8 @@ class AssistantMessageWidget(QWidget):
             helper_label.setWordWrap(True)
             self.content_layout.addWidget(helper_label)
 
+        self._add_filter_selector()
+
         if result.chart_payload is not None:
             chart_shell = QFrame(self.content_widget)
             chart_shell.setObjectName("assistantChartShell")
@@ -333,8 +364,8 @@ class AssistantMessageWidget(QWidget):
             chart_layout.setSpacing(0)
 
             chart_widget = ReportChartWidget(chart_shell)
-            chart_widget.setMinimumHeight(220)
-            chart_widget.setMaximumHeight(300)
+            chart_widget.setMinimumHeight(240)
+            chart_widget.setMaximumHeight(340)
             chart_widget.set_payload(result.chart_payload)
             chart_layout.addWidget(chart_widget)
             self.content_layout.addWidget(chart_shell)
@@ -351,6 +382,12 @@ class AssistantMessageWidget(QWidget):
         self.copy_button.setProperty("actionButton", True)
         self.copy_button.clicked.connect(self._copy_summary)
         actions_row.addWidget(self.copy_button, 0)
+
+        if self.select_map_callback is not None:
+            self.select_map_button = QPushButton("Selecionar no mapa", self.content_widget)
+            self.select_map_button.setProperty("actionButton", True)
+            self.select_map_button.clicked.connect(self._select_on_map)
+            actions_row.addWidget(self.select_map_button, 0)
 
         self.correct_button = QPushButton("Correto", self.content_widget)
         self.correct_button.setProperty("actionButton", True)
@@ -370,22 +407,65 @@ class AssistantMessageWidget(QWidget):
         else:
             self.choose_button = None
 
-        details_needed = len(result.rows) > PREVIEW_ROWS
-        if details_needed:
+        if len(result.rows) > PREVIEW_ROWS:
             self.details_button = QPushButton("Ver detalhes", self.content_widget)
             self.details_button.setProperty("actionButton", True)
             self.details_button.clicked.connect(self._toggle_details)
             actions_row.addWidget(self.details_button, 0)
-        else:
-            self.details_button = None
 
         actions_row.addStretch(1)
 
         self.details_label = QLabel("", self.content_widget)
         self.details_label.setObjectName("assistantHelper")
-        actions_row.addWidget(self.details_label, 0, Qt.AlignRight)
+        actions_row.addWidget(self.details_label, 0)
         self.content_layout.addLayout(actions_row)
         self._update_details_label()
+
+    def _add_filter_selector(self):
+        plan = self.feedback_plan()
+        if plan is None or not plan.filters or self.filter_choice_callback is None:
+            return
+
+        seen = set()
+        available_filters = []
+        for filter_spec in plan.filters:
+            key = (filter_spec.layer_role, filter_spec.field, filter_spec.operator, str(filter_spec.value))
+            if key in seen:
+                continue
+            seen.add(key)
+            available_filters.append(filter_spec)
+
+        if not available_filters:
+            return
+
+        label = QLabel("Selecionar filtro", self.content_widget)
+        label.setObjectName("assistantHelper")
+        self.content_layout.addWidget(label)
+
+        filters_row = QHBoxLayout()
+        filters_row.setContentsMargins(0, 0, 0, 0)
+        filters_row.setSpacing(8)
+        for filter_spec in available_filters[:5]:
+            button = QPushButton(self._format_filter_chip(filter_spec), self.content_widget)
+            button.setProperty("filterChip", True)
+            button.clicked.connect(
+                lambda checked=False, q=self.current_question, p=plan, f=filter_spec: self.filter_choice_callback(
+                    q,
+                    p,
+                    f,
+                    self,
+                )
+            )
+            filters_row.addWidget(button, 0)
+        filters_row.addStretch(1)
+        self.content_layout.addLayout(filters_row)
+
+    def _format_filter_chip(self, filter_spec) -> str:
+        field_label = str(filter_spec.field or "").replace("_", " ").strip()
+        value_label = str(filter_spec.value or "").strip()
+        if field_label and value_label:
+            return f"{field_label}: {value_label}"
+        return value_label or field_label or "Filtro"
 
     def _reset_content(self):
         _clear_layout(self.content_layout)
@@ -396,6 +476,7 @@ class AssistantMessageWidget(QWidget):
         self.details_button = None
         self.details_label = None
         self.table_widget = None
+        self.select_map_button = None
         self.status_label = None
 
     def _create_table_widget(self):
@@ -454,6 +535,11 @@ class AssistantMessageWidget(QWidget):
         if self.copy_button is not None:
             self.copy_button.setText("Copiado")
             QTimer.singleShot(1200, lambda: self.copy_button and self.copy_button.setText("Copiar resumo"))
+
+    def _select_on_map(self):
+        if self.select_map_callback is None:
+            return
+        self.select_map_callback(self)
 
     def set_execution_context(
         self,
@@ -540,8 +626,219 @@ class AssistantMessageWidget(QWidget):
             parts.append(f"Entendi como: {plan.understanding_text}")
         if plan is not None and plan.detected_filters_text:
             parts.append(f"Filtros detectados: {plan.detected_filters_text}")
+        if plan is not None:
+            trace = dict(plan.planning_trace or {})
+            for item in list(trace.get("conversation_debug") or [])[:2]:
+                text = str(item or "").strip()
+                if text:
+                    parts.append(text)
         if result.total_records:
             parts.append(f"{result.total_records} registros analisados")
+        if result.rows:
+            parts.append(f"{len(result.rows)} categorias")
+        return "  |  ".join(parts)
+
+    def _format_value(self, value: float) -> str:
+        if abs(value - round(value)) < 1e-6:
+            return f"{int(round(value)):,}".replace(",", ".")
+        return f"{value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+class ActiveResultPanel(QFrame):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("visualShell")
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.current_result: Optional[QueryResult] = None
+        self.preview_limit = PREVIEW_ROWS
+        self.table_widget = None
+        self.details_button = None
+        self.details_label = None
+        _apply_soft_shadow(self, blur_radius=24, offset_y=8, alpha=18)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(18, 18, 18, 18)
+        layout.setSpacing(14)
+
+        top = QFrame(self)
+        top.setObjectName("visualTopBar")
+        top_layout = QHBoxLayout(top)
+        top_layout.setContentsMargins(0, 0, 0, 0)
+        top_layout.setSpacing(8)
+
+        badge = QLabel("Analise ativa", top)
+        badge.setObjectName("visualPanelBadge")
+        top_layout.addWidget(badge, 0)
+        top_layout.addStretch(1)
+
+        self.meta_label = QLabel("", top)
+        self.meta_label.setObjectName("visualPanelMeta")
+        top_layout.addWidget(self.meta_label, 0)
+        layout.addWidget(top)
+
+        self.content = QWidget(self)
+        self.content_layout = QVBoxLayout(self.content)
+        self.content_layout.setContentsMargins(0, 0, 0, 0)
+        self.content_layout.setSpacing(12)
+        layout.addWidget(self.content, 1)
+
+        self.show_empty()
+
+    def show_empty(self, message: str = "A ultima analise com grafico e tabela aparecera aqui."):
+        self.current_result = None
+        self.preview_limit = PREVIEW_ROWS
+        self._reset_content()
+        self.meta_label.setText("")
+
+        title = QLabel("Painel visual", self.content)
+        title.setObjectName("visualPanelTitle")
+        self.content_layout.addWidget(title)
+
+        text = QLabel(message, self.content)
+        text.setObjectName("visualPanelText")
+        text.setWordWrap(True)
+        self.content_layout.addWidget(text)
+        self.content_layout.addStretch(1)
+
+    def show_loading(self, message: str = "Preparando visualizacao atual..."):
+        self.show_empty(message)
+
+    def show_result(self, result: QueryResult):
+        self.current_result = result
+        self.preview_limit = PREVIEW_ROWS
+        self._reset_content()
+        self.meta_label.setText("Resultado mais recente")
+
+        title = QLabel("Resultado atual", self.content)
+        title.setObjectName("visualPanelTitle")
+        self.content_layout.addWidget(title)
+
+        summary = QLabel(result.summary.text or "Visualizacao gerada.", self.content)
+        summary.setObjectName("visualPanelSummary")
+        summary.setWordWrap(True)
+        self.content_layout.addWidget(summary)
+
+        helper = QLabel(self._helper_text(result), self.content)
+        helper.setObjectName("visualPanelMeta")
+        helper.setWordWrap(True)
+        self.content_layout.addWidget(helper)
+
+        if result.chart_payload is not None:
+            chart_shell = QFrame(self.content)
+            chart_shell.setObjectName("visualPanelChartShell")
+            chart_layout = QVBoxLayout(chart_shell)
+            chart_layout.setContentsMargins(10, 10, 10, 10)
+            chart_layout.setSpacing(0)
+
+            chart_widget = ReportChartWidget(chart_shell)
+            chart_widget.setMinimumHeight(240)
+            chart_widget.setMaximumHeight(320)
+            chart_widget.set_payload(result.chart_payload)
+            chart_layout.addWidget(chart_widget)
+            self.content_layout.addWidget(chart_shell)
+
+        self.table_widget = self._create_table_widget()
+        self.content_layout.addWidget(self.table_widget)
+        self._render_table_rows()
+
+        footer = QHBoxLayout()
+        footer.setContentsMargins(0, 0, 0, 0)
+        footer.setSpacing(8)
+
+        if len(result.rows) > PREVIEW_ROWS:
+            self.details_button = QPushButton("Ver detalhes", self.content)
+            self.details_button.setObjectName("visualPanelButton")
+            self.details_button.clicked.connect(self._toggle_details)
+            footer.addWidget(self.details_button, 0)
+
+        footer.addStretch(1)
+        self.details_label = QLabel("", self.content)
+        self.details_label.setObjectName("visualPanelMeta")
+        footer.addWidget(self.details_label, 0)
+        self.content_layout.addLayout(footer)
+        self._update_details_label()
+
+    def _reset_content(self):
+        _clear_layout(self.content_layout)
+        self.table_widget = None
+        self.details_button = None
+        self.details_label = None
+
+    def _create_table_widget(self):
+        table = QTableWidget(self.content)
+        table.setObjectName("visualPanelTable")
+        table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        table.setSelectionMode(QAbstractItemView.NoSelection)
+        table.setFocusPolicy(Qt.NoFocus)
+        table.setAlternatingRowColors(False)
+        table.setShowGrid(False)
+        table.verticalHeader().setVisible(False)
+        table.horizontalHeader().setStretchLastSection(True)
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        table.horizontalHeader().setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        return table
+
+    def _render_table_rows(self):
+        if self.table_widget is None or self.current_result is None:
+            return
+
+        result = self.current_result
+        visible_rows = result.rows[: self.preview_limit]
+        columns = ["Categoria", result.value_label]
+        if result.show_percent:
+            columns.append("Percentual")
+
+        self.table_widget.clear()
+        self.table_widget.setColumnCount(len(columns))
+        self.table_widget.setHorizontalHeaderLabels(columns)
+        self.table_widget.setRowCount(len(visible_rows))
+
+        for row_index, row in enumerate(visible_rows):
+            category_item = QTableWidgetItem(row.category)
+            value_item = QTableWidgetItem(self._format_value(row.value))
+            value_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            self.table_widget.setItem(row_index, 0, category_item)
+            self.table_widget.setItem(row_index, 1, value_item)
+            if result.show_percent:
+                percent_text = "-" if row.percent is None else f"{row.percent:.1f}%".replace(".", ",")
+                percent_item = QTableWidgetItem(percent_text)
+                percent_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                self.table_widget.setItem(row_index, 2, percent_item)
+
+        header_height = self.table_widget.horizontalHeader().height() or 32
+        row_height = 34
+        frame_height = header_height + (len(visible_rows) * row_height) + 6
+        self.table_widget.setMinimumHeight(frame_height)
+        self.table_widget.setMaximumHeight(frame_height)
+
+    def _toggle_details(self):
+        if self.current_result is None:
+            return
+        if self.preview_limit >= min(MAX_TABLE_ROWS, len(self.current_result.rows)):
+            self.preview_limit = PREVIEW_ROWS
+            if self.details_button is not None:
+                self.details_button.setText("Ver detalhes")
+        else:
+            self.preview_limit = min(MAX_TABLE_ROWS, len(self.current_result.rows))
+            if self.details_button is not None:
+                self.details_button.setText("Ocultar detalhes")
+        self._render_table_rows()
+        self._update_details_label()
+
+    def _update_details_label(self):
+        if self.details_label is None or self.current_result is None:
+            return
+        visible = min(self.preview_limit, len(self.current_result.rows))
+        total = len(self.current_result.rows)
+        self.details_label.setText(f"Mostrando {visible} de {total} linhas")
+
+    def _helper_text(self, result: QueryResult) -> str:
+        parts = []
+        plan = result.plan
+        if plan is not None and plan.understanding_text:
+            parts.append(plan.understanding_text)
+        if result.total_records:
+            parts.append(f"{result.total_records} registros")
         if result.rows:
             parts.append(f"{len(result.rows)} categorias")
         return "  |  ".join(parts)
@@ -556,6 +853,7 @@ class ReportsWidget(QWidget):
     def __init__(self, plugin=None, parent=None):
         super().__init__(parent)
         self.plugin = plugin
+        self.visual_panel = None
         self.schema_service = None
         self.query_interpreter = None
         self.report_executor = None
@@ -568,6 +866,8 @@ class ReportsWidget(QWidget):
         self.feedback_service = None
         self.semantic_alias_service = None
         self.approved_example_service = None
+        self.conversation_memory_service = None
+        self.dictionary_service = None
         self.session_id = uuid.uuid4().hex
         self.ai_engine = None
         self.active_execution_job = None
@@ -575,6 +875,7 @@ class ReportsWidget(QWidget):
 
         self._build_ui()
         self._apply_local_styles()
+        QTimer.singleShot(0, self._preload_dictionary)
 
     def refresh_from_model(self):
         self.project_schema = None
@@ -585,14 +886,28 @@ class ReportsWidget(QWidget):
 
     def _build_ui(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(24, 18, 24, 16)
-        root.setSpacing(14)
+        root.setContentsMargins(14, 18, 14, 16)
+        root.setSpacing(0)
 
-        header = QFrame(self)
+        workspace_row = QHBoxLayout()
+        workspace_row.setContentsMargins(0, 0, 0, 0)
+        workspace_row.setSpacing(0)
+
+        self.workspace = QWidget(self)
+        self.workspace.setObjectName("reportsWorkspace")
+        self.workspace.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        workspace_layout = QVBoxLayout(self.workspace)
+        workspace_layout.setContentsMargins(0, 0, 0, 0)
+        workspace_layout.setSpacing(18)
+
+        workspace_row.addWidget(self.workspace, 1)
+        root.addLayout(workspace_row, 1)
+
+        header = QFrame(self.workspace)
         header.setObjectName("reportsHeader")
         header_layout = QVBoxLayout(header)
         header_layout.setContentsMargins(0, 0, 0, 0)
-        header_layout.setSpacing(2)
+        header_layout.setSpacing(4)
 
         title = QLabel("Relatorios", header)
         title.setObjectName("reportsTitle")
@@ -601,27 +916,60 @@ class ReportsWidget(QWidget):
         subtitle = QLabel("Pergunte algo sobre os dados do projeto", header)
         subtitle.setObjectName("reportsSubtitle")
         header_layout.addWidget(subtitle)
-        root.addWidget(header)
+        workspace_layout.addWidget(header, 0)
+
+        self.chat_column = QWidget(self.workspace)
+        self.chat_column.setObjectName("chatColumn")
+        chat_column_layout = QVBoxLayout(self.chat_column)
+        chat_column_layout.setContentsMargins(0, 0, 0, 0)
+        chat_column_layout.setSpacing(14)
+
+        self.chat_shell = QFrame(self.chat_column)
+        self.chat_shell.setObjectName("chatShell")
+        chat_shell_layout = QVBoxLayout(self.chat_shell)
+        chat_shell_layout.setContentsMargins(18, 18, 18, 18)
+        chat_shell_layout.setSpacing(14)
+
+        chat_toolbar = QFrame(self.chat_shell)
+        chat_toolbar.setObjectName("chatToolbar")
+        chat_toolbar_layout = QHBoxLayout(chat_toolbar)
+        chat_toolbar_layout.setContentsMargins(0, 0, 0, 0)
+        chat_toolbar_layout.setSpacing(10)
+
+        chat_toolbar_label = QLabel("Conversa atual", chat_toolbar)
+        chat_toolbar_label.setObjectName("chatToolbarLabel")
+        chat_toolbar_layout.addWidget(chat_toolbar_label, 0)
+        chat_toolbar_layout.addStretch(1)
+
+        self.clear_chat_btn = QPushButton("Limpar chat", chat_toolbar)
+        self.clear_chat_btn.setObjectName("clearChatButton")
+        self.clear_chat_btn.clicked.connect(self._clear_chat_history)
+        self.clear_chat_btn.setEnabled(False)
+        chat_toolbar_layout.addWidget(self.clear_chat_btn, 0)
+        chat_shell_layout.addWidget(chat_toolbar)
 
         self.history_scroll = QScrollArea(self)
         self.history_scroll.setObjectName("conversationScroll")
         self.history_scroll.setWidgetResizable(True)
         self.history_scroll.setFrameShape(QScrollArea.NoFrame)
+        self.history_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
         self.history_viewport = QWidget(self.history_scroll)
         self.history_viewport.setObjectName("conversationViewport")
+        self.history_viewport.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
         self.history_layout = QVBoxLayout(self.history_viewport)
-        self.history_layout.setContentsMargins(0, 0, 0, 0)
-        self.history_layout.setSpacing(14)
+        self.history_layout.setContentsMargins(2, 2, 2, 2)
+        self.history_layout.setSpacing(16)
 
         self.empty_state = EmptyConversationWidget(self.history_viewport)
         self.history_layout.addWidget(self.empty_state)
         self.history_layout.addStretch(1)
 
         self.history_scroll.setWidget(self.history_viewport)
-        root.addWidget(self.history_scroll, 1)
+        chat_shell_layout.addWidget(self.history_scroll, 1)
+        chat_column_layout.addWidget(self.chat_shell, 1)
 
-        self.prompt_dock = QFrame(self)
+        self.prompt_dock = QFrame(self.chat_column)
         self.prompt_dock.setObjectName("promptDock")
         prompt_dock_layout = QVBoxLayout(self.prompt_dock)
         prompt_dock_layout.setContentsMargins(0, 0, 0, 0)
@@ -638,8 +986,9 @@ class ReportsWidget(QWidget):
 
         prompt_shell = QFrame(self.prompt_dock)
         prompt_shell.setObjectName("promptShell")
+        _apply_soft_shadow(prompt_shell, blur_radius=26, offset_y=6, alpha=16)
         prompt_layout = QHBoxLayout(prompt_shell)
-        prompt_layout.setContentsMargins(14, 10, 10, 10)
+        prompt_layout.setContentsMargins(16, 12, 12, 12)
         prompt_layout.setSpacing(10)
 
         self.question_edit = QLineEdit(prompt_shell)
@@ -654,26 +1003,135 @@ class ReportsWidget(QWidget):
         prompt_layout.addWidget(self.generate_btn, 0)
         prompt_dock_layout.addWidget(prompt_shell)
 
-        root.addWidget(self.prompt_dock)
+        chat_column_layout.addWidget(self.prompt_dock, 0)
+        workspace_layout.addWidget(self.chat_column, 1)
+        QTimer.singleShot(0, self._update_responsive_layout)
 
     def _apply_local_styles(self):
         self.setObjectName("reportsRoot")
         self.setStyleSheet(
             """
             QWidget#reportsRoot {
-                background: #F7F8FB;
+                background: transparent;
+            }
+            QWidget#reportsWorkspace {
+                background: transparent;
+            }
+            QWidget#chatColumn {
+                background: transparent;
             }
             QFrame#reportsHeader {
                 background: transparent;
             }
             QLabel#reportsTitle {
-                color: #111827;
-                font-size: 16pt;
-                font-weight: 650;
+                color: #0B1220;
+                font-size: 22px;
+                font-weight: 600;
             }
             QLabel#reportsSubtitle {
-                color: #6B7280;
-                font-size: 10.5pt;
+                color: #66758E;
+                font-size: 13px;
+            }
+            QFrame#chatShell {
+                background: qlineargradient(
+                    x1:0, y1:0, x2:1, y2:1,
+                    stop:0 rgba(255, 255, 255, 0.60),
+                    stop:1 rgba(248, 251, 255, 0.70)
+                );
+                border: 1px solid rgba(222, 230, 245, 0.92);
+                border-radius: 30px;
+            }
+            QFrame#visualShell {
+                background: qlineargradient(
+                    x1:0, y1:0, x2:1, y2:1,
+                    stop:0 rgba(255, 255, 255, 0.74),
+                    stop:1 rgba(246, 249, 255, 0.82)
+                );
+                border: 1px solid rgba(222, 230, 245, 0.96);
+                border-radius: 28px;
+            }
+            QFrame#visualTopBar {
+                background: transparent;
+                border: none;
+            }
+            QLabel#visualPanelBadge {
+                color: #315CCF;
+                font-size: 11px;
+                font-weight: 700;
+            }
+            QLabel#visualPanelTitle {
+                color: #0B1220;
+                font-size: 17px;
+                font-weight: 600;
+            }
+            QLabel#visualPanelSummary {
+                color: #24344C;
+                font-size: 14px;
+                font-weight: 500;
+            }
+            QLabel#visualPanelText,
+            QLabel#visualPanelMeta {
+                color: #71819B;
+                font-size: 12px;
+            }
+            QFrame#visualPanelChartShell {
+                background: rgba(248, 251, 255, 0.90);
+                border: 1px solid rgba(229, 236, 247, 0.96);
+                border-radius: 18px;
+            }
+            QTableWidget#visualPanelTable {
+                background: transparent;
+                border: none;
+                color: #213047;
+                gridline-color: transparent;
+                selection-background-color: transparent;
+                alternate-background-color: transparent;
+            }
+            QTableWidget#visualPanelTable::item {
+                padding: 7px 8px;
+                border-bottom: 1px solid rgba(236, 241, 248, 0.94);
+            }
+            QPushButton#visualPanelButton {
+                background: rgba(255, 255, 255, 0.74);
+                border: 1px solid rgba(214, 223, 238, 0.95);
+                color: #3B4A62;
+                min-height: 30px;
+                padding: 4px 12px;
+                border-radius: 14px;
+                font-size: 14px;
+                font-weight: 500;
+            }
+            QPushButton#visualPanelButton:hover {
+                background: rgba(251, 253, 255, 0.98);
+                border-color: #B8C9F0;
+            }
+            QFrame#chatToolbar {
+                background: transparent;
+                border: none;
+            }
+            QLabel#chatToolbarLabel {
+                color: #6B7891;
+                font-size: 12px;
+                font-weight: 600;
+            }
+            QPushButton#clearChatButton {
+                background: rgba(255, 255, 255, 0.76);
+                border: 1px solid rgba(212, 221, 238, 0.95);
+                color: #3A4860;
+                min-height: 30px;
+                padding: 4px 13px;
+                border-radius: 15px;
+                font-size: 14px;
+                font-weight: 600;
+            }
+            QPushButton#clearChatButton:hover {
+                background: rgba(255, 255, 255, 0.95);
+                border-color: #B9C9F3;
+                color: #0F172A;
+            }
+            QPushButton#clearChatButton:disabled {
+                color: #94A3B8;
+                border-color: rgba(226, 232, 240, 0.8);
             }
             QScrollArea#conversationScroll,
             QWidget#conversationViewport {
@@ -681,140 +1139,223 @@ class ReportsWidget(QWidget):
                 border: none;
             }
             QFrame#emptyConversation {
-                background: rgba(255, 255, 255, 0.78);
-                border: 1px solid #E8ECF2;
-                border-radius: 22px;
+                background: rgba(255, 255, 255, 0.58);
+                border: 1px solid rgba(224, 232, 244, 0.95);
+                border-radius: 24px;
             }
             QLabel#emptyTitle {
-                color: #111827;
-                font-size: 15pt;
-                font-weight: 650;
+                color: #0B1220;
+                font-size: 19px;
+                font-weight: 600;
             }
             QLabel#emptySubtitle {
-                color: #6B7280;
-                font-size: 10.5pt;
+                color: #66758E;
+                font-size: 13px;
             }
             QPushButton[chip="true"] {
-                background: #FFFFFF;
-                border: 1px solid #E5EAF1;
-                color: #374151;
+                background: rgba(255, 255, 255, 0.72);
+                border: 1px solid rgba(223, 231, 244, 0.96);
+                color: #3E4C64;
                 min-height: 30px;
                 padding: 4px 12px;
                 border-radius: 15px;
+                font-size: 13px;
                 font-weight: 500;
             }
             QPushButton[chip="true"]:hover {
-                background: #F5F9FF;
-                border-color: #B8D2FA;
-                color: #1D4ED8;
+                background: rgba(250, 252, 255, 0.98);
+                border-color: #B7C8F0;
+                color: #2246A8;
+            }
+            QPushButton[filterChip="true"] {
+                background: rgba(246, 249, 255, 0.98);
+                border: 1px solid rgba(204, 217, 241, 0.96);
+                color: #3D4B63;
+                min-height: 28px;
+                padding: 3px 10px;
+                border-radius: 14px;
+                font-size: 13px;
+                font-weight: 500;
+            }
+            QPushButton[filterChip="true"]:hover {
+                background: rgba(250, 252, 255, 1.0);
+                border-color: #9EB6ED;
+                color: #2246A8;
             }
             QFrame#userBubble {
-                background: #111827;
-                border: none;
-                border-radius: 18px;
-            }
-            QLabel#userBubbleText {
-                color: #F9FAFB;
-                font-size: 10.8pt;
-            }
-            QFrame#assistantCard {
-                background: #FFFFFF;
-                border: 1px solid #E6EBF2;
+                background: qlineargradient(
+                    x1:0, y1:0, x2:1, y2:1,
+                    stop:0 rgba(13, 20, 36, 0.98),
+                    stop:1 rgba(24, 35, 58, 0.98)
+                );
+                border: 1px solid rgba(81, 97, 125, 0.22);
                 border-radius: 22px;
             }
+            QLabel#userBubbleText {
+                color: #F8FBFF;
+                font-size: 14px;
+            }
+            QFrame#assistantCard {
+                background: rgba(255, 255, 255, 0.78);
+                border: 1px solid rgba(224, 232, 244, 0.96);
+                border-radius: 26px;
+            }
             QLabel#assistantBadge {
-                color: #2563EB;
-                font-size: 9.4pt;
-                font-weight: 650;
+                color: #315CCF;
+                font-size: 11px;
+                font-weight: 700;
             }
             QLabel#assistantSummary {
-                color: #111827;
-                font-size: 11.2pt;
+                color: #0B1220;
+                font-size: 16px;
                 font-weight: 600;
             }
             QLabel#assistantText,
             QLabel#assistantStatus {
-                color: #374151;
-                font-size: 10.8pt;
+                color: #36475F;
+                font-size: 14px;
             }
             QLabel#assistantHelper {
-                color: #6B7280;
-                font-size: 9.5pt;
+                color: #71819B;
+                font-size: 12px;
             }
             QFrame#assistantChartShell {
-                background: #FBFCFE;
-                border: 1px solid #EEF2F7;
-                border-radius: 18px;
+                background: rgba(248, 251, 255, 0.88);
+                border: 1px solid rgba(229, 236, 247, 0.96);
+                border-radius: 20px;
             }
             QTableWidget#assistantTable {
                 background: transparent;
                 border: none;
-                color: #1F2937;
+                color: #213047;
                 gridline-color: transparent;
                 selection-background-color: transparent;
                 alternate-background-color: transparent;
             }
             QTableWidget#assistantTable::item {
                 padding: 7px 8px;
-                border-bottom: 1px solid #F1F4F8;
+                border-bottom: 1px solid rgba(236, 241, 248, 0.94);
             }
             QHeaderView::section {
                 background: transparent;
-                color: #6B7280;
+                color: #71819B;
                 border: none;
-                border-bottom: 1px solid #EAEFF5;
+                border-bottom: 1px solid rgba(230, 236, 245, 0.96);
                 padding: 8px 8px;
                 font-weight: 600;
             }
             QPushButton[actionButton="true"],
             QPushButton[optionButton="true"] {
-                background: transparent;
-                border: 1px solid #E4EAF2;
-                color: #374151;
+                background: rgba(255, 255, 255, 0.74);
+                border: 1px solid rgba(214, 223, 238, 0.95);
+                color: #3B4A62;
                 min-height: 30px;
                 padding: 4px 12px;
                 border-radius: 14px;
+                font-size: 14px;
                 font-weight: 500;
             }
             QPushButton[actionButton="true"]:hover,
             QPushButton[optionButton="true"]:hover {
-                background: #F8FAFD;
-                border-color: #C9D7EA;
+                background: rgba(251, 253, 255, 0.98);
+                border-color: #B8C9F0;
             }
             QFrame#promptDock {
                 background: transparent;
             }
             QFrame#promptShell {
-                background: #FFFFFF;
-                border: 1px solid #E4EAF2;
-                border-radius: 20px;
+                background: rgba(255, 255, 255, 0.84);
+                border: 1px solid rgba(223, 231, 243, 0.98);
+                border-radius: 24px;
             }
             QLineEdit#promptInput {
                 background: transparent;
                 border: none;
-                padding: 10px 4px;
-                min-height: 26px;
-                font-size: 11pt;
-                color: #111827;
+                padding: 13px 8px;
+                min-height: 30px;
+                font-size: 15px;
+                color: #0B1220;
             }
             QLineEdit#promptInput:focus {
                 border: none;
             }
             QPushButton#sendButton {
-                background: #111827;
+                background: #10182B;
                 color: #FFFFFF;
                 border: none;
-                border-radius: 14px;
-                min-width: 92px;
-                min-height: 38px;
-                padding: 0 14px;
+                border-radius: 17px;
+                min-width: 100px;
+                min-height: 42px;
+                padding: 0 16px;
+                font-size: 14px;
                 font-weight: 650;
             }
             QPushButton#sendButton:hover {
-                background: #1F2937;
+                background: #1A2740;
+            }
+            QWidget#reportsRoot QScrollBar:vertical {
+                background: transparent;
+                width: 10px;
+                margin: 2px 0 2px 0;
+            }
+            QWidget#reportsRoot QScrollBar::handle:vertical {
+                background: rgba(118, 132, 166, 0.32);
+                border-radius: 5px;
+                min-height: 30px;
+            }
+            QWidget#reportsRoot QScrollBar::add-line:vertical,
+            QWidget#reportsRoot QScrollBar::sub-line:vertical {
+                height: 0;
             }
             """
         )
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        base = QLinearGradient(0, 0, self.width(), self.height())
+        base.setColorAt(0.0, QColor(245, 241, 255))
+        base.setColorAt(0.44, QColor(239, 246, 255))
+        base.setColorAt(1.0, QColor(250, 252, 255))
+        painter.fillRect(self.rect(), base)
+
+        accents = [
+            ((int(self.width() * 0.16), int(self.height() * 0.10)), int(min(self.width(), self.height()) * 0.26), QColor(204, 189, 255, 60)),
+            ((int(self.width() * 0.90), int(self.height() * 0.18)), int(min(self.width(), self.height()) * 0.22), QColor(176, 212, 255, 50)),
+            ((int(self.width() * 0.74), int(self.height() * 0.84)), int(min(self.width(), self.height()) * 0.18), QColor(223, 232, 255, 44)),
+        ]
+        for (cx, cy), radius, color in accents:
+            glow = QRadialGradient(cx, cy, radius)
+            glow.setColorAt(0.0, color)
+            glow.setColorAt(0.7, QColor(color.red(), color.green(), color.blue(), max(10, color.alpha() // 3)))
+            glow.setColorAt(1.0, QColor(color.red(), color.green(), color.blue(), 0))
+            painter.fillRect(self.rect(), glow)
+
+        super().paintEvent(event)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_responsive_layout()
+
+    def _update_responsive_layout(self):
+        root_layout = self.layout()
+        if root_layout is not None:
+            width = max(self.width(), 900)
+            side_margin = 10 if width < 1024 else 14 if width < 1440 else 18
+            root_layout.setContentsMargins(side_margin, 18, side_margin, 16)
+
+        available_width = self.history_scroll.viewport().width() or self.chat_shell.width() or self.workspace.width()
+        if not available_width:
+            return
+
+        assistant_max = max(720, available_width - 28)
+        user_max = max(420, int(assistant_max * 0.76))
+
+        for widget in self.history_viewport.findChildren(AssistantMessageWidget):
+            widget.set_card_max_width(assistant_max)
+        for widget in self.history_viewport.findChildren(UserMessageWidget):
+            widget.set_bubble_max_width(user_max)
 
     def generate_report(self):
         question = (self.question_edit.text() or "").strip()
@@ -830,6 +1371,9 @@ class ReportsWidget(QWidget):
             self._execute_plan_choice,
             self._handle_result_feedback,
             self._show_candidate_picker,
+            self._show_visual_result,
+            self._apply_filter_choice,
+            self._select_result_on_map,
             self.history_viewport,
         )
         self._append_history_widget(response_widget)
@@ -857,11 +1401,13 @@ class ReportsWidget(QWidget):
             user_action_json={"action": "execute_plan_choice"},
         )
         response_widget.show_loading(question)
+        self._show_visual_loading("Aguardando confirmacao da analise...")
         response_widget.set_execution_context(
             question,
             plan,
             getattr(response_widget, "available_candidates", []),
         )
+        self.clear_chat_btn.setEnabled(False)
         self.generate_btn.setEnabled(False)
         self.generate_btn.setText("Analisando...")
         self.question_edit.setEnabled(False)
@@ -876,6 +1422,48 @@ class ReportsWidget(QWidget):
         )
         self._scroll_to_bottom()
 
+    def _apply_filter_choice(self, question: str, plan: QueryPlan, filter_spec, response_widget: AssistantMessageWidget):
+        if plan is None or filter_spec is None:
+            return
+        selected_plan = deepcopy(plan)
+        selected_plan.filters = [
+            item
+            for item in (selected_plan.filters or [])
+            if (
+                item.field == filter_spec.field
+                and item.operator == filter_spec.operator
+                and item.layer_role == filter_spec.layer_role
+                and str(item.value) == str(filter_spec.value)
+            )
+        ]
+        selected_plan.detected_filters_text = self._format_selected_filter_text(filter_spec)
+        self._safe_register_explicit_feedback(
+            response_widget,
+            feedback_type="selected_filter",
+            plan=selected_plan,
+            notes="Usuario escolheu um filtro detectado no card da resposta.",
+            user_action_json={"selected_filter": getattr(filter_spec, "to_dict", lambda: {})()},
+        )
+        self._execute_plan_choice(question, selected_plan, response_widget)
+
+    def _select_result_on_map(self, response_widget: AssistantMessageWidget):
+        plan = response_widget.feedback_plan()
+        if plan is None or response_widget.select_map_button is None:
+            return
+        try:
+            ok, message = self._ensure_report_executor().select_plan_features(plan)
+            response_widget.select_map_button.setText("Selecionado" if ok else "Sem selecao")
+            QTimer.singleShot(1600, lambda: response_widget.select_map_button and response_widget.select_map_button.setText("Selecionar no mapa"))
+            log_info(f"[Relatorios] selecao no mapa ok={ok} message='{message}'")
+        except Exception as exc:
+            detail = self._format_error_detail(exc)
+            response_widget.select_map_button.setText("Falhou")
+            QTimer.singleShot(1600, lambda: response_widget.select_map_button and response_widget.select_map_button.setText("Selecionar no mapa"))
+            log_error(
+                "[Relatorios] falha ao selecionar no mapa "
+                f"error={exc}\n{traceback.format_exc()}"
+            )
+
     def _start_run(
         self,
         question: str,
@@ -886,6 +1474,8 @@ class ReportsWidget(QWidget):
         if not reuse_history or getattr(response_widget, "memory_handle", None) is None:
             response_widget.memory_handle = self._create_query_history_handle(question)
         response_widget.show_loading(question)
+        self._show_visual_loading("Analisando e preparando o resultado visual...")
+        self.clear_chat_btn.setEnabled(False)
         self.generate_btn.setEnabled(False)
         self.generate_btn.setText("Analisando...")
         self.question_edit.setEnabled(False)
@@ -925,6 +1515,7 @@ class ReportsWidget(QWidget):
                     interpretation.plan,
                     interpretation.candidate_interpretations,
                 )
+                self._show_visual_empty("Confirme a interpretacao para gerar o painel visual.")
                 return
 
             if interpretation.status == "ambiguous":
@@ -934,23 +1525,31 @@ class ReportsWidget(QWidget):
                         interpretation.message or "Encontrei algumas interpretacoes possiveis.",
                         interpretation.candidate_interpretations,
                     )
+                    self._show_visual_empty("Escolha uma interpretacao para atualizar o painel visual.")
                     return
                 response_widget.show_ambiguity(
                     question,
                     interpretation.message,
                     interpretation.options,
                 )
+                self._show_visual_empty("Ainda nao houve um resultado visual para esta pergunta.")
                 return
 
             if interpretation.status != "ok" or interpretation.plan is None:
                 response_widget.show_message(
                     interpretation.message or "Nao foi possivel interpretar essa pergunta.",
                 )
+                self._show_visual_empty("Nenhum resultado visual foi gerado para esta pergunta.")
                 self._safe_mark_query_failure(
                     memory_handle,
                     error_message=f"interpretation:{interpretation.status}: {interpretation.message or 'sem mensagem'}",
                     duration_ms=int((perf_counter() - started_at) * 1000),
                     plan=interpretation.plan,
+                )
+                self._ensure_ai_engine().record_interpretation_failure(
+                    question=question,
+                    detail=interpretation.message or interpretation.status or "interpretacao sem plano",
+                    interpretation=interpretation,
                 )
                 return
 
@@ -973,6 +1572,11 @@ class ReportsWidget(QWidget):
                 error_message=f"interpretation_error: {detail}",
                 duration_ms=int((perf_counter() - started_at) * 1000),
             )
+            self._ensure_ai_engine().record_interpretation_failure(
+                question=question,
+                detail=detail,
+            )
+            self._show_visual_empty("Falha ao montar o resultado visual desta pergunta.")
             response_widget.show_message(
                 "Nao foi possivel analisar essa pergunta agora.\n"
                 f"Detalhe tecnico: {detail}\n"
@@ -1039,6 +1643,7 @@ class ReportsWidget(QWidget):
                 memory_handle=memory_handle,
             )
             if not result.ok:
+                self._show_visual_empty("Nenhum resultado visual foi gerado para esta pergunta.")
                 response_widget.show_message(
                     result.message or "Nao foi possivel gerar esse relatorio.",
                 )
@@ -1056,6 +1661,7 @@ class ReportsWidget(QWidget):
                     memory_handle=memory_handle,
                     detail=detail,
                 )
+            self._show_visual_empty("Falha ao gerar o painel visual desta consulta.")
             response_widget.show_message(
                 "Nao foi possivel gerar esse relatorio agora.\n"
                 f"Detalhe tecnico: {detail}\n"
@@ -1072,11 +1678,13 @@ class ReportsWidget(QWidget):
         insert_index = max(0, self.history_layout.count() - 1)
         self.history_layout.insertWidget(insert_index, widget)
         self.history_count += 1
+        self._update_responsive_layout()
         self._scroll_to_bottom()
 
     def _set_history_started(self, started: bool):
         self.empty_state.setVisible(not started)
         self.footer_suggestions.setVisible(not started)
+        self.clear_chat_btn.setEnabled(started and self.generate_btn.isEnabled())
 
     def _scroll_to_bottom(self):
         QTimer.singleShot(
@@ -1095,10 +1703,59 @@ class ReportsWidget(QWidget):
         self.generate_btn.setEnabled(True)
         self.generate_btn.setText("Gerar")
         self.question_edit.setEnabled(True)
+        self.clear_chat_btn.setEnabled(self.history_count > 0)
         self.question_edit.setFocus()
         self._scroll_to_bottom()
 
+    def _clear_chat_history(self):
+        if not self.generate_btn.isEnabled():
+            return
+
+        for index in reversed(range(self.history_layout.count())):
+            item = self.history_layout.itemAt(index)
+            widget = item.widget()
+            if widget is None or widget is self.empty_state:
+                continue
+            taken = self.history_layout.takeAt(index)
+            if taken is not None and taken.widget() is not None:
+                taken.widget().deleteLater()
+
+        self.history_count = 0
+        self.context_memory.clear()
+        if self.conversation_memory_service is not None:
+            self.conversation_memory_service.clear_state(self.session_id)
+        self.session_id = uuid.uuid4().hex
+        if self.ai_engine is not None:
+            self.ai_engine.session_id = self.session_id
+        self.question_edit.clear()
+        self._set_history_started(False)
+        self.question_edit.setFocus()
+        self.history_scroll.verticalScrollBar().setValue(0)
+
+    def _show_visual_loading(self, message: str):
+        if self.visual_panel is not None:
+            self.visual_panel.show_loading(message)
+
+    def _show_visual_empty(self, message: str = "A ultima analise com grafico e tabela aparecera aqui."):
+        if self.visual_panel is not None:
+            self.visual_panel.show_empty(message)
+
+    def _show_visual_result(self, result: QueryResult):
+        if self.visual_panel is not None:
+            self.visual_panel.show_result(result)
+
+    def _format_selected_filter_text(self, filter_spec) -> str:
+        field_label = str(getattr(filter_spec, "field", "") or "").replace("_", " ").strip()
+        value_label = str(getattr(filter_spec, "value", "") or "").strip()
+        if field_label and value_label:
+            return f"{field_label}: {value_label}"
+        return value_label or field_label or ""
+
     def _batch_size_for_plan(self, plan: QueryPlan) -> int:
+        if plan.intent == "composite_metric":
+            return 220
+        if plan.intent == "derived_ratio":
+            return 220
         if plan.intent == "spatial_aggregate":
             return 120
         if plan.metric.use_geometry:
@@ -1148,6 +1805,20 @@ class ReportsWidget(QWidget):
             self.chart_factory = ChartFactory()
         return self.chart_factory
 
+    def _ensure_dictionary_service(self):
+        if self.dictionary_service is None:
+            self.dictionary_service = build_dictionary_service()
+        return self.dictionary_service
+
+    def _preload_dictionary(self):
+        try:
+            self._ensure_dictionary_service()
+        except Exception as exc:
+            log_warning(
+                "[Relatorios] falha ao preload do dicionario semantico "
+                f"error={exc}\n{traceback.format_exc()}"
+            )
+
     def _ensure_operational_memory_services(self):
         if self.memory_services is None:
             self.memory_services = build_operational_memory_services()
@@ -1155,6 +1826,7 @@ class ReportsWidget(QWidget):
             self.feedback_service = self.memory_services.get("feedback_service")
             self.semantic_alias_service = self.memory_services.get("alias_service")
             self.approved_example_service = self.memory_services.get("approved_example_service")
+            self.conversation_memory_service = self.memory_services.get("conversation_memory_service")
         return self.memory_services
 
     def _ensure_query_memory_service(self):
@@ -1169,16 +1841,20 @@ class ReportsWidget(QWidget):
                 query_interpreter=self._ensure_query_interpreter(),
                 report_executor=self._ensure_report_executor(),
                 chart_factory=self._ensure_chart_factory(),
+                dictionary_service=self._ensure_dictionary_service(),
                 context_memory=self.context_memory,
                 query_memory_service=self.query_memory_service,
+                conversation_memory_service=self.conversation_memory_service,
                 session_id=self.session_id,
             )
         return self.ai_engine
 
     def _create_query_history_handle(self, question: str):
         try:
+            normalized_query = self._ensure_dictionary_service().normalize_query(question)
             return self._ensure_query_memory_service().start_query(
                 raw_query=question,
+                normalized_query_override=normalized_query,
                 session_id=self.session_id,
                 source_context_json=self.context_memory.build_prompt_context(),
             )

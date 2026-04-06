@@ -14,6 +14,8 @@ class FieldSchema:
     search_text: str = ""
     is_filter_candidate: bool = False
     is_location_candidate: bool = False
+    role_scores: Dict[str, float] = field(default_factory=dict)
+    semantic_roles: List[str] = field(default_factory=list)
 
     @property
     def label(self) -> str:
@@ -129,6 +131,39 @@ class FilterSpec:
 
 
 @dataclass
+class CompositeOperandSpec:
+    label: str
+    layer_id: Optional[str] = None
+    layer_name: str = ""
+    boundary_layer_id: Optional[str] = None
+    boundary_layer_name: str = ""
+    metric: MetricSpec = field(default_factory=MetricSpec)
+    filters: List[FilterSpec] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        payload = asdict(self)
+        payload["metric"] = self.metric.to_dict()
+        payload["filters"] = [item.to_dict() for item in self.filters]
+        return payload
+
+
+@dataclass
+class CompositeSpec:
+    operation: str = ""
+    label: str = ""
+    unit_label: str = ""
+    operands: List[CompositeOperandSpec] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "operation": self.operation,
+            "label": self.label,
+            "unit_label": self.unit_label,
+            "operands": [item.to_dict() for item in self.operands],
+        }
+
+
+@dataclass
 class AmbiguityOption:
     label: str
     reason: str = ""
@@ -169,6 +204,7 @@ class QueryPlan:
     chart: ChartSpec = field(default_factory=ChartSpec)
     spatial_relation: Optional[str] = None
     filters: List[FilterSpec] = field(default_factory=list)
+    composite: Optional[CompositeSpec] = None
     planning_trace: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -176,6 +212,7 @@ class QueryPlan:
         payload["metric"] = self.metric.to_dict()
         payload["chart"] = self.chart.to_dict()
         payload["filters"] = [item.to_dict() for item in self.filters]
+        payload["composite"] = self.composite.to_dict() if self.composite is not None else None
         if self.target_layer_name:
             payload["target_layer"] = self.target_layer_name
         if self.source_layer_name:

@@ -1,11 +1,26 @@
 from datetime import datetime
-from pathlib import Path
 
-from qgis.core import Qgis, QgsMessageLog
+try:
+    from qgis.core import Qgis, QgsMessageLog
+except Exception:  # pragma: no cover - allows pure-python smoke tests
+    class Qgis:
+        Info = "INFO"
+        Warning = "WARNING"
+        Critical = "CRITICAL"
+
+    class QgsMessageLog:
+        @staticmethod
+        def logMessage(message, tag, level=None):
+            return None
+
+try:
+    from ..utils.runtime_paths import runtime_state_file
+except ImportError:  # pragma: no cover - supports running report_view as a top-level package
+    from utils.runtime_paths import runtime_state_file
 
 
 LOG_CHANNEL = "PowerBI Summarizer"
-LOG_FILE = Path(__file__).resolve().parent.parent / "relatorios_debug.log"
+LOG_FILE = runtime_state_file("relatorios_debug.log")
 
 
 def _append_file_log(level_name: str, message: str):

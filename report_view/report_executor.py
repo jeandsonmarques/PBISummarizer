@@ -1,3 +1,4 @@
+import copy
 from collections import defaultdict
 from typing import Dict, List, Optional, Tuple
 
@@ -9,9 +10,11 @@ from qgis.core import (
     QgsProject,
     QgsSpatialIndex,
     QgsVectorLayer,
+    QgsWkbTypes,
 )
 
-from .result_models import FilterSpec, QueryPlan, QueryResult, ResultRow, SummaryPayload
+from .report_logging import log_info
+from .result_models import CompositeOperandSpec, FilterSpec, MetricSpec, QueryPlan, QueryResult, ResultRow, SummaryPayload
 from .text_utils import normalize_compact, normalize_text
 
 
@@ -81,6 +84,8 @@ class _ValueInsightJob(ReportExecutionJob):
         self.total_value = 0.0
         self.contributing_count = 0
         self.filtered_records = 0
+        self.target_matches = 0
+        self.boundary_filtered_out = 0
 
     def _step_impl(self, batch_size: int):
         if self.done:
@@ -95,10 +100,12 @@ class _ValueInsightJob(ReportExecutionJob):
             self.processed += 1
             if not self.executor._feature_matches_filters(feature, self.plan.filters, self.field_names, "target"):
                 continue
+            self.target_matches += 1
 
             feature_geometry = feature.geometry()
             clipped_geometry = self.executor._clip_geometry_to_boundary(feature_geometry, self.boundary_context)
             if self.boundary_context is not None and clipped_geometry is None:
+                self.boundary_filtered_out += 1
                 continue
 
             self.filtered_records += 1
@@ -132,19 +139,67 @@ class _ValueInsightJob(ReportExecutionJob):
     def _finish(self):
         if self.plan.metric.operation in {"min", "max"}:
             if not self.values:
-                self._complete(QueryResult(ok=False, message="Nao encontrei dados compativeis com essa pergunta."))
+                fallback_result = self.executor._try_execution_fallback(self.plan, self.layer)
+                if fallback_result is not None:
+                    self._complete(fallback_result)
+                    return
+                self._complete(
+                    self.executor._build_no_data_result(
+                        self.plan,
+                        layer_name=self.layer.name(),
+                        target_matches=self.target_matches,
+                        contributing_count=0,
+                        boundary_filtered_out=self.boundary_filtered_out,
+                        boundary_context=self.boundary_context,
+                    )
+                )
                 return
             selected_value = min(self.values) if self.plan.metric.operation == "min" else max(self.values)
         elif self.plan.metric.operation == "avg":
             if self.contributing_count <= 0:
-                self._complete(QueryResult(ok=False, message="Nao encontrei dados compativeis com essa pergunta."))
+                fallback_result = self.executor._try_execution_fallback(self.plan, self.layer)
+                if fallback_result is not None:
+                    self._complete(fallback_result)
+                    return
+                self._complete(
+                    self.executor._build_no_data_result(
+                        self.plan,
+                        layer_name=self.layer.name(),
+                        target_matches=self.target_matches,
+                        contributing_count=self.contributing_count,
+                        boundary_filtered_out=self.boundary_filtered_out,
+                        boundary_context=self.boundary_context,
+                    )
+                )
                 return
             selected_value = self.total_value / max(1, self.contributing_count)
         else:
             if self.contributing_count <= 0:
-                self._complete(QueryResult(ok=False, message="Nao encontrei dados compativeis com essa pergunta."))
+                fallback_result = self.executor._try_execution_fallback(self.plan, self.layer)
+                if fallback_result is not None:
+                    self._complete(fallback_result)
+                    return
+                self._complete(
+                    self.executor._build_no_data_result(
+                        self.plan,
+                        layer_name=self.layer.name(),
+                        target_matches=self.target_matches,
+                        contributing_count=self.contributing_count,
+                        boundary_filtered_out=self.boundary_filtered_out,
+                        boundary_context=self.boundary_context,
+                    )
+                )
                 return
             selected_value = self.total_value
+
+        self.executor._record_execution_trace(
+            self.plan,
+            status="ok",
+            layer_name=self.layer.name(),
+            target_matches=self.target_matches,
+            contributing_count=self.contributing_count,
+            boundary_filtered_out=self.boundary_filtered_out,
+        )
 
         label = self.plan.metric.field_label or self.plan.metric.label or self.plan.metric.field or "Valor"
         self._complete(
@@ -185,6 +240,8 @@ class _DirectAggregateJob(ReportExecutionJob):
         self.totals = defaultdict(float)
         self.counts = defaultdict(int)
         self.filtered_records = 0
+        self.target_matches = 0
+        self.boundary_filtered_out = 0
         self.distance_area = self.executor._distance_area(self.layer)
         self.field_names = self.layer.fields().names()
         self.iterator = iter(self.layer.getFeatures())
@@ -197,15 +254,41 @@ class _DirectAggregateJob(ReportExecutionJob):
             try:
                 feature = next(self.iterator)
             except StopIteration:
+                if not self.totals:
+                    fallback_result = self.executor._try_execution_fallback(self.plan, self.layer)
+                    if fallback_result is not None:
+                        self._complete(fallback_result)
+                        return
+                    self._complete(
+                        self.executor._build_no_data_result(
+                            self.plan,
+                            layer_name=self.layer.name(),
+                            target_matches=self.target_matches,
+                            contributing_count=self.filtered_records,
+                            boundary_filtered_out=self.boundary_filtered_out,
+                            boundary_context=self.boundary_context,
+                        )
+                    )
+                    return
+                self.executor._record_execution_trace(
+                    self.plan,
+                    status="ok",
+                    layer_name=self.layer.name(),
+                    target_matches=self.target_matches,
+                    contributing_count=self.filtered_records,
+                    boundary_filtered_out=self.boundary_filtered_out,
+                )
                 self._complete(self.executor._build_result(self.plan, self.totals, self.counts, self.filtered_records))
                 return
 
             self.processed += 1
             if not self.executor._feature_matches_filters(feature, self.plan.filters, self.field_names, "target"):
                 continue
+            self.target_matches += 1
             feature_geometry = feature.geometry()
             clipped_geometry = self.executor._clip_geometry_to_boundary(feature_geometry, self.boundary_context)
             if self.boundary_context is not None and clipped_geometry is None:
+                self.boundary_filtered_out += 1
                 continue
 
             category_value = self.executor._render_category(feature[self.plan.group_field])
@@ -373,19 +456,237 @@ class _SpatialAggregateJob(ReportExecutionJob):
                 self.filtered_records += 1
 
 
+class _DerivedRatioJob(ReportExecutionJob):
+    def __init__(self, executor: "ReportExecutor", plan: QueryPlan):
+        super().__init__(executor, plan)
+        self.target_layer = self.executor._get_layer(plan.target_layer_id)
+        self.source_layer = self.executor._get_layer(plan.source_layer_id)
+        self.phase_label = "analisando rede"
+        if self.target_layer is None or not self.target_layer.isValid():
+            self._complete(QueryResult(ok=False, message="Nao encontrei a camada de rede usada nesse calculo."))
+            return
+        if self.source_layer is None or not self.source_layer.isValid():
+            self._complete(QueryResult(ok=False, message="Nao encontrei a camada de ligacoes usada nesse calculo."))
+            return
+
+        self.target_boundary_context, error_message = self.executor._prepare_boundary_filter_context(
+            plan,
+            target_layer=self.target_layer,
+        )
+        if error_message:
+            self._complete(QueryResult(ok=False, message=error_message))
+            return
+
+        self.source_boundary_context, error_message = self.executor._prepare_boundary_filter_context(
+            plan,
+            target_layer=self.source_layer,
+        )
+        if error_message:
+            self._complete(QueryResult(ok=False, message=error_message))
+            return
+
+        self.target_distance_area = self.executor._distance_area(self.target_layer)
+        self.target_field_names = self.target_layer.fields().names()
+        self.source_field_names = self.source_layer.fields().names()
+        self.target_iterator = iter(self.target_layer.getFeatures())
+        self.source_iterator = None
+        self.target_total = max(0, int(self.target_layer.featureCount()))
+        self.source_total = max(0, int(self.source_layer.featureCount()))
+        self.total_estimate = self.target_total + self.source_total
+        self.numerator_total = 0.0
+        self.denominator_total = 0
+        self.target_processed = 0
+        self.source_processed = 0
+
+    def _step_impl(self, batch_size: int):
+        if self.done:
+            return
+        if self.source_iterator is None:
+            self._step_target(batch_size)
+            return
+        self._step_source(batch_size)
+
+    def _step_target(self, batch_size: int):
+        self.phase_label = "analisando rede"
+        for _ in range(batch_size):
+            try:
+                feature = next(self.target_iterator)
+            except StopIteration:
+                self.source_iterator = iter(self.source_layer.getFeatures())
+                self.phase_label = "analisando ligacoes"
+                return
+
+            self.processed += 1
+            if not self.executor._feature_matches_filters(feature, self.plan.filters, self.target_field_names, "target"):
+                continue
+            clipped_geometry = self.executor._clip_geometry_to_boundary(feature.geometry(), self.target_boundary_context)
+            if self.target_boundary_context is not None and clipped_geometry is None:
+                continue
+            if clipped_geometry is None or clipped_geometry.isEmpty():
+                continue
+            numeric_value = self.executor._safe_float(self.target_distance_area.measureLength(clipped_geometry))
+            if numeric_value is None:
+                continue
+            self.numerator_total += float(numeric_value)
+            self.target_processed += 1
+
+    def _step_source(self, batch_size: int):
+        self.phase_label = "analisando ligacoes"
+        for _ in range(batch_size):
+            try:
+                feature = next(self.source_iterator)
+            except StopIteration:
+                self._finish()
+                return
+
+            self.processed += 1
+            if not self.executor._feature_matches_filters(feature, self.plan.filters, self.source_field_names, "source"):
+                continue
+            clipped_geometry = self.executor._clip_geometry_to_boundary(feature.geometry(), self.source_boundary_context)
+            if self.source_boundary_context is not None and clipped_geometry is None:
+                continue
+            self.denominator_total += 1
+            self.source_processed += 1
+
+    def _finish(self):
+        if self.numerator_total <= 0 or self.denominator_total <= 0:
+            self._complete(QueryResult(ok=False, message="Nao encontrei dados suficientes para calcular metros por ligacao."))
+            return
+        ratio_value = float(self.numerator_total) / max(1, int(self.denominator_total))
+        self._complete(
+            QueryResult(
+                ok=True,
+                summary=SummaryPayload(
+                    text=self.executor._build_ratio_summary(
+                        self.plan,
+                        ratio_value,
+                        self.numerator_total,
+                        self.denominator_total,
+                    )
+                ),
+                rows=[ResultRow(category="Metros por ligacao", value=float(ratio_value), raw_category="Metros por ligacao")],
+                value_label=self.executor._value_label(self.plan),
+                show_percent=False,
+                plan=self.plan,
+                total_records=self.source_processed,
+                total_value=float(ratio_value),
+            )
+        )
+
+
+class _CompositeMetricJob(ReportExecutionJob):
+    def __init__(self, executor: "ReportExecutor", plan: QueryPlan):
+        super().__init__(executor, plan)
+        self.phase_label = "analisando dados"
+        self.operation = (getattr(plan.composite, "operation", "") or plan.metric.operation or "").lower()
+        self.operands = list(getattr(plan.composite, "operands", []) or [])
+        self.operand_jobs: List[_ValueInsightJob] = []
+        self.operand_results: List[QueryResult] = []
+        self.current_index = 0
+        self.total_estimate = 0
+
+        if len(self.operands) < 2:
+            self._complete(QueryResult(ok=False, message="Nao encontrei operandos suficientes para essa operacao."))
+            return
+
+        for operand in self.operands:
+            operand_plan = self.executor._build_operand_plan(self.plan, operand)
+            job = _ValueInsightJob(self.executor, operand_plan)
+            if job.done and not job.result.ok:
+                self._complete(job.result)
+                return
+            self.operand_jobs.append(job)
+            self.total_estimate += max(0, int(job.total_estimate or 0))
+        if self.total_estimate <= 0:
+            self.total_estimate = len(self.operand_jobs)
+
+    def _step_impl(self, batch_size: int):
+        if self.done:
+            return
+        if self.current_index >= len(self.operand_jobs):
+            self._finish()
+            return
+
+        current_job = self.operand_jobs[self.current_index]
+        current_operand = self.operands[self.current_index]
+        self.phase_label = f"analisando {normalize_text(current_operand.label or 'operando')}".strip()
+        done = current_job.step(batch_size=batch_size)
+        self.processed = sum(item.processed for item in self.operand_jobs)
+        if not done:
+            return
+        if not current_job.result.ok:
+            self._complete(current_job.result)
+            return
+        self.operand_results.append(current_job.result)
+        self.current_index += 1
+        if self.current_index >= len(self.operand_jobs):
+            self._finish()
+
+    def _finish(self):
+        result = self.executor._finalize_composite_results(self.plan, self.operands, self.operand_results)
+        self._complete(result)
+
+
 class ReportExecutor:
     def execute(self, plan: QueryPlan) -> QueryResult:
         if plan.intent == "value_insight":
             return self._execute_value_insight(plan)
+        if plan.intent == "composite_metric":
+            return self._execute_composite_metric(plan)
+        if plan.intent == "derived_ratio":
+            return self._execute_derived_ratio(plan)
         if plan.intent == "aggregate_chart":
             return self._execute_direct(plan)
         if plan.intent == "spatial_aggregate":
             return self._execute_spatial(plan)
         return QueryResult(ok=False, message="Nao foi possivel montar um plano de consulta valido.")
 
+    def select_plan_features(self, plan: QueryPlan) -> Tuple[bool, str]:
+        layer, layer_role = self._selection_layer_for_plan(plan)
+        if layer is None or not layer.isValid():
+            return False, "Nao encontrei a camada usada nesse resultado."
+
+        boundary_context = None
+        if layer_role == "target":
+            boundary_context, error_message = self._prepare_boundary_filter_context(plan, target_layer=layer)
+            if error_message:
+                return False, error_message
+
+        matching_ids: List[int] = []
+        field_names = layer.fields().names()
+        for feature in layer.getFeatures():
+            if not self._feature_matches_filters(feature, plan.filters, field_names, layer_role):
+                continue
+            if boundary_context is not None:
+                clipped_geometry = self._clip_geometry_to_boundary(feature.geometry(), boundary_context)
+                if clipped_geometry is None:
+                    continue
+            matching_ids.append(feature.id())
+
+        for current_layer in QgsProject.instance().mapLayers().values():
+            if isinstance(current_layer, QgsVectorLayer) and current_layer.isValid():
+                current_layer.removeSelection()
+
+        if not matching_ids:
+            return False, "Nenhuma feicao filtrada foi encontrada para selecionar no mapa."
+
+        layer.selectByIds(matching_ids)
+        return True, f"{len(matching_ids)} feicoes selecionadas em {layer.name()}."
+
+    def _selection_layer_for_plan(self, plan: QueryPlan) -> Tuple[Optional[QgsVectorLayer], str]:
+        if plan.intent == "spatial_aggregate":
+            return self._get_layer(plan.source_layer_id), "source"
+        if plan.intent in {"aggregate_chart", "value_insight"}:
+            return self._get_layer(plan.target_layer_id), "target"
+        return self._get_layer(plan.target_layer_id), "target"
+
     def create_job(self, plan: QueryPlan) -> ReportExecutionJob:
         if plan.intent == "value_insight":
             return _ValueInsightJob(self, plan)
+        if plan.intent == "composite_metric":
+            return _CompositeMetricJob(self, plan)
+        if plan.intent == "derived_ratio":
+            return _DerivedRatioJob(self, plan)
         if plan.intent == "aggregate_chart":
             return _DirectAggregateJob(self, plan)
         if plan.intent == "spatial_aggregate":
@@ -394,32 +695,278 @@ class ReportExecutor:
         job._complete(QueryResult(ok=False, message="Nao foi possivel montar um plano de consulta valido."))
         return job
 
+    def _record_execution_trace(self, plan: QueryPlan, **payload) -> None:
+        trace = dict(plan.planning_trace or {})
+        execution_trace = dict(trace.get("execution") or {})
+        execution_trace.update(payload)
+        trace["execution"] = execution_trace
+        extra_debug = list(payload.get("conversation_debug") or [])
+        if extra_debug:
+            conversation_debug = list(trace.get("conversation_debug") or [])
+            conversation_debug.extend(str(item).strip() for item in extra_debug if str(item or "").strip())
+            trace["conversation_debug"] = conversation_debug[:10]
+        plan.planning_trace = trace
+
+    def _location_like_field(self, field_name: str) -> bool:
+        normalized = normalize_text(field_name)
+        return any(
+            token in normalized
+            for token in ("municipio", "cidade", "bairro", "localidade", "setor", "distrito", "logradouro", "nome", "nm")
+        )
+
+    def _describe_filters(self, filters, layer_role: Optional[str] = None) -> str:
+        parts = []
+        for filter_spec in list(filters or []):
+            if not isinstance(filter_spec, FilterSpec):
+                continue
+            if layer_role is not None and filter_spec.layer_role not in {"any", layer_role}:
+                continue
+            field_label = filter_spec.field or "campo"
+            value_label = filter_spec.value if filter_spec.value not in (None, "") else "<vazio>"
+            parts.append(f"{field_label}={value_label}")
+        return ", ".join(parts)
+
+    def _build_no_data_result(
+        self,
+        plan: QueryPlan,
+        *,
+        layer_name: str,
+        target_matches: int,
+        contributing_count: int,
+        boundary_filtered_out: int = 0,
+        boundary_context: Optional[Dict] = None,
+    ) -> QueryResult:
+        self._record_execution_trace(
+            plan,
+            status="no_data",
+            layer_name=layer_name,
+            target_matches=int(target_matches),
+            contributing_count=int(contributing_count),
+            boundary_filtered_out=int(boundary_filtered_out),
+            boundary_context=boundary_context or {},
+        )
+        message = self._build_no_data_message(
+            plan,
+            layer_name=layer_name,
+            target_matches=target_matches,
+            contributing_count=contributing_count,
+            boundary_filtered_out=boundary_filtered_out,
+            boundary_context=boundary_context,
+        )
+        log_info(
+            "[Relatorios] execucao sem dados "
+            f"layer={layer_name} target_matches={target_matches} contributing_count={contributing_count} "
+            f"boundary_filtered_out={boundary_filtered_out} message='{message}'"
+        )
+        return QueryResult(ok=False, message=message, plan=plan)
+
+    def _build_no_data_message(
+        self,
+        plan: QueryPlan,
+        *,
+        layer_name: str,
+        target_matches: int,
+        contributing_count: int,
+        boundary_filtered_out: int = 0,
+        boundary_context: Optional[Dict] = None,
+    ) -> str:
+        trace = dict(plan.planning_trace or {})
+        chosen_metric_field = str(trace.get("chosen_metric_field") or plan.metric.field or "")
+        diameter_field = str(trace.get("chosen_diameter_field") or "")
+        location_field = str(trace.get("chosen_location_field") or "")
+        geo_mode = str(trace.get("geo_filter_mode") or "none")
+        requested_kinds = {str(item).lower() for item in list(trace.get("requested_filter_kinds") or [])}
+        target_filters_text = self._describe_filters(plan.filters, layer_role="target")
+        boundary_filters_text = self._describe_filters(plan.filters, layer_role="boundary")
+
+        if "diameter" in requested_kinds and not diameter_field:
+            return f"Encontrei a camada {layer_name}, mas nao consegui localizar um campo de diametro compativel."
+        if "location" in requested_kinds and not location_field and not plan.boundary_layer_id:
+            return f"Encontrei a camada {layer_name}, mas nao consegui localizar um campo geografico compativel nessa camada."
+        if plan.metric.use_geometry and target_matches > 0 and contributing_count <= 0:
+            metric_name = "comprimento" if plan.metric.operation == "length" else "area"
+            return f"A camada {layer_name} foi encontrada, mas nao possui geometria valida para calcular {metric_name} com os filtros aplicados."
+        if boundary_context is not None and target_matches > 0 and contributing_count <= 0:
+            boundary_name = str((boundary_context or {}).get("layer_name") or plan.boundary_layer_name or "limite geografico")
+            if boundary_filtered_out > 0:
+                return f"Encontrei o valor geografico em {boundary_name}, mas a intersecao nao retornou feicoes na camada {layer_name}."
+        if target_matches <= 0 and target_filters_text:
+            if geo_mode == "textual":
+                return f"Encontrei a camada {layer_name}, mas os filtros textuais aplicados ({target_filters_text}) nao retornaram feicoes compativeis."
+            return f"Encontrei a camada {layer_name}, mas os filtros aplicados ({target_filters_text}) nao retornaram feicoes compativeis."
+        if plan.boundary_layer_id and boundary_filters_text and boundary_context is None:
+            return f"Encontrei a camada {layer_name}, mas nao consegui localizar o limite geografico usando {boundary_filters_text}."
+        if not plan.metric.use_geometry and plan.metric.field and target_matches > 0 and contributing_count <= 0:
+            return (
+                f"Encontrei a camada {layer_name}, mas o campo {plan.metric.field_label or plan.metric.field} "
+                "nao possui valores validos para essa operacao."
+            )
+        if plan.metric.use_geometry and "length" == plan.metric.operation and not chosen_metric_field:
+            return f"Encontrei a camada {layer_name}, mas nao encontrei uma geometria de linha valida para somar comprimento."
+        return "Nao encontrei dados compativeis com essa pergunta."
+
+    def _build_boundary_fallback_plan(self, plan: QueryPlan, target_layer: QgsVectorLayer) -> Optional[QueryPlan]:
+        trace = dict(plan.planning_trace or {})
+        if plan.boundary_layer_id or trace.get("execution_fallback_attempted"):
+            return None
+
+        location_filters = [
+            filter_spec
+            for filter_spec in list(plan.filters or [])
+            if isinstance(filter_spec, FilterSpec)
+            and filter_spec.layer_role == "target"
+            and (self._location_like_field(filter_spec.field) or normalize_text(filter_spec.field) == normalize_text(trace.get("chosen_location_field") or ""))
+        ]
+        if not location_filters:
+            return None
+
+        location_filter = location_filters[0]
+        boundary_match = self._find_boundary_layer_match(target_layer, location_filter.value)
+        if boundary_match is None:
+            return None
+
+        boundary_layer, boundary_field, boundary_value = boundary_match
+        fallback_plan = copy.deepcopy(plan)
+        fallback_plan.boundary_layer_id = boundary_layer.id()
+        fallback_plan.boundary_layer_name = boundary_layer.name()
+        fallback_plan.filters = [
+            item
+            for item in list(fallback_plan.filters or [])
+            if not (
+                isinstance(item, FilterSpec)
+                and item.layer_role == "target"
+                and normalize_text(item.value) == normalize_text(location_filter.value)
+                and self._location_like_field(item.field)
+            )
+        ]
+        fallback_plan.filters.append(
+            FilterSpec(
+                field=boundary_field,
+                value=boundary_value,
+                operator="eq",
+                layer_role="boundary",
+            )
+        )
+        fallback_trace = dict(fallback_plan.planning_trace or {})
+        fallback_trace["execution_fallback_attempted"] = True
+        fallback_trace["execution_fallback"] = {
+            "mode": "spatial_boundary",
+            "boundary_layer": boundary_layer.name(),
+            "boundary_field": boundary_field,
+            "boundary_value": boundary_value,
+            "replaced_location": location_filter.value,
+        }
+        fallback_trace["geo_filter_mode"] = "spatial"
+        conversation_debug = list(fallback_trace.get("conversation_debug") or [])
+        conversation_debug.append(f"Tentando fallback espacial com {boundary_layer.name()}::{boundary_field}")
+        fallback_trace["conversation_debug"] = conversation_debug[:10]
+        fallback_plan.planning_trace = fallback_trace
+        log_info(
+            "[Relatorios] fallback espacial "
+            f"target_layer={target_layer.name()} boundary_layer={boundary_layer.name()} "
+            f"boundary_field={boundary_field} value={boundary_value}"
+        )
+        return fallback_plan
+
+    def _find_boundary_layer_match(
+        self,
+        target_layer: QgsVectorLayer,
+        location_value,
+    ) -> Optional[Tuple[QgsVectorLayer, str, object]]:
+        expected_value = normalize_text(location_value)
+        if not expected_value:
+            return None
+
+        best_match = None
+        best_score = 0.0
+        for layer in QgsProject.instance().mapLayers().values():
+            if not isinstance(layer, QgsVectorLayer):
+                continue
+            if not layer.isValid() or layer.id() == target_layer.id():
+                continue
+            if QgsWkbTypes.geometryType(layer.wkbType()) != QgsWkbTypes.PolygonGeometry:
+                continue
+
+            layer_name_text = normalize_text(layer.name())
+            candidate_fields = []
+            for index, field in enumerate(layer.fields()):
+                field_name = field.name()
+                field_text = normalize_text(" ".join([field_name, layer.attributeAlias(index) or ""]))
+                if not self._location_like_field(field_text):
+                    continue
+                if field_text in {"id", "codigo", "cod"}:
+                    continue
+                candidate_fields.append(field_name)
+
+            for field_name in candidate_fields[:6]:
+                request = QgsFeatureRequest()
+                request.setSubsetOfAttributes([field_name], layer.fields())
+                request.setLimit(2000)
+                if hasattr(request, "setNoGeometry"):
+                    request.setNoGeometry(True)
+                for feature in layer.getFeatures(request):
+                    current_value = feature[field_name]
+                    if not self._match_filter_value(
+                        current_value,
+                        FilterSpec(field=field_name, value=location_value, operator="eq", layer_role="boundary"),
+                    ):
+                        continue
+                    score = 10.0
+                    if any(token in layer_name_text for token in ("municipio", "cidade")):
+                        score += 4.0
+                    if any(token in normalize_text(field_name) for token in ("municipio", "cidade")):
+                        score += 3.0
+                    if any(token in normalize_text(field_name) for token in ("bairro", "setor", "distrito")):
+                        score += 2.0
+                    if score > best_score:
+                        best_score = score
+                        best_match = (layer, field_name, current_value)
+                    break
+        return best_match
+
+    def _try_execution_fallback(
+        self,
+        plan: QueryPlan,
+        target_layer: QgsVectorLayer,
+    ) -> Optional[QueryResult]:
+        fallback_plan = self._build_boundary_fallback_plan(plan, target_layer)
+        if fallback_plan is None:
+            return None
+        fallback_result = self.execute(fallback_plan)
+        if fallback_result.ok:
+            return fallback_result
+        return fallback_result
+
     def _execute_value_insight(self, plan: QueryPlan) -> QueryResult:
         layer = self._get_layer(plan.target_layer_id)
         if layer is None or not layer.isValid():
-            return QueryResult(ok=False, message="Nao encontrei a camada escolhida para esse relatorio.")
+            return QueryResult(ok=False, message="Nao encontrei a camada escolhida para esse relatorio.", plan=plan)
         if plan.metric.operation in {"min", "max", "sum", "avg"}:
             if not plan.metric.field or plan.metric.field not in layer.fields().names():
-                return QueryResult(ok=False, message="O campo consultado nao existe mais nessa camada.")
+                return QueryResult(ok=False, message="O campo consultado nao existe mais nessa camada.", plan=plan)
 
         boundary_context, error_message = self._prepare_boundary_filter_context(plan, target_layer=layer)
         if error_message:
-            return QueryResult(ok=False, message=error_message)
+            return QueryResult(ok=False, message=error_message, plan=plan)
 
         values: List[float] = []
         total_value = 0.0
         contributing_count = 0
         processed = 0
+        target_matches = 0
+        boundary_filtered_out = 0
         distance_area = self._distance_area(layer)
         field_names = layer.fields().names()
 
         for feature in layer.getFeatures():
             if not self._feature_matches_filters(feature, plan.filters, field_names, "target"):
                 continue
+            target_matches += 1
 
             feature_geometry = feature.geometry()
             clipped_geometry = self._clip_geometry_to_boundary(feature_geometry, boundary_context)
             if boundary_context is not None and clipped_geometry is None:
+                boundary_filtered_out += 1
                 continue
 
             processed += 1
@@ -452,16 +999,55 @@ class ReportExecutor:
 
         if plan.metric.operation in {"min", "max"}:
             if not values:
-                return QueryResult(ok=False, message="Nao encontrei dados compativeis com essa pergunta.")
+                fallback_result = self._try_execution_fallback(plan, layer)
+                if fallback_result is not None:
+                    return fallback_result
+                return self._build_no_data_result(
+                    plan,
+                    layer_name=layer.name(),
+                    target_matches=target_matches,
+                    contributing_count=0,
+                    boundary_filtered_out=boundary_filtered_out,
+                    boundary_context=boundary_context,
+                )
             selected_value = min(values) if plan.metric.operation == "min" else max(values)
         elif plan.metric.operation == "avg":
             if contributing_count <= 0:
-                return QueryResult(ok=False, message="Nao encontrei dados compativeis com essa pergunta.")
+                fallback_result = self._try_execution_fallback(plan, layer)
+                if fallback_result is not None:
+                    return fallback_result
+                return self._build_no_data_result(
+                    plan,
+                    layer_name=layer.name(),
+                    target_matches=target_matches,
+                    contributing_count=contributing_count,
+                    boundary_filtered_out=boundary_filtered_out,
+                    boundary_context=boundary_context,
+                )
             selected_value = total_value / max(1, contributing_count)
         else:
             if contributing_count <= 0:
-                return QueryResult(ok=False, message="Nao encontrei dados compativeis com essa pergunta.")
+                fallback_result = self._try_execution_fallback(plan, layer)
+                if fallback_result is not None:
+                    return fallback_result
+                return self._build_no_data_result(
+                    plan,
+                    layer_name=layer.name(),
+                    target_matches=target_matches,
+                    contributing_count=contributing_count,
+                    boundary_filtered_out=boundary_filtered_out,
+                    boundary_context=boundary_context,
+                )
             selected_value = total_value
+
+        self._record_execution_trace(
+            plan,
+            status="ok",
+            layer_name=layer.name(),
+            target_matches=target_matches,
+            contributing_count=contributing_count,
+            boundary_filtered_out=boundary_filtered_out,
+        )
 
         label = plan.metric.field_label or plan.metric.label or plan.metric.field or "Valor"
         return QueryResult(
@@ -475,31 +1061,136 @@ class ReportExecutor:
             total_value=float(selected_value),
         )
 
+    def _execute_derived_ratio(self, plan: QueryPlan) -> QueryResult:
+        job = _DerivedRatioJob(self, plan)
+        while not job.done:
+            job.step(batch_size=320)
+        return job.result
+
+    def _execute_composite_metric(self, plan: QueryPlan) -> QueryResult:
+        job = _CompositeMetricJob(self, plan)
+        while not job.done:
+            job.step(batch_size=320)
+        return job.result
+
+    def _build_operand_plan(self, composite_plan: QueryPlan, operand: CompositeOperandSpec) -> QueryPlan:
+        operand_filters = [
+            FilterSpec(
+                field=item.field,
+                value=item.value,
+                operator=item.operator,
+                layer_role="boundary" if item.layer_role == "boundary" else "target",
+            )
+            for item in list(operand.filters or [])
+        ]
+        return QueryPlan(
+            intent="value_insight",
+            original_question=composite_plan.original_question,
+            target_layer_id=operand.layer_id,
+            target_layer_name=operand.layer_name,
+            boundary_layer_id=operand.boundary_layer_id,
+            boundary_layer_name=operand.boundary_layer_name,
+            metric=MetricSpec(
+                operation=operand.metric.operation,
+                field=operand.metric.field,
+                field_label=operand.metric.field_label,
+                use_geometry=operand.metric.use_geometry,
+                label=operand.metric.label,
+                source_geometry_hint=operand.metric.source_geometry_hint,
+            ),
+            filters=operand_filters,
+            chart=composite_plan.chart,
+        )
+
+    def _finalize_composite_results(
+        self,
+        plan: QueryPlan,
+        operands: List[CompositeOperandSpec],
+        results: List[QueryResult],
+    ) -> QueryResult:
+        if len(operands) < 2 or len(results) < 2:
+            return QueryResult(ok=False, message="Nao encontrei dados suficientes para concluir essa operacao.")
+
+        operation = normalize_text(getattr(plan.composite, "operation", "") or plan.metric.operation or "")
+        rows = [
+            ResultRow(
+                category=operand.label or result.rows[0].category,
+                value=float(result.total_value),
+                raw_category=operand.label or result.rows[0].category,
+            )
+            for operand, result in zip(operands, results)
+        ]
+        total_records = sum(int(result.total_records or 0) for result in results)
+
+        if operation == "comparison":
+            return QueryResult(
+                ok=True,
+                summary=SummaryPayload(text=self._build_composite_summary(plan, results, rows)),
+                rows=rows,
+                value_label=self._value_label(plan),
+                show_percent=False,
+                plan=plan,
+                total_records=total_records,
+                total_value=max(row.value for row in rows),
+            )
+
+        left_value = float(results[0].total_value)
+        right_value = float(results[1].total_value)
+        if operation == "ratio":
+            if abs(right_value) < 0.0000001:
+                return QueryResult(ok=False, message="Nao encontrei dados suficientes no denominador para dividir.")
+            computed = left_value / right_value
+        elif operation == "difference":
+            computed = left_value - right_value
+        elif operation == "percentage":
+            if abs(right_value) < 0.0000001:
+                return QueryResult(ok=False, message="Nao encontrei dados suficientes no total de referencia para calcular o percentual.")
+            computed = (left_value / right_value) * 100.0
+        else:
+            return QueryResult(ok=False, message="Operacao composta ainda nao suportada.")
+
+        result_label = getattr(plan.composite, "label", "") or plan.metric.label or "Resultado"
+        result_row = ResultRow(category=result_label, value=float(computed), raw_category=result_label)
+        return QueryResult(
+            ok=True,
+            summary=SummaryPayload(text=self._build_composite_summary(plan, results, [result_row], operand_rows=rows)),
+            rows=[result_row],
+            value_label=self._value_label(plan),
+            show_percent=False,
+            plan=plan,
+            total_records=total_records,
+            total_value=float(computed),
+        )
+
     def _execute_direct(self, plan: QueryPlan) -> QueryResult:
         layer = self._get_layer(plan.target_layer_id)
         if layer is None or not layer.isValid():
-            return QueryResult(ok=False, message="Nao encontrei a camada escolhida para esse relatorio.")
+            return QueryResult(ok=False, message="Nao encontrei a camada escolhida para esse relatorio.", plan=plan)
         if plan.group_field not in layer.fields().names():
-            return QueryResult(ok=False, message="O campo de agrupamento nao existe mais nessa camada.")
+            return QueryResult(ok=False, message="O campo de agrupamento nao existe mais nessa camada.", plan=plan)
         if plan.metric.field and plan.metric.field not in layer.fields().names():
-            return QueryResult(ok=False, message="O campo numerico usado na consulta nao existe mais.")
+            return QueryResult(ok=False, message="O campo numerico usado na consulta nao existe mais.", plan=plan)
 
         boundary_context, error_message = self._prepare_boundary_filter_context(plan, target_layer=layer)
         if error_message:
-            return QueryResult(ok=False, message=error_message)
+            return QueryResult(ok=False, message=error_message, plan=plan)
 
         totals = defaultdict(float)
         counts = defaultdict(int)
         processed = 0
+        target_matches = 0
+        boundary_filtered_out = 0
         distance_area = self._distance_area(layer)
         field_names = layer.fields().names()
 
         for feature in layer.getFeatures():
             if not self._feature_matches_filters(feature, plan.filters, field_names, "target"):
                 continue
+            target_matches += 1
             feature_geometry = feature.geometry()
             clipped_geometry = self._clip_geometry_to_boundary(feature_geometry, boundary_context)
             if boundary_context is not None and clipped_geometry is None:
+                boundary_filtered_out += 1
                 continue
 
             category_value = self._render_category(feature[plan.group_field])
@@ -526,6 +1217,27 @@ class ReportExecutor:
             counts[category_value] += 1
             processed += 1
 
+        if not totals:
+            fallback_result = self._try_execution_fallback(plan, layer)
+            if fallback_result is not None:
+                return fallback_result
+            return self._build_no_data_result(
+                plan,
+                layer_name=layer.name(),
+                target_matches=target_matches,
+                contributing_count=processed,
+                boundary_filtered_out=boundary_filtered_out,
+                boundary_context=boundary_context,
+            )
+
+        self._record_execution_trace(
+            plan,
+            status="ok",
+            layer_name=layer.name(),
+            target_matches=target_matches,
+            contributing_count=processed,
+            boundary_filtered_out=boundary_filtered_out,
+        )
         return self._build_result(plan, totals, counts, processed)
 
     def _execute_spatial(self, plan: QueryPlan) -> QueryResult:
@@ -640,7 +1352,7 @@ class ReportExecutor:
             rows.append(ResultRow(category=str(category), value=float(value), raw_category=category))
 
         if not rows:
-            return QueryResult(ok=False, message="Nao encontrei dados compativeis com essa pergunta.")
+            return QueryResult(ok=False, message="Nao encontrei dados compativeis com essa pergunta.", plan=plan)
 
         if plan.group_field_kind in {"date", "datetime"}:
             rows.sort(key=lambda item: str(item.raw_category))
@@ -716,7 +1428,67 @@ class ReportExecutor:
             message += f" Foram analisados {processed} registros."
         return message
 
+    def _build_ratio_summary(self, plan: QueryPlan, value: float, total_length: float, total_links: int) -> str:
+        ratio_text = self._format_summary_value(value)
+        length_text = self._format_summary_value(total_length)
+        scope_text = self._summary_scope_text(plan)
+        return (
+            f"A extensao media por ligacao{scope_text} e {ratio_text} metros. "
+            f"Foram considerados {length_text} metros de rede e {int(total_links)} ligacoes."
+        )
+
+    def _build_composite_summary(
+        self,
+        plan: QueryPlan,
+        operand_results: List[QueryResult],
+        rows: List[ResultRow],
+        operand_rows: Optional[List[ResultRow]] = None,
+    ) -> str:
+        operation = normalize_text(getattr(plan.composite, "operation", "") or plan.metric.operation or "")
+        all_rows = operand_rows or rows
+        labels = [row.category for row in all_rows[:2]]
+        values = [row.value for row in all_rows[:2]]
+        if len(labels) < 2 or len(values) < 2:
+            return "Operacao composta concluida."
+
+        left_label, right_label = labels[0], labels[1]
+        left_value, right_value = values[0], values[1]
+        if operation == "comparison":
+            winner_label = left_label if left_value >= right_value else right_label
+            return (
+                f"{winner_label} possui o maior valor. "
+                f"Foram comparados {self._format_summary_value(left_value)} e {self._format_summary_value(right_value)}."
+            )
+        if operation == "difference":
+            return (
+                f"A diferenca entre {left_label} e {right_label} e {self._format_summary_value(rows[0].value)}. "
+                f"Valores comparados: {self._format_summary_value(left_value)} e {self._format_summary_value(right_value)}."
+            )
+        if operation == "percentage":
+            return (
+                f"{left_label} representa {self._format_summary_value(rows[0].value)}% de {right_label}. "
+                f"Valores usados: {self._format_summary_value(left_value)} e {self._format_summary_value(right_value)}."
+            )
+        if operation == "ratio":
+            return (
+                f"A razao entre {left_label} e {right_label} e {self._format_summary_value(rows[0].value)}. "
+                f"Valores usados: {self._format_summary_value(left_value)} e {self._format_summary_value(right_value)}."
+            )
+        return "Operacao composta concluida."
+
     def _value_label(self, plan: QueryPlan) -> str:
+        if plan.intent == "composite_metric":
+            operation = normalize_text(getattr(plan.composite, "operation", "") or plan.metric.operation or "")
+            if operation == "ratio":
+                return getattr(plan.composite, "unit_label", "") or "Razao"
+            if operation == "difference":
+                return getattr(plan.composite, "unit_label", "") or "Diferenca"
+            if operation == "percentage":
+                return "%"
+            if operation == "comparison":
+                return getattr(plan.composite, "unit_label", "") or "Valor"
+        if plan.metric.operation == "ratio":
+            return "Metros por ligacao"
         if plan.metric.operation == "count":
             return "Quantidade"
         if plan.metric.operation == "length":
@@ -798,7 +1570,13 @@ class ReportExecutor:
 
         if not geometries:
             return None, "Nao encontrei um limite geografico compativel com esse filtro."
-        return {"geometries": geometries, "index": spatial_index}, ""
+        return {
+            "geometries": geometries,
+            "index": spatial_index,
+            "layer_name": boundary_layer.name(),
+            "matched_boundary_count": len(geometries),
+            "mode": "spatial",
+        }, ""
 
     def _clip_geometry_to_boundary(self, geometry, boundary_context: Optional[Dict]):
         if boundary_context is None:
@@ -880,6 +1658,11 @@ class ReportExecutor:
         operator = (filter_spec.operator or "eq").lower()
         if operator in {"is_null", "null"}:
             return current_value in (None, "")
+        if operator in {"not_null", "has_value"}:
+            if current_value in (None, ""):
+                return False
+            current_text = normalize_text(current_value)
+            return current_text not in {"null", "none", "nan"}
         if current_value in (None, ""):
             return False
 
@@ -897,15 +1680,43 @@ class ReportExecutor:
         if not matches and expected_text:
             matches = current_text == expected_text or current_compact == expected_compact
         if not matches and expected_text:
+            current_status = self._normalize_status_value(current_text)
+            expected_status = self._normalize_status_value(expected_text)
+            if current_status and expected_status and current_status == expected_status:
+                matches = True
+        if not matches and expected_text:
             matches = f" {expected_text} " in f" {current_text} " or expected_text in current_text
         if not matches and expected_compact:
             matches = expected_compact in current_compact
+        if not matches and expected_text:
+            expected_tokens = {token for token in expected_text.split() if token and token not in {"de", "do", "da", "dos", "das"}}
+            current_tokens = {token for token in current_text.split() if token}
+            if len(expected_tokens) >= 2 and expected_tokens.issubset(current_tokens):
+                matches = True
 
         if operator == "contains":
             return bool(expected_text and expected_text in current_text) or bool(expected_compact and expected_compact in current_compact)
         if operator == "neq":
             return not matches
         return matches
+
+    def _normalize_status_value(self, value) -> str:
+        normalized = normalize_text(value)
+        if not normalized:
+            return ""
+        if "ativ" in normalized:
+            return "ativo"
+        if "inativ" in normalized:
+            return "inativo"
+        if "cancel" in normalized:
+            return "cancelado"
+        if "suspens" in normalized:
+            return "suspenso"
+        if "elimina" in normalized:
+            return "eliminado"
+        if "cortad" in normalized:
+            return "cortado"
+        return normalized
 
     def _coerce_numeric(self, value) -> Optional[float]:
         if value in (None, ""):

@@ -19,6 +19,9 @@ class ReportContextMemory:
         self.max_turns = max(1, int(max_turns))
         self._turns: List[ReportContextTurn] = []
 
+    def clear(self):
+        self._turns = []
+
     def remember_result(self, question: str, plan: QueryPlan, result: QueryResult):
         turn = ReportContextTurn(
             question=question,

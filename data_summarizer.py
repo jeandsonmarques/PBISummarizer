@@ -450,7 +450,6 @@ class PowerBISummarizerDialog(QDialog):
     def apply_styles(self):
         """Aplica o style.qss oficial do plugin (arquivo principal de temas)."""
         style_path = os.path.join(os.path.dirname(__file__), "resources", "style.qss")
-        # Arquivos legados como style.qss.css permanecem apenas como referência visual.
         if not os.path.exists(style_path):
             self._apply_square_theme()
             return

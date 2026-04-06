@@ -27,6 +27,7 @@ from .operational_memory_repository import (
 from .operational_memory_store import OperationalMemoryStore
 from .report_logging import log_info, log_warning
 from .result_models import CandidateInterpretation, InterpretationResult, QueryPlan, QueryResult
+from .conversation_memory_service import ConversationMemoryService
 
 
 DEFAULT_SEMANTIC_ALIASES = (
@@ -973,12 +974,14 @@ def build_operational_memory_services() -> Dict[str, Any]:
         alias_service=alias_service,
         approved_example_service=approved_example_service,
     )
+    conversation_memory_service = ConversationMemoryService(store)
     return {
         "store": store,
         "query_memory_service": query_memory_service,
         "feedback_service": feedback_service,
         "alias_service": alias_service,
         "approved_example_service": approved_example_service,
+        "conversation_memory_service": conversation_memory_service,
     }
 
 

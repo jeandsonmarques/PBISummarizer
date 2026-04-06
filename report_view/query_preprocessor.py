@@ -12,6 +12,9 @@ CANONICAL_TERMS = {
     "area": ["area"],
     "media": ["media"],
     "total": ["total", "somatorio", "soma"],
+    "contagem_excel": ["contse", "cont se", "cont.ses", "contses", "countif", "countifs", "count if", "count ifs"],
+    "soma_excel": ["somase", "soma se", "somases", "sumif", "sumifs", "sum if", "sum ifs"],
+    "media_excel": ["mediase", "media se", "mediases", "averageif", "averageifs", "average if", "average ifs"],
     "maximo": ["maximo", "maior", "ate qual", "qual o maior", "qual a maior"],
     "minimo": ["minimo", "menor", "qual o menor", "qual a menor"],
     "municipio": ["municipio", "mun", "munic", "cidade", "cid"],
@@ -21,6 +24,25 @@ CANONICAL_TERMS = {
     "trecho": ["trecho", "trechos", "segmento", "segmentos"],
     "diametro": ["dn", "diam", "diametro", "bitola"],
     "material": ["material", "mat", "classe", "tipo"],
+    "status": [
+        "status",
+        "situacao",
+        "sit",
+        "ativo",
+        "ativa",
+        "ativos",
+        "ativas",
+        "inativo",
+        "inativa",
+        "inativos",
+        "inativas",
+        "cancelado",
+        "cancelada",
+        "cancelados",
+        "canceladas",
+        "suspenso",
+        "suspensa",
+    ],
     "pizza": ["pizza", "setores"],
     "barra": ["barra", "barras", "coluna", "colunas"],
     "linha": ["linha", "linhas"],
@@ -29,8 +51,48 @@ CANONICAL_TERMS = {
 
 RANKING_TERMS = ("maior", "menor", "mais", "menos")
 COMPARISON_TERMS = ("compar", "versus", "vs", "entre")
+DIFFERENCE_TERMS = ("diferenca", "diferença", "menos", "subtrair", "subtracao", "subtração")
+PERCENTAGE_TERMS = ("percentual", "porcentagem", "percento", "%", "participacao", "participação")
+RATIO_HINT_TERMS = ("dividido por", "dividida por", "razao entre", "relação entre", "relacao entre", "proporcao entre", "proporção entre")
+RATIO_DENOMINATOR_TERMS = (
+    "metro",
+    "metros",
+    "km",
+    "quilometro",
+    "quilometros",
+    "ligacao",
+    "ligacoes",
+    "cliente",
+    "clientes",
+    "economia",
+    "economias",
+    "ponto",
+    "pontos",
+    "hidrante",
+    "hidrantes",
+    "ramal",
+    "ramais",
+    "trecho",
+    "trechos",
+    "rede",
+    "redes",
+    "lote",
+    "lotes",
+    "parcela",
+    "parcelas",
+    "imovel",
+    "imoveis",
+)
+GROUP_LIKE_TERMS = ("municipio", "cidade", "bairro", "localidade", "setor", "distrito", "comunidade", "povoado", "material", "diametro", "dn", "tipo", "classe")
 FOLLOW_UP_TERMS = ("agora", "so", "somente", "apenas", "usa", "mostra")
 LOCATION_PREFIXES = ("municipio", "cidade", "bairro", "localidade", "setor", "distrito", "comunidade", "povoado")
+SERVICE_TERMS = ("agua", "esgoto", "drenagem", "pluvial", "sanitario")
+LOCATION_QUALIFIER_PATTERNS = (
+    r"\bzona\s+urbana\s+(?:de|do|da|dos|das)\s+(.+)$",
+    r"\bzona\s+rural\s+(?:de|do|da|dos|das)\s+(.+)$",
+    r"\barea\s+urbana\s+(?:de|do|da|dos|das)\s+(.+)$",
+    r"\barea\s+rural\s+(?:de|do|da|dos|das)\s+(.+)$",
+)
 LOCATION_STOP_WORDS = {
     "adutora",
     "adutoras",
@@ -86,6 +148,22 @@ LOCATION_STOP_WORDS = {
 }
 
 REPLACEMENTS = (
+    (r"\bcont\.?ses?\b", "quantidade"),
+    (r"\bcount\s*ifs?\b", "quantidade"),
+    (r"\bsomases\b", "total"),
+    (r"\bsomase\b", "total"),
+    (r"\bsoma\.?ses?\b", "total"),
+    (r"\bsum\s*ifs?\b", "total"),
+    (r"\bmediase\b", "media"),
+    (r"\bmediases\b", "media"),
+    (r"\bmedia\.?ses?\b", "media"),
+    (r"\baverage\s*ifs?\b", "media"),
+    (r"\bparticipacao no total\b", "percentual"),
+    (r"\bparticipacao\b", "percentual"),
+    (r"\bshare\b", "percentual"),
+    (r"\bdelta\b", "diferenca"),
+    (r"\bvariacao\b", "diferenca"),
+    (r"\btaxa\b", "razao"),
     (r"\bdn\s*[-/]?\s*(\d{2,4})\b", r"dn \1"),
     (r"\b(\d{2,4})\s*mm\b", r"\1 mm"),
     (r"\bdiamentro\b", "diametro"),
@@ -119,8 +197,11 @@ class PreprocessedQuestion:
     metric_hint: str = ""
     subject_hint: str = ""
     group_hint: str = ""
+    group_phrase: str = ""
     attribute_hint: str = ""
     value_mode: str = ""
+    composite_mode: str = ""
+    excel_mode: str = ""
     top_n: Optional[int] = None
 
 
@@ -132,6 +213,7 @@ class QueryPreprocessor:
 
     def preprocess(self, question: str) -> PreprocessedQuestion:
         normalized = normalize_text(question)
+        excel_mode = self._excel_mode(normalized)
         corrected = self._apply_replacements(normalized)
         corrected, fuzzy = self._apply_fuzzy_corrections(corrected)
         rewritten = self._rewrite_question(corrected)
@@ -141,8 +223,13 @@ class QueryPreprocessor:
         metric_hint = self._metric_hint(corrected)
         subject_hint = self._subject_hint(corrected)
         group_hint = self._group_hint(corrected)
+        group_phrase = self._group_phrase(corrected)
         attribute_hint = self._attribute_hint(corrected)
         value_mode = self._value_mode(corrected)
+        composite_mode = self._composite_mode(corrected)
+        excel_mode = excel_mode or self._excel_mode(corrected)
+        if excel_mode and intent_label not in {"razao", "diferenca", "percentual", "comparacao"}:
+            intent_label = "formula_excel"
         return PreprocessedQuestion(
             original_text=question,
             normalized_text=normalized,
@@ -151,12 +238,15 @@ class QueryPreprocessor:
             tokens=tokens,
             fuzzy_corrections=fuzzy,
             intent_label=intent_label,
-            notes=self._build_notes(corrected, fuzzy, rewritten, intent_label, attribute_hint, value_mode),
+            notes=self._build_notes(corrected, fuzzy, rewritten, intent_label, attribute_hint, value_mode, excel_mode),
             metric_hint=metric_hint,
             subject_hint=subject_hint,
             group_hint=group_hint,
+            group_phrase=group_phrase,
             attribute_hint=attribute_hint,
             value_mode=value_mode,
+            composite_mode=composite_mode,
+            excel_mode=excel_mode,
             top_n=top_n,
         )
 
@@ -199,7 +289,55 @@ class QueryPreprocessor:
         group = self._group_hint(text)
         attribute = self._attribute_hint(text)
         value_mode = self._value_mode(text)
+        excel_mode = self._excel_mode(text)
         filters = self._extract_filter_phrase(text)
+
+        if excel_mode == "countif":
+            base = "quantidade dos dados"
+            if group:
+                base = f"{base} por {group}"
+            if filters:
+                base = f"{base} {filters}"
+            return re.sub(r"\s+", " ", base).strip()
+        if excel_mode == "sumif":
+            base = "total dos dados"
+            if group:
+                base = f"{base} por {group}"
+            if filters:
+                base = f"{base} {filters}"
+            return re.sub(r"\s+", " ", base).strip()
+        if excel_mode == "averageif":
+            base = "media dos dados"
+            if group:
+                base = f"{base} por {group}"
+            if filters:
+                base = f"{base} {filters}"
+            return re.sub(r"\s+", " ", base).strip()
+
+        if self._is_ratio_query(text):
+            normalized_text = normalize_text(text)
+            if re.search(r"\bligac\w*\b.*\bpor\s+(metro|metros|km|quilometro|quilometros)\b", normalized_text):
+                base = "razao entre quantidade de ligacoes e extensao da rede"
+                if filters:
+                    base = f"{base} {filters}"
+                return re.sub(r"\s+", " ", base).strip()
+            if re.search(r"\b(?:por|cada)\s+ligac", normalized_text) and any(
+                token in normalized_text.split() for token in ("metragem", "metros", "metro", "extensao", "comprimento")
+            ):
+                base = "media de extensao da rede por ligacao"
+                if filters:
+                    base = f"{base} {filters}"
+                return re.sub(r"\s+", " ", base).strip()
+            ratio_operands = self._extract_ratio_descriptors(text)
+            if ratio_operands:
+                base = f"razao entre {ratio_operands[0]} e {ratio_operands[1]}"
+                if filters:
+                    base = f"{base} {filters}"
+                return re.sub(r"\s+", " ", base).strip()
+            base = "razao entre numerador e denominador"
+            if filters:
+                base = f"{base} {filters}"
+            return re.sub(r"\s+", " ", base).strip()
 
         if attribute == "diameter" and value_mode == "max":
             base = "qual o maior diametro da rede"
@@ -243,6 +381,18 @@ class QueryPreprocessor:
         return re.sub(r"\s+", " ", base).strip()
 
     def _classify_intent(self, text: str) -> str:
+        if self._is_ratio_query(text):
+            return "razao"
+        excel_mode = self._excel_mode(text)
+        if excel_mode in {"countif", "sumif", "averageif"}:
+            return "formula_excel"
+        composite_mode = self._composite_mode(text)
+        if composite_mode == "difference":
+            return "diferenca"
+        if composite_mode == "percentage":
+            return "percentual"
+        if composite_mode == "comparison":
+            return "comparacao"
         value_mode = self._value_mode(text)
         if value_mode in {"max", "min"}:
             return "valor_extremo"
@@ -272,12 +422,21 @@ class QueryPreprocessor:
             count += 1
         if any(token in text for token in ("pvc", "pead", "material")):
             count += 1
+        if self._extract_status_value(text):
+            count += 1
         if self._extract_location_fragment(text):
             count += 1
         return count
 
     def _metric_hint(self, text: str) -> str:
         tokens = set(normalize_text(text).split())
+        excel_mode = self._excel_mode(text)
+        if excel_mode == "countif":
+            return "count"
+        if excel_mode == "sumif":
+            return "sum"
+        if excel_mode == "averageif":
+            return "avg"
         if any(token in tokens for token in ("metragem", "metros", "metro", "comprimento", "extensao")):
             return "length"
         if "area" in tokens:
@@ -310,6 +469,18 @@ class QueryPreprocessor:
         if "localidade" in text:
             return "localidade"
         return ""
+
+    def _group_phrase(self, text: str) -> str:
+        normalized = normalize_text(text)
+        if not normalized or self._is_ratio_query(normalized):
+            return ""
+        parts = normalized.split(" por ", 1)
+        if len(parts) < 2:
+            return ""
+        phrase = normalize_text(parts[1])
+        phrase = re.sub(r"\b(?:em|no|na)\s+[a-z0-9][a-z0-9\s]+$", "", phrase).strip()
+        phrase = re.sub(r"\b(?:com|onde|top|pizza|barra|linha|grafico)\b.*$", "", phrase).strip()
+        return re.sub(r"\s+", " ", phrase).strip()
 
     def _attribute_hint(self, text: str) -> str:
         normalized = normalize_text(text)
@@ -359,10 +530,124 @@ class QueryPreprocessor:
         for material in ("pvc", "pead"):
             if re.search(rf"\b{material}\b", text):
                 parts.append(f"com material {material}")
+        service_value = self._extract_service_value(text)
+        if service_value:
+            parts.append(f"de {service_value}")
+        status_value = self._extract_status_value(text)
+        if status_value:
+            parts.append(f"com status {status_value}")
         location = self._extract_location_fragment(text)
         if location:
             parts.append(f"em {location}")
         return " ".join(parts).strip()
+
+    def _extract_service_value(self, text: str) -> str:
+        normalized = normalize_text(text)
+        for service_term in SERVICE_TERMS:
+            if re.search(rf"\b{re.escape(service_term)}\b", normalized):
+                return service_term
+        return ""
+
+    def _extract_status_value(self, text: str) -> str:
+        normalized = normalize_text(text)
+        if re.search(r"\bativ[ao]s?\b", normalized):
+            return "ativo"
+        if re.search(r"\binativ[ao]s?\b", normalized):
+            return "inativo"
+        if re.search(r"\bcancelad[ao]s?\b", normalized):
+            return "cancelado"
+        if re.search(r"\bsuspens[ao]s?\b", normalized):
+            return "suspenso"
+        return ""
+
+    def _excel_mode(self, text: str) -> str:
+        normalized = normalize_text(text)
+        if any(token in normalized for token in ("countif", "countifs", "cont se", "contse", "contses")):
+            return "countif"
+        if any(token in normalized for token in ("sumif", "sumifs", "somase", "somases", "soma se")):
+            return "sumif"
+        if any(token in normalized for token in ("averageif", "averageifs", "mediase", "mediases", "media se")):
+            return "averageif"
+        return ""
+
+    def _is_ratio_query(self, text: str) -> bool:
+        normalized = normalize_text(text)
+        if not normalized:
+            return False
+        if any(term in normalized for term in RATIO_HINT_TERMS) or "share" in normalized or "taxa" in normalized:
+            return True
+        if re.search(r"\b(?:por|para cada)\s+(metro|metros|km|quilometro|quilometros)\b", normalized):
+            return True
+        if re.search(r"\b(?:por|para cada)\s+([a-z0-9_]+(?:\s+[a-z0-9_]+){0,2})", normalized):
+            denominator = re.search(r"\b(?:por|para cada)\s+([a-z0-9_]+(?:\s+[a-z0-9_]+){0,2})", normalized)
+            if denominator:
+                denominator_text = normalize_text(denominator.group(1))
+                denominator_tokens = [token for token in denominator_text.split() if token]
+                if denominator_tokens:
+                    first_token = denominator_tokens[0]
+                    if first_token in RATIO_DENOMINATOR_TERMS and first_token not in GROUP_LIKE_TERMS:
+                        if any(token in normalized.split() for token in ("quantidade", "total", "soma", "somatorio", "media", "metros", "metro", "extensao", "comprimento", "area")):
+                            return True
+        if " por ligacao" in normalized or " por ligacoes" in normalized:
+            return True
+        return False
+
+    def _extract_ratio_descriptors(self, text: str):
+        normalized = normalize_text(text)
+        if re.search(r"\bligac\w*\b.*\bpor\s+(metro|metros|km|quilometro|quilometros)\b", normalized):
+            return ("quantidade de ligacoes", "extensao da rede")
+        if re.search(r"\b(?:metro|metros|extensao|comprimento)\b.*\bpor\s+ligac", normalized):
+            return ("extensao da rede", "quantidade de ligacoes")
+        patterns = (
+            r"\b(.+?)\s+dividid[oa]\s+por\s+(.+)$",
+            r"\b(?:razao|relacao|relação|proporcao|proporção)\s+entre\s+(.+?)\s+e\s+(.+)$",
+            r"\b(.+?)\s+para cada\s+(.+)$",
+        )
+        for pattern in patterns:
+            match = re.search(pattern, normalized)
+            if not match:
+                continue
+            left = self._clean_ratio_descriptor(match.group(1))
+            right = self._clean_ratio_descriptor(match.group(2))
+            if left and right:
+                return left, right
+        match = re.search(r"\b(.+?)\s+por\s+(.+)$", normalized)
+        if not match:
+            return ()
+        right = self._clean_ratio_descriptor(match.group(2))
+        if not right:
+            return ()
+        right_tokens = right.split()
+        if not right_tokens or right_tokens[0] in GROUP_LIKE_TERMS:
+            return ()
+        if right_tokens[0] not in RATIO_DENOMINATOR_TERMS:
+            return ()
+        left = self._clean_ratio_descriptor(match.group(1))
+        if left and right:
+            return left, right
+        return ()
+
+    def _clean_ratio_descriptor(self, text: str) -> str:
+        cleaned = normalize_text(text)
+        cleaned = re.sub(r"\b(?:razao|relacao|relação|proporcao|proporção|dividid[oa]|por|entre|e|de|do|da)\b", " ", cleaned)
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        return cleaned
+
+    def _composite_mode(self, text: str) -> str:
+        normalized = normalize_text(text)
+        if self._is_ratio_query(normalized):
+            return "ratio"
+        if any(term in normalized for term in PERCENTAGE_TERMS):
+            return "percentage"
+        if any(term in normalized for term in DIFFERENCE_TERMS):
+            return "difference"
+        if any(term in normalized for term in COMPARISON_TERMS):
+            return "comparison"
+        if re.search(r"\b(?:vs|versus)\b", normalized):
+            return "comparison"
+        if re.search(r"\bentre\s+.+\s+e\s+.+", normalized):
+            return "comparison"
+        return ""
 
     def _looks_like_top_one_question(self, text: str) -> bool:
         normalized = normalize_text(text)
@@ -389,6 +674,7 @@ class QueryPreprocessor:
             if not matches:
                 continue
             candidate = self._clean_location_fragment(matches[-1].group(1))
+            candidate = self._strip_location_qualifiers(candidate)
             if self._is_probable_location_fragment(candidate):
                 return candidate
 
@@ -399,6 +685,7 @@ class QueryPreprocessor:
             )
             if bare_tail:
                 candidate = self._clean_location_fragment(bare_tail.group(1))
+                candidate = self._strip_location_qualifiers(candidate)
                 if self._is_probable_location_fragment(candidate):
                     return candidate
         return ""
@@ -407,6 +694,16 @@ class QueryPreprocessor:
         cleaned = normalize_text(text)
         cleaned = re.sub(r"\b(?:dn|mm)\b", " ", cleaned)
         cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        return cleaned
+
+    def _strip_location_qualifiers(self, text: str) -> str:
+        cleaned = normalize_text(text)
+        if not cleaned:
+            return ""
+        for pattern in LOCATION_QUALIFIER_PATTERNS:
+            match = re.search(pattern, cleaned)
+            if match:
+                return re.sub(r"\s+", " ", match.group(1)).strip()
         return cleaned
 
     def _is_probable_location_fragment(self, text: str) -> bool:
@@ -434,6 +731,7 @@ class QueryPreprocessor:
         intent_label: str,
         attribute_hint: str,
         value_mode: str,
+        excel_mode: str = "",
     ) -> List[str]:
         notes = [f"intencao={intent_label}"]
         if fuzzy_corrections:
@@ -444,4 +742,9 @@ class QueryPreprocessor:
             notes.append(f"atributo={attribute_hint}")
         if value_mode:
             notes.append(f"modo={value_mode}")
+        composite_mode = self._composite_mode(corrected_text)
+        if composite_mode:
+            notes.append(f"composto={composite_mode}")
+        if excel_mode:
+            notes.append(f"excel={excel_mode}")
         return notes

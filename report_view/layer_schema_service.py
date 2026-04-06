@@ -6,6 +6,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 from qgis.PyQt.QtCore import QVariant
 from qgis.core import QgsFeatureRequest, QgsProject, QgsVectorLayer, QgsWkbTypes
 
+from .field_role_resolver import FieldRoleResolver
 from .report_logging import log_info
 from .result_models import FieldSchema, FilterSpec, LayerSchema, ProjectSchema
 from .text_utils import contains_hint_tokens, normalize_compact, normalize_text, tokenize_text
@@ -37,7 +38,54 @@ FILTER_FIELD_HINTS = (
     "localidade",
     "setor",
     "status",
+    "situacao",
+    "sit",
 )
+
+STATUS_FIELD_HINTS = ("status", "situacao", "sit")
+GENERIC_CATEGORY_FIELD_HINTS = (
+    "tipo",
+    "classe",
+    "categoria",
+    "grupo",
+    "sistema",
+    "servico",
+    "serviço",
+    "pavimento",
+    "piso",
+    "modalidade",
+    "natureza",
+    "uso",
+)
+GENERIC_CATEGORICAL_EXCLUDE_HINTS = (
+    "id",
+    "codigo",
+    "cod",
+    "matricula",
+    "uuid",
+    "guid",
+    "cpf",
+    "cnpj",
+    "telefone",
+    "celular",
+    "fone",
+    "email",
+    "cep",
+    "endereco",
+    "logradouro",
+    "obs",
+    "observacao",
+    "descricao_completa",
+    "comentario",
+    "geom",
+    "geometry",
+)
+GENERIC_FILTER_STOP_VALUES = {
+    "ativo",
+    "inativo",
+    "cancelado",
+    "suspenso",
+}
 
 ENGINEERING_VALUE_HINTS = (
     "pvc",
@@ -48,6 +96,15 @@ ENGINEERING_VALUE_HINTS = (
     "dn",
     "mm",
 )
+SERVICE_FIELD_FAMILY_HINTS = (
+    "ligacao",
+    "ligação",
+    "rede",
+    "servico",
+    "serviço",
+    "abastecimento",
+    "coleta",
+)
 
 GENERIC_NAME_FIELD_HINTS = (
     "nome",
@@ -56,6 +113,26 @@ GENERIC_NAME_FIELD_HINTS = (
     "nm_nome",
     "descricao",
     "desc",
+)
+GENERIC_SERVICE_FIELD_HINTS = (
+    "servico",
+    "serviço",
+    "sistema",
+    "rede",
+    "ligacao",
+    "ligação",
+    "tipo_servico",
+)
+GENERIC_SEMANTIC_TERMS = (
+    "agua",
+    "esgoto",
+    "drenagem",
+    "pluvial",
+    "sanitario",
+    "ativo",
+    "inativo",
+    "cancelado",
+    "suspenso",
 )
 
 def _contains_hint_tokens(value: str, hints: Sequence[str]) -> bool:
@@ -67,7 +144,7 @@ class LayerSchemaService:
         self,
         profile_feature_limit: int = 120,
         top_values_limit: int = 6,
-        profile_field_limit: int = 6,
+        profile_field_limit: int = 8,
         feature_scan_limit: int = 60,
     ):
         self.profile_feature_limit = max(40, int(profile_feature_limit))
@@ -75,6 +152,7 @@ class LayerSchemaService:
         self.profile_field_limit = max(3, int(profile_field_limit))
         self.feature_scan_limit = max(30, int(feature_scan_limit))
         self._cache: Dict[Tuple, ProjectSchema] = {}
+        self.role_resolver = FieldRoleResolver()
 
     def clear_cache(self):
         self._cache = {}
@@ -121,6 +199,7 @@ class LayerSchemaService:
         layer_schema: LayerSchema,
         raw_candidates: Sequence[Dict],
         allow_feature_scan: bool = False,
+        question_text: str = "",
     ) -> Tuple[List[FilterSpec], List[Dict]]:
         started_at = perf_counter()
         layer = self._get_layer(layer_schema.layer_id)
@@ -185,6 +264,16 @@ class LayerSchemaService:
                     "match_mode": best_match.get("mode", "semantic"),
                 }
             )
+        if question_text:
+            generic_filters, generic_recognized = self.infer_generic_filters_from_question(
+                layer_schema,
+                question_text=question_text,
+                recognized_filters=recognized,
+                limit=3,
+                allow_feature_scan=allow_feature_scan,
+            )
+            filters.extend(generic_filters)
+            recognized.extend(generic_recognized)
         log_info(
             "[Relatorios] filtros "
             f"layer={layer_schema.name} allow_feature_scan={allow_feature_scan} "
@@ -225,11 +314,14 @@ class LayerSchemaService:
         if not layer_schema.fields:
             return None
         location_fields = [field for field in layer_schema.fields if field.is_location_candidate]
+        generic_name_field = self.role_resolver.top_field(layer_schema, "generic_name_field")
         if recognized_filters:
             for item in recognized_filters:
                 field_name = item.get("field")
                 if field_name and any(field.name == field_name and field.is_location_candidate for field in layer_schema.fields):
                     return str(field_name)
+        if generic_name_field is not None and generic_name_field.kind == "text":
+            return generic_name_field.name
         if location_fields:
             return location_fields[0].name
         text_fields = [field for field in layer_schema.fields if field.kind == "text"]
@@ -238,6 +330,215 @@ class LayerSchemaService:
         integer_fields = [field for field in layer_schema.fields if field.kind == "integer"]
         return integer_fields[0].name if integer_fields else None
 
+    def choose_group_field_by_hint(
+        self,
+        layer_schema: LayerSchema,
+        group_hint_text: str,
+    ) -> Optional[str]:
+        normalized_hint = normalize_text(group_hint_text)
+        hint_tokens = tuple(token for token in tokenize_text(normalized_hint) if token not in {"por", "de", "do", "da"})
+        if not hint_tokens:
+            return None
+
+        best_field = None
+        best_score = 0.0
+        for field in layer_schema.fields:
+            if field.kind not in {"text", "date", "datetime", "integer"}:
+                continue
+            field_text = normalize_text(field.search_text or field.label or field.name)
+            score = 0.0
+            if contains_hint_tokens(field_text, hint_tokens):
+                score += 6
+            overlap = len(set(hint_tokens) & set(tokenize_text(field_text)))
+            score += overlap * 2
+            if getattr(field, "is_filter_candidate", False):
+                score += 1
+            if getattr(field, "is_location_candidate", False):
+                score += 1
+            role_scores = getattr(field, "role_scores", {}) or {}
+            score += float(role_scores.get("generic_name_field", 0.0)) * 0.5
+            if any(token in hint_tokens for token in ("municipio", "cidade")):
+                score += float(role_scores.get("municipality_field", 0.0)) * 0.75
+            if any(token in hint_tokens for token in ("bairro", "setor", "distrito")):
+                score += float(role_scores.get("bairro_field", 0.0)) * 0.75
+            if any(token in hint_tokens for token in ("localidade", "comunidade", "povoado", "zona")):
+                score += float(role_scores.get("localidade_field", 0.0)) * 0.75
+            if score > best_score:
+                best_field = field
+                best_score = score
+
+        return best_field.name if best_field is not None and best_score > 0 else None
+
+    def find_service_status_field(
+        self,
+        layer_schema: LayerSchema,
+        service_term: str,
+    ) -> Optional[FieldSchema]:
+        normalized_service = normalize_text(service_term)
+        if not normalized_service:
+            return None
+
+        best_field = None
+        best_score = 0.0
+        for field in layer_schema.fields:
+            if field.kind not in {"text", "integer"}:
+                continue
+            search_text = normalize_text(field.search_text or field.label or field.name)
+            role_scores = getattr(field, "role_scores", {}) or {}
+            score = float(role_scores.get("status_field", 0.0)) * 1.4
+            score += float(role_scores.get("service_field", 0.0)) * 0.8
+            if normalized_service in search_text:
+                score += 8
+            if _contains_hint_tokens(search_text, STATUS_FIELD_HINTS):
+                score += 6
+            if _contains_hint_tokens(search_text, SERVICE_FIELD_FAMILY_HINTS):
+                score += 3
+            if "nm_situacao_" in normalize_text(field.name):
+                score += 2
+            if score > best_score:
+                best_field = field
+                best_score = score
+        return best_field if best_field is not None and best_score >= 10 else None
+
+    def infer_generic_filters_from_question(
+        self,
+        layer_schema: LayerSchema,
+        question_text: str,
+        recognized_filters: Sequence[Dict] = (),
+        limit: int = 3,
+        allow_feature_scan: bool = False,
+    ) -> Tuple[List[FilterSpec], List[Dict]]:
+        normalized_question = normalize_text(question_text)
+        if not normalized_question:
+            return [], []
+
+        existing = {
+            (normalize_text(item.get("field") or ""), normalize_text(item.get("value") or ""))
+            for item in recognized_filters
+        }
+        candidates: List[Tuple[float, FieldSchema, str]] = []
+        generic_fields: List[FieldSchema] = []
+        for field in layer_schema.fields:
+            if not self._is_generic_categorical_candidate(
+                normalize_text(field.search_text or field.label or field.name),
+                field.kind,
+            ):
+                continue
+            generic_fields.append(field)
+            if self._is_location_candidate(
+                normalize_text(field.search_text or field.label or field.name),
+                field_kind=field.kind,
+                geometry_type=layer_schema.geometry_type,
+                layer_name_norm=normalize_text(layer_schema.name),
+            ):
+                continue
+            if _contains_hint_tokens(field.search_text, ("dn", "diametro", "diam", "bitola")):
+                continue
+            if _contains_hint_tokens(field.search_text, STATUS_FIELD_HINTS):
+                continue
+            values = []
+            seen_values = set()
+            for value in list(field.top_values or []) + list(field.sample_values or []):
+                rendered = self._render_profile_value(value, field.kind)
+                normalized_value = normalize_text(rendered)
+                if not normalized_value or normalized_value in seen_values:
+                    continue
+                seen_values.add(normalized_value)
+                values.append(rendered)
+            for rendered in values:
+                normalized_value = normalize_text(rendered)
+                if len(normalized_value) < 3:
+                    continue
+                if normalized_value in GENERIC_FILTER_STOP_VALUES:
+                    continue
+                score = self._score_generic_question_value_match(normalized_question, normalized_value, field)
+                if score <= 0:
+                    continue
+                key = (normalize_text(field.name), normalized_value)
+                if key in existing:
+                    continue
+                candidates.append((score, field, rendered))
+
+        if allow_feature_scan and generic_fields:
+            layer = self._get_layer(layer_schema.layer_id)
+            if layer is not None:
+                scan_candidates = self._scan_generic_fields_for_question_values(
+                    layer,
+                    generic_fields,
+                    normalized_question,
+                    existing,
+                )
+                candidates.extend(scan_candidates)
+
+        candidates.sort(
+            key=lambda item: (
+                item[0],
+                len(normalize_text(item[2]).split()),
+                len(str(item[2])),
+                item[1].label.lower(),
+            ),
+            reverse=True,
+        )
+        filters: List[FilterSpec] = []
+        recognized: List[Dict] = []
+        seen = set()
+        for score, field, rendered in candidates:
+            key = (field.name, normalize_text(rendered))
+            if key in seen:
+                continue
+            seen.add(key)
+            filters.append(FilterSpec(field=field.name, value=rendered, operator="eq", layer_role="target"))
+            recognized.append(
+                {
+                    "kind": "generic",
+                    "field": field.name,
+                    "field_label": field.label,
+                    "value": rendered,
+                    "score": score,
+                    "source_text": rendered,
+                    "match_mode": "profile_generic",
+                }
+            )
+            if len(filters) >= max(1, int(limit)):
+                break
+        return filters, recognized
+
+    def _scan_generic_fields_for_question_values(
+        self,
+        layer: QgsVectorLayer,
+        generic_fields: Sequence[FieldSchema],
+        normalized_question: str,
+        existing: Sequence[Tuple[str, str]],
+    ) -> List[Tuple[float, FieldSchema, str]]:
+        existing_keys = set(existing)
+        candidates: List[Tuple[float, FieldSchema, str]] = []
+        for field in generic_fields[: max(2, self.profile_field_limit)]:
+            if layer.fields().indexFromName(field.name) < 0:
+                continue
+            request = QgsFeatureRequest()
+            request.setSubsetOfAttributes([field.name], layer.fields())
+            request.setLimit(max(self.feature_scan_limit * 4, 180))
+            if hasattr(request, "setNoGeometry"):
+                request.setNoGeometry(True)
+            seen_values = set()
+            for feature in layer.getFeatures(request):
+                value = feature[field.name]
+                rendered = self._render_profile_value(value, field.kind)
+                normalized_value = normalize_text(rendered)
+                if not normalized_value or normalized_value in seen_values:
+                    continue
+                seen_values.add(normalized_value)
+                if normalized_value in GENERIC_FILTER_STOP_VALUES:
+                    continue
+                key = (normalize_text(field.name), normalized_value)
+                if key in existing_keys:
+                    continue
+                score = self._score_generic_question_value_match(normalized_question, normalized_value, field)
+                if score <= 0:
+                    continue
+                candidates.append((score, field, rendered))
+        return candidates
+
     def find_semantic_fields(
         self,
         layer_schema: LayerSchema,
@@ -245,6 +546,33 @@ class LayerSchemaService:
         limit: int = 5,
     ) -> List[FieldSchema]:
         semantic_kind = normalize_text(semantic_kind)
+        role_map = {
+            "length": ("length_field",),
+            "area": ("area_field",),
+            "diameter": ("diameter_field",),
+            "material": ("material_field",),
+            "status": ("status_field",),
+            "location": ("municipality_field", "bairro_field", "localidade_field", "generic_name_field"),
+            "category": ("service_field", "material_field", "status_field", "generic_name_field"),
+            "name": ("generic_name_field",),
+        }
+        roles = role_map.get(semantic_kind, ())
+        if roles:
+            scored: List[Tuple[float, FieldSchema]] = []
+            for field in layer_schema.fields:
+                role_scores = getattr(field, "role_scores", {}) or {}
+                score = sum(float(role_scores.get(role, 0.0) or 0.0) for role in roles)
+                if semantic_kind == "location" and getattr(field, "is_location_candidate", False):
+                    score += 4.0
+                if semantic_kind == "category" and field.kind == "text":
+                    score += 1.0
+                if score > 0:
+                    scored.append((score, field))
+            scored.sort(key=lambda item: (item[0], item[1].label.lower(), item[1].name.lower()), reverse=True)
+            ranked = [field for _score, field in scored[: max(1, int(limit))]]
+            if ranked:
+                return ranked
+
         scored: List[Tuple[int, FieldSchema]] = []
         for field in layer_schema.fields:
             score = 0
@@ -265,6 +593,11 @@ class LayerSchemaService:
                     score += 1
             elif semantic_kind == "material":
                 if _contains_hint_tokens(search_text, ("material", "classe", "tipo")):
+                    score += 8
+                if field.kind == "text":
+                    score += 3
+            elif semantic_kind == "status":
+                if _contains_hint_tokens(search_text, STATUS_FIELD_HINTS):
                     score += 8
                 if field.kind == "text":
                     score += 3
@@ -292,17 +625,33 @@ class LayerSchemaService:
             field_kind = self._field_kind(field)
             sample_values = list(profiles.get(field.name(), {}).get("sample_values", []))
             top_values = list(profiles.get(field.name(), {}).get("top_values", []))
+            role_scores = self.role_resolver.score_field(
+                field_name=field.name(),
+                alias=alias,
+                field_kind=field_kind,
+                geometry_type=geometry_type,
+                layer_name=layer.name(),
+                sample_values=sample_values,
+                top_values=top_values,
+            )
+            semantic_roles = self.role_resolver.ranked_roles(role_scores, min_score=5.0)
             field_schema = FieldSchema(
                 name=field.name(),
                 alias=alias,
                 kind=field_kind,
                 sample_values=sample_values,
+                top_values=top_values,
+                role_scores=role_scores,
+                semantic_roles=semantic_roles,
             )
-            setattr(field_schema, "top_values", top_values)
             setattr(
                 field_schema,
                 "is_filter_candidate",
-                self._is_filter_candidate(field_name_norm, field_kind, layer_name_norm=layer_name_norm, geometry_type=geometry_type),
+                self._is_filter_candidate(field_name_norm, field_kind, layer_name_norm=layer_name_norm, geometry_type=geometry_type)
+                or any(
+                    role_scores.get(role, 0.0) >= 6.0
+                    for role in ("diameter_field", "material_field", "status_field", "service_field")
+                ),
             )
             setattr(
                 field_schema,
@@ -314,10 +663,14 @@ class LayerSchemaService:
                     layer_name_norm=layer_name_norm,
                 ),
             )
+            field_schema.is_location_candidate = field_schema.is_location_candidate or any(
+                role_scores.get(role, 0.0) >= 6.0
+                for role in ("municipality_field", "bairro_field", "localidade_field", "generic_name_field")
+            )
             profile_tokens = []
             if getattr(field_schema, "is_filter_candidate", False) or getattr(field_schema, "is_location_candidate", False):
                 profile_tokens = list(getattr(field_schema, "top_values", []) or [])[:3] + list(field_schema.sample_values or [])[:2]
-            search_parts = [field_schema.name, field_schema.alias] + profile_tokens
+            search_parts = [field_schema.name, field_schema.alias] + field_schema.semantic_roles + profile_tokens
             field_schema.search_text = normalize_text(" ".join(part for part in search_parts if part))
             fields.append(field_schema)
 
@@ -432,7 +785,8 @@ class LayerSchemaService:
         fields = [field for field in layer_schema.fields if getattr(field, "is_filter_candidate", False) or getattr(field, "is_location_candidate", False)]
         preferred = []
         if kind == "location":
-            preferred = [field for field in fields if getattr(field, "is_location_candidate", False)]
+            preferred = self._location_role_candidates(layer_schema)
+            preferred.extend([field for field in fields if getattr(field, "is_location_candidate", False) and field not in preferred])
             if layer_schema.geometry_type == "polygon":
                 polygon_text_fields = [
                     field
@@ -443,16 +797,54 @@ class LayerSchemaService:
                 ]
                 preferred.extend(polygon_text_fields[:4])
         elif kind == "diameter":
-            preferred = [field for field in fields if _contains_hint_tokens(field.search_text, ("dn", "diametro", "diam", "bitola"))]
+            preferred = self.role_resolver.rank_fields(layer_schema, "diameter_field", limit=6)
+            preferred.extend([field for field in fields if _contains_hint_tokens(field.search_text, ("dn", "diametro", "diam", "bitola")) and field not in preferred])
         elif kind == "material":
-            preferred = [field for field in fields if _contains_hint_tokens(field.search_text, ("material", "tipo", "classe"))]
+            preferred = self.role_resolver.rank_fields(layer_schema, "material_field", limit=6)
+            preferred.extend([field for field in fields if _contains_hint_tokens(field.search_text, ("material", "tipo", "classe")) and field not in preferred])
+        elif kind == "status":
+            preferred = self.role_resolver.rank_fields(layer_schema, "status_field", limit=6)
+            preferred.extend([field for field in fields if _contains_hint_tokens(field.search_text, STATUS_FIELD_HINTS) and field not in preferred])
         elif kind == "generic":
-            preferred = [field for field in fields if not getattr(field, "is_location_candidate", False)]
+            preferred = []
+            for role in ("service_field", "material_field", "status_field", "generic_name_field"):
+                for field in self.role_resolver.rank_fields(layer_schema, role, limit=4):
+                    if field not in preferred:
+                        preferred.append(field)
+            preferred = [
+                *preferred,
+                *[
+                    field
+                    for field in fields
+                    if field.kind in {"text", "integer"}
+                    and not getattr(field, "is_location_candidate", False)
+                    and self._is_generic_semantic_field(normalize_text(field.search_text or field.label or field.name), field.kind)
+                    and field not in preferred
+                ],
+            ]
+            fallback = [
+                field
+                for field in fields
+                if field.kind == "text"
+                and not getattr(field, "is_location_candidate", False)
+                and field not in preferred
+            ]
+            preferred.extend(fallback[:4])
         elif layer_schema.geometry_type == "polygon":
             preferred = [field for field in layer_schema.fields if field.kind == "text"][:4]
         if preferred:
             return preferred + [field for field in fields if field not in preferred]
         return fields
+
+    def _location_role_candidates(self, layer_schema: LayerSchema) -> List[FieldSchema]:
+        preferred: List[FieldSchema] = []
+        for role in ("municipality_field", "bairro_field", "localidade_field", "generic_name_field"):
+            for field in self.role_resolver.rank_fields(layer_schema, role, limit=4):
+                if field.kind not in {"text", "integer", "date", "datetime"}:
+                    continue
+                if field not in preferred:
+                    preferred.append(field)
+        return preferred
 
     def _match_candidate_on_field(
         self,
@@ -539,7 +931,12 @@ class LayerSchemaService:
             return {"value": self._render_candidate_value(candidate), "score": 0.76, "mode": "semantic"}
         if kind == "material" and _contains_hint_tokens(field_schema.search_text, ("material", "tipo", "classe")):
             return {"value": self._render_candidate_value(candidate), "score": 0.70, "mode": "semantic"}
-        if kind == "generic" and getattr(field_schema, "is_filter_candidate", False):
+        if kind == "status" and _contains_hint_tokens(field_schema.search_text, STATUS_FIELD_HINTS):
+            return {"value": self._render_candidate_value(candidate), "score": 0.78, "mode": "semantic"}
+        if kind == "generic" and self._is_generic_semantic_field(
+            normalize_text(field_schema.search_text or field_schema.label or field_schema.name),
+            field_schema.kind,
+        ):
             return {"value": self._render_candidate_value(candidate), "score": 0.58, "mode": "semantic"}
         return None
 
@@ -571,6 +968,12 @@ class LayerSchemaService:
             if compact_target and compact_target in compact_value:
                 return 0.84
 
+        if _contains_hint_tokens(field_schema.search_text, STATUS_FIELD_HINTS):
+            current_status = self._normalize_status_value(value)
+            target_status = self._normalize_status_value(target_text)
+            if current_status and target_status and current_status == target_status:
+                return 0.99
+
         if target_text and value_text == target_text:
             return 0.97
         if compact_target and compact_value == compact_target:
@@ -591,6 +994,34 @@ class LayerSchemaService:
         if any(hint in target_text for hint in ENGINEERING_VALUE_HINTS) and compact_target and compact_target in compact_value:
             return 0.82
         return 0.0
+
+    def _score_generic_question_value_match(
+        self,
+        normalized_question: str,
+        normalized_value: str,
+        field_schema: FieldSchema,
+    ) -> float:
+        if not normalized_question or not normalized_value:
+            return 0.0
+        question_tokens = set(tokenize_text(normalized_question))
+        value_tokens = tuple(token for token in tokenize_text(normalized_value) if token)
+        if not value_tokens:
+            return 0.0
+        score = 0.0
+        if f" {normalized_value} " in f" {normalized_question} ":
+            score = 0.88
+        elif set(value_tokens).issubset(question_tokens):
+            score = 0.82
+        if score <= 0:
+            return 0.0
+        field_text = normalize_text(field_schema.search_text or field_schema.label or field_schema.name)
+        if _contains_hint_tokens(field_text, GENERIC_CATEGORY_FIELD_HINTS):
+            score += 0.05
+        if getattr(field_schema, "is_filter_candidate", False):
+            score += 0.03
+        if len(value_tokens) > 1:
+            score += 0.03
+        return min(0.97, score)
 
     def _coerce_numeric(self, value) -> Optional[float]:
         if value in (None, ""):
@@ -615,6 +1046,18 @@ class LayerSchemaService:
                 return str(int(round(numeric)))
             return str(numeric)
         return str(value).strip()
+
+    def _normalize_status_value(self, value) -> str:
+        normalized = normalize_text(value)
+        if re.search(r"\bativ[ao]s?\b", normalized):
+            return "ativo"
+        if re.search(r"\binativ[ao]s?\b", normalized):
+            return "inativo"
+        if re.search(r"\bcancelad[ao]s?\b", normalized):
+            return "cancelado"
+        if re.search(r"\bsuspens[ao]s?\b", normalized):
+            return "suspenso"
+        return normalized
 
     def _get_layer(self, layer_id: str) -> Optional[QgsVectorLayer]:
         layer = QgsProject.instance().mapLayer(layer_id)
@@ -671,12 +1114,36 @@ class LayerSchemaService:
             return False
         if _contains_hint_tokens(normalized_name, FILTER_FIELD_HINTS):
             return True
+        if self._is_generic_categorical_candidate(normalized_name, field_kind):
+            return True
         return self._is_location_candidate(
             normalized_name,
             field_kind=field_kind,
             geometry_type=geometry_type,
             layer_name_norm=layer_name_norm,
         )
+
+    def _is_generic_categorical_candidate(self, normalized_name: str, field_kind: str) -> bool:
+        if field_kind in {"date", "datetime"}:
+            return False
+        if field_kind == "text":
+            if _contains_hint_tokens(normalized_name, GENERIC_CATEGORICAL_EXCLUDE_HINTS):
+                return False
+            return True
+        if field_kind == "integer" and _contains_hint_tokens(normalized_name, GENERIC_CATEGORY_FIELD_HINTS):
+            return True
+        return False
+
+    def _is_generic_semantic_field(self, normalized_name: str, field_kind: str) -> bool:
+        if field_kind not in {"text", "integer"}:
+            return False
+        if _contains_hint_tokens(normalized_name, GENERIC_CATEGORICAL_EXCLUDE_HINTS):
+            return False
+        if _contains_hint_tokens(normalized_name, GENERIC_CATEGORY_FIELD_HINTS):
+            return True
+        if _contains_hint_tokens(normalized_name, GENERIC_SERVICE_FIELD_HINTS):
+            return True
+        return any(term in normalized_name for term in GENERIC_SEMANTIC_TERMS)
 
     def _is_location_candidate(
         self,
@@ -716,4 +1183,6 @@ class LayerSchemaService:
             return 2
         if _contains_hint_tokens(normalized_name, ("status",)):
             return 3
+        if self._is_generic_categorical_candidate(normalized_name, field_kind):
+            return 4
         return 9

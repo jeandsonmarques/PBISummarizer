@@ -28,6 +28,7 @@ class SchemaContextBuilder:
     def _build_layer_profile(self, layer) -> LayerContextProfile:
         numeric_fields = [field.name for field in layer.fields if field.kind in {"integer", "numeric"}]
         categorical_fields = [field.name for field in layer.fields if field.kind in {"text", "date", "datetime"}]
+        field_search_terms = [field.search_text or field.name for field in layer.fields]
         location_fields = [
             field.name
             for field in layer.fields
@@ -59,6 +60,7 @@ class SchemaContextBuilder:
                 + semantic_tags
                 + numeric_fields
                 + categorical_fields
+                + field_search_terms
                 + location_fields
                 + filter_fields
             )
@@ -136,4 +138,3 @@ class SchemaContextBuilder:
         if location_label:
             summary = f"{summary} - locais: {location_label}"
         return summary
-

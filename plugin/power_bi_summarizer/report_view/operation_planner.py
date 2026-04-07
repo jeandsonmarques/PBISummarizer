@@ -3,7 +3,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from .domain_packs import DEFAULT_DOMAIN_PACK
+from .domain_packs import DEFAULT_DOMAIN_PACK, DomainPack, ProjectPack
 from .query_preprocessor import PreprocessedQuestion, QueryPreprocessor
 from .report_context_memory import ReportContextMemory
 from .result_models import CandidateInterpretation, InterpretationResult, ProjectSchemaContext, QueryPlan
@@ -71,8 +71,19 @@ class PlanningBrief:
 
 
 class OperationPlanner:
-    def __init__(self):
-        self.preprocessor = QueryPreprocessor()
+    def __init__(
+        self,
+        domain_pack: Optional[DomainPack] = None,
+        project_pack: Optional[ProjectPack] = None,
+    ):
+        self.domain_pack = domain_pack or DEFAULT_DOMAIN_PACK
+        self.project_pack = project_pack
+        self.preprocessor = QueryPreprocessor(self.domain_pack, project_pack)
+        self.entity_priority_terms = tuple(self.domain_pack.entity_priority_terms or ())
+        self.semantic_metric_labels = dict(self.domain_pack.semantic_metric_labels or {})
+        self.entity_label_suffixes = dict(self.domain_pack.entity_label_suffixes or {})
+        self.value_insight_labels = dict(self.domain_pack.value_insight_labels or {})
+        self.derived_intent_labels = dict(self.domain_pack.derived_intent_labels or {})
 
     def build_brief(
         self,
@@ -737,7 +748,7 @@ class OperationPlanner:
         brief: PlanningBrief,
         schema_context: ProjectSchemaContext,
     ) -> str:
-        metric_label = {
+        metric_label = self.semantic_metric_labels.get(plan.metric.operation, {
             "count": "Quantidade",
             "sum": "Total",
             "avg": "Media",
@@ -749,16 +760,15 @@ class OperationPlanner:
             "difference": "Diferenca",
             "percentage": "Percentual",
             "comparison": "Comparacao",
-        }.get(plan.metric.operation, "Consulta")
+        }.get(plan.metric.operation, "Consulta"))
         entity = brief.subject_hint or self._entity_from_plan(plan, schema_context) or "dados"
-        entity_label = {
-            "rede": "da rede",
-            "ligacao": "das ligacoes",
-            "lote": "dos lotes",
-        }.get(entity, f"de {entity}")
+        entity_label = self.entity_label_suffixes.get(entity, f"de {entity}")
 
         if plan.intent == "derived_ratio":
-            return self._append_filters("Metros por ligacao da rede", plan.filters)
+            return self._append_filters(
+                self.derived_intent_labels.get("ratio_label", "Metros por ligacao da rede"),
+                plan.filters,
+            )
 
         if plan.intent == "composite_metric":
             base = {
@@ -775,10 +785,7 @@ class OperationPlanner:
 
         if plan.intent == "value_insight":
             attribute = brief.attribute_hint or normalize_text(plan.metric.field_label or plan.metric.field or "valor")
-            attribute_label = {
-                "diameter": "o maior diametro",
-                "material": "o material",
-            }.get(attribute, metric_label.lower())
+            attribute_label = self.value_insight_labels.get(attribute, metric_label.lower())
             return self._append_filters(f"{attribute_label} {entity_label}", plan.filters)
 
         base = metric_label
@@ -829,7 +836,7 @@ class OperationPlanner:
             layer = schema_context.layer_by_id(layer_id)
             if layer is None:
                 continue
-            for term in ("rede", "ligacao", "lote", "bairro", "municipio"):
+            for term in self.entity_priority_terms:
                 if term in layer.entity_terms:
                     return term
         return normalize_text(plan.target_layer_name or plan.source_layer_name or plan.boundary_layer_name or "")

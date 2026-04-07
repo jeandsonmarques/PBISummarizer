@@ -47,6 +47,19 @@ class DomainPack:
     service_field_family_hints: Tuple[str, ...] = ()
     generic_service_field_hints: Tuple[str, ...] = ()
     generic_semantic_terms: Tuple[str, ...] = ()
+    entity_priority_terms: Tuple[str, ...] = ()
+    ratio_denominator_terms: Tuple[str, ...] = ()
+    ratio_target_terms: Tuple[str, ...] = ()
+    ratio_source_terms: Tuple[str, ...] = ()
+    ratio_target_geometry_types: Tuple[str, ...] = ()
+    ratio_source_geometry_types: Tuple[str, ...] = ()
+    rewrite_templates: Dict[str, str] = field(default_factory=dict)
+    ratio_descriptor_overrides: Dict[str, Tuple[str, str]] = field(default_factory=dict)
+    entity_label_suffixes: Dict[str, str] = field(default_factory=dict)
+    semantic_metric_labels: Dict[str, str] = field(default_factory=dict)
+    value_insight_labels: Dict[str, str] = field(default_factory=dict)
+    derived_intent_labels: Dict[str, str] = field(default_factory=dict)
+    ratio_messages: Dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -274,6 +287,92 @@ SANITATION_DOMAIN_PACK = DomainPack(
     service_field_family_hints=_tuple(("ligacao", "rede", "servico", "abastecimento", "coleta")),
     generic_service_field_hints=_tuple(("servico", "sistema", "rede", "ligacao", "tipo_servico")),
     generic_semantic_terms=_tuple(("agua", "esgoto", "drenagem", "pluvial", "sanitario", "ativo", "inativo", "cancelado", "suspenso")),
+    entity_priority_terms=_tuple(("rede", "ligacao", "lote", "bairro", "municipio")),
+    ratio_denominator_terms=_tuple(
+        (
+            "metro",
+            "metros",
+            "km",
+            "quilometro",
+            "quilometros",
+            "ligacao",
+            "ligacoes",
+            "cliente",
+            "clientes",
+            "economia",
+            "economias",
+            "ponto",
+            "pontos",
+            "hidrante",
+            "hidrantes",
+            "ramal",
+            "ramais",
+            "trecho",
+            "trechos",
+            "rede",
+            "redes",
+            "lote",
+            "lotes",
+            "parcela",
+            "parcelas",
+            "imovel",
+            "imoveis",
+        )
+    ),
+    ratio_target_terms=_tuple(("rede", "redes", "adutora", "adutoras", "ramal", "ramais", "tubulacao", "tubulacoes", "trecho", "trechos")),
+    ratio_source_terms=_tuple(("ligacao", "ligacoes", "cliente", "clientes", "economia", "economias", "usuario", "usuarios", "unidade", "unidades")),
+    ratio_target_geometry_types=_tuple(("line",)),
+    ratio_source_geometry_types=_tuple(("point",)),
+    rewrite_templates={
+        "ratio_count_per_length": "razao entre quantidade de ligacoes e extensao da rede",
+        "ratio_length_per_connection": "media de extensao da rede por ligacao",
+        "diameter_max": "qual o maior diametro da rede",
+        "diameter_min": "qual o menor diametro da rede",
+        "diameter_distribution": "quantidade da rede por diametro",
+        "material_distribution": "quantidade da rede por material",
+    },
+    ratio_descriptor_overrides={
+        "count_per_length": ("quantidade de ligacoes", "extensao da rede"),
+        "length_per_count": ("extensao da rede", "quantidade de ligacoes"),
+    },
+    entity_label_suffixes={
+        "rede": "da rede",
+        "trecho": "dos trechos",
+        "ponto": "dos pontos",
+        "ligacao": "das ligacoes",
+        "lote": "dos lotes",
+    },
+    semantic_metric_labels={
+        "count": "Quantidade",
+        "sum": "Total",
+        "avg": "Media",
+        "length": "Extensao total",
+        "area": "Area total",
+        "max": "Maior valor",
+        "min": "Menor valor",
+        "ratio": "Metros por ligacao",
+        "difference": "Diferenca",
+        "percentage": "Percentual",
+        "comparison": "Comparacao",
+    },
+    value_insight_labels={
+        "diameter": "o maior diametro",
+        "material": "o material",
+    },
+    derived_intent_labels={
+        "ratio_metric": "Metros por ligacao",
+        "ratio_label": "Metros por ligacao da rede",
+        "ratio_summary": "A extensao media da rede por ligacao",
+        "ratio_entity": "da rede por ligacao",
+        "ratio_human_metric": "a extensao media por ligacao",
+        "ratio_chart_title": "Metros por ligacao",
+        "ratio_confirmation_template": "Voce quis dizer a extensao media da rede por ligacao, usando {target_layer} dividido por {source_layer}?",
+    },
+    ratio_messages={
+        "missing_layers": "Nao consegui encontrar uma camada de rede e uma camada de ligacoes para calcular essa media.",
+        "build_failed": "Nao consegui montar uma consulta segura de metros por ligacao com as camadas abertas.",
+        "ambiguous": "Encontrei mais de uma forma plausivel de calcular metros por ligacao.",
+    },
 )
 
 

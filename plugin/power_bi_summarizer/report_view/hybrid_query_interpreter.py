@@ -3,7 +3,7 @@ import re
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from .domain_packs import DEFAULT_DOMAIN_PACK
+from .domain_packs import DEFAULT_DOMAIN_PACK, DomainPack, ProjectPack
 from .langchain_query_interpreter import LangChainQueryInterpreter
 from .layer_schema_service import LayerSchemaService
 from .query_preprocessor import PreprocessedQuestion, QueryPreprocessor
@@ -110,11 +110,24 @@ class _ResolvedPlanCandidate:
 
 
 class HybridQueryInterpreter:
-    def __init__(self):
+    def __init__(
+        self,
+        domain_pack: Optional[DomainPack] = None,
+        project_pack: Optional[ProjectPack] = None,
+    ):
+        self.domain_pack = domain_pack or DEFAULT_DOMAIN_PACK
+        self.project_pack = project_pack
         self.local_interpreter = QueryInterpreter()
         self.langchain_interpreter = LangChainQueryInterpreter()
-        self.preprocessor = QueryPreprocessor()
+        self.preprocessor = QueryPreprocessor(self.domain_pack, project_pack)
         self.schema_linker = SchemaLinkerService()
+        self.entity_label_suffixes = dict(self.domain_pack.entity_label_suffixes or {})
+        self.derived_intent_labels = dict(self.domain_pack.derived_intent_labels or {})
+        self.ratio_messages = dict(self.domain_pack.ratio_messages or {})
+        self.ratio_target_terms = tuple(self.domain_pack.ratio_target_terms or self.domain_pack.network_terms or ())
+        self.ratio_source_terms = tuple(self.domain_pack.ratio_source_terms or self.domain_pack.connection_terms or ())
+        self.ratio_target_geometry_types = tuple(self.domain_pack.ratio_target_geometry_types or ("line",))
+        self.ratio_source_geometry_types = tuple(self.domain_pack.ratio_source_geometry_types or ("point",))
 
     def interpret(
         self,
@@ -1077,7 +1090,10 @@ class HybridQueryInterpreter:
         if not target_layers or not source_layers:
             return InterpretationResult(
                 status="unsupported",
-                message="Nao consegui encontrar uma camada de rede e uma camada de ligacoes para calcular essa media.",
+                message=self.ratio_messages.get(
+                    "missing_layers",
+                    "Nao consegui encontrar uma camada de rede e uma camada de ligacoes para calcular essa media.",
+                ),
                 confidence=0.0,
                 source="heuristic_ratio",
             )
@@ -1104,7 +1120,10 @@ class HybridQueryInterpreter:
         if not candidates:
             return InterpretationResult(
                 status="unsupported",
-                message="Nao consegui montar uma consulta segura de metros por ligacao com as camadas abertas.",
+                message=self.ratio_messages.get(
+                    "build_failed",
+                    "Nao consegui montar uma consulta segura de metros por ligacao com as camadas abertas.",
+                ),
                 confidence=0.0,
                 source="heuristic_ratio",
             )
@@ -1129,7 +1148,10 @@ class HybridQueryInterpreter:
         if len(candidates) > 1 and candidates[1].confidence >= best.confidence - 0.05:
             return InterpretationResult(
                 status="ambiguous",
-                message="Encontrei mais de uma forma plausivel de calcular metros por ligacao.",
+                message=self.ratio_messages.get(
+                    "ambiguous",
+                    "Encontrei mais de uma forma plausivel de calcular metros por ligacao.",
+                ),
                 confidence=best.confidence,
                 source="heuristic_ratio",
                 candidate_interpretations=[
@@ -1174,9 +1196,14 @@ class HybridQueryInterpreter:
         normalized = normalize_text(preprocessed.corrected_text or question)
         if preprocessed.intent_label == "razao":
             return True
-        if not any(token in normalized.split() for token in ("ligacao", "ligacoes")):
+        if not any(token in normalized.split() for token in self.ratio_source_terms):
             return False
-        return bool(re.search(r"\b(?:metro|metros|metragem|extensao|comprimento)\b", normalized) and re.search(r"\bpor\s+ligac", normalized))
+        has_length_metric = any(token in normalized.split() for token in (self.domain_pack.length_terms or ()))
+        has_connection_denominator = any(
+            f" por {term}" in normalized or f" cada {term}" in normalized
+            for term in self.ratio_source_terms
+        )
+        return has_length_metric and has_connection_denominator
 
     def _rank_ratio_target_layers(
         self,
@@ -1193,17 +1220,17 @@ class HybridQueryInterpreter:
         for layer in schema.layers:
             if forced_layer_id and layer.layer_id != forced_layer_id:
                 continue
-            if layer.geometry_type != "line":
+            if layer.geometry_type not in self.ratio_target_geometry_types:
                 continue
             score = 6
-            score += self._score_terms(layer.search_text, ("rede", "adutora", "tubulacao", "ramal", "trecho")) * 3
+            score += self._score_terms(layer.search_text, self.ratio_target_terms or ("rede", "trecho")) * 3
             if any(item.get("kind") == "location" for item in raw_filters) and any(field.is_location_candidate for field in layer.fields):
                 score += 2
             if any(item.get("kind") == "diameter" for item in raw_filters) and any("dn" in field.search_text or "diam" in field.search_text for field in layer.fields):
                 score += 2
             if any(item.get("kind") == "material" for item in raw_filters) and any("material" in field.search_text or "classe" in field.search_text for field in layer.fields):
                 score += 2
-            if "rede" in normalized:
+            if any(term in normalized.split() for term in self.ratio_target_terms):
                 score += 2
             for service_term in SERVICE_TERMS:
                 if service_term in normalized and service_term in layer.search_text:
@@ -1228,10 +1255,13 @@ class HybridQueryInterpreter:
         for layer in schema.layers:
             if forced_source_id and layer.layer_id != forced_source_id:
                 continue
-            if layer.geometry_type != "point":
+            if layer.geometry_type not in self.ratio_source_geometry_types:
                 continue
             score = 4
-            score += self._score_terms(layer.search_text, ("ligacao", "ligacoes", "cliente", "clientes", "economia", "economias")) * 3
+            score += self._score_terms(
+                layer.search_text,
+                self.ratio_source_terms or ("ligacao", "ligacoes"),
+            ) * 3
             if any(item.get("kind") == "location" for item in raw_filters) and any(field.is_location_candidate for field in layer.fields):
                 score += 2
             if any(item.get("kind") == "status" for item in raw_filters) and any(
@@ -1239,7 +1269,7 @@ class HybridQueryInterpreter:
                 for field in layer.fields
             ):
                 score += 3
-            if "ligacao" in normalized or "ligacoes" in normalized:
+            if any(term in normalized.split() for term in self.ratio_source_terms):
                 score += 2
             for service_term in SERVICE_TERMS:
                 if service_term in normalized and service_term in layer.search_text:
@@ -1352,12 +1382,12 @@ class HybridQueryInterpreter:
                 field=None,
                 field_label="",
                 use_geometry=False,
-                label="Metros por ligacao",
-                source_geometry_hint="line",
+                label=self.derived_intent_labels.get("ratio_metric", "Metros por ligacao"),
+                source_geometry_hint=self.ratio_target_geometry_types[0] if self.ratio_target_geometry_types else "line",
             ),
             filters=combined_filters,
         )
-        plan.chart.title = "Metros por ligacao"
+        plan.chart.title = self.derived_intent_labels.get("ratio_chart_title", "Metros por ligacao")
         plan.chart.type = "bar"
 
         confidence = 0.60
@@ -2869,7 +2899,7 @@ class HybridQueryInterpreter:
         if metric.operation == "comparison":
             return "a comparacao"
         if metric.operation == "ratio":
-            return "a extensao media por ligacao"
+            return self.derived_intent_labels.get("ratio_human_metric", "a extensao media por ligacao")
         if metric.operation == "length":
             return "a extensao total"
         if metric.operation == "area":
@@ -2904,7 +2934,7 @@ class HybridQueryInterpreter:
 
         if plan.intent == "derived_ratio":
             filter_text = self._filter_phrase(recognized_filters)
-            base = "A extensao media da rede por ligacao"
+            base = self.derived_intent_labels.get("ratio_summary", "A extensao media da rede por ligacao")
             if filter_text:
                 return f"{base} {filter_text}".replace("  ", " ").strip()
             return base
@@ -2929,12 +2959,12 @@ class HybridQueryInterpreter:
         if plan.intent == "composite_metric":
             return "dos operandos"
         if plan.intent == "derived_ratio":
-            return "da rede por ligacao"
+            return self.derived_intent_labels.get("ratio_entity", "da rede por ligacao")
         layer_name = normalize_text(plan.target_layer_name or plan.source_layer_name or "")
-        if any(token in layer_name for token in ("rede", "trecho", "tubulacao", "adutora", "ramal")):
-            return "da rede"
+        if any(token in layer_name for token in (self.domain_pack.network_terms or ("rede",))):
+            return self.entity_label_suffixes.get("rede", "da rede")
         if plan.metric.source_geometry_hint == "line":
-            return "da rede"
+            return self.entity_label_suffixes.get("rede", "da rede")
         if plan.metric.source_geometry_hint == "polygon" or plan.metric.operation == "area":
             return "das areas"
         return "dos registros"
@@ -3243,9 +3273,13 @@ class HybridQueryInterpreter:
                 base = f"{base[:-1]} filtrando por {', '.join(filter_texts)}?"
             return base
         if plan.intent == "derived_ratio":
-            base = (
-                f"Voce quis dizer a extensao media da rede por ligacao, "
-                f"usando {plan.target_layer_name} dividido por {plan.source_layer_name}?"
+            base = self.derived_intent_labels.get(
+                "ratio_confirmation_template",
+                "Voce quis dizer a extensao media da rede por ligacao, usando {target_layer} dividido por {source_layer}?",
+            )
+            base = base.format(
+                target_layer=plan.target_layer_name,
+                source_layer=plan.source_layer_name,
             )
             filter_texts = [str(item.value) for item in plan.filters if item.value not in (None, "")]
             if filter_texts:

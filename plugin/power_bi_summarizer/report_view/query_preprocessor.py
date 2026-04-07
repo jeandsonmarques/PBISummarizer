@@ -14,35 +14,7 @@ COMPARISON_TERMS = ("compar", "versus", "vs", "entre")
 DIFFERENCE_TERMS = ("diferenca", "diferença", "menos", "subtrair", "subtracao", "subtração")
 PERCENTAGE_TERMS = ("percentual", "porcentagem", "percento", "%", "participacao", "participação")
 RATIO_HINT_TERMS = ("dividido por", "dividida por", "razao entre", "relação entre", "relacao entre", "proporcao entre", "proporção entre")
-RATIO_DENOMINATOR_TERMS = (
-    "metro",
-    "metros",
-    "km",
-    "quilometro",
-    "quilometros",
-    "ligacao",
-    "ligacoes",
-    "cliente",
-    "clientes",
-    "economia",
-    "economias",
-    "ponto",
-    "pontos",
-    "hidrante",
-    "hidrantes",
-    "ramal",
-    "ramais",
-    "trecho",
-    "trechos",
-    "rede",
-    "redes",
-    "lote",
-    "lotes",
-    "parcela",
-    "parcelas",
-    "imovel",
-    "imoveis",
-)
+RATIO_DENOMINATOR_TERMS = DEFAULT_DOMAIN_PACK.ratio_denominator_terms
 GROUP_LIKE_TERMS = DEFAULT_DOMAIN_PACK.group_like_terms
 FOLLOW_UP_TERMS = ("agora", "so", "somente", "apenas", "usa", "mostra")
 LOCATION_PREFIXES = ("municipio", "cidade", "bairro", "localidade", "setor", "distrito", "comunidade", "povoado")
@@ -125,12 +97,42 @@ class QueryPreprocessor:
         self.service_terms = tuple(self.domain_pack.service_terms or ())
         self.material_terms = tuple(self.domain_pack.material_terms or ())
         self.diameter_terms = tuple(self.domain_pack.diameter_terms or ())
+        self.connection_terms = tuple(self.domain_pack.connection_terms or ())
+        self.length_terms = tuple(self.domain_pack.length_terms or ())
+        self.ratio_denominator_terms = tuple(self.domain_pack.ratio_denominator_terms or ())
         self.subject_hints = dict(self.domain_pack.subject_hints or {})
         self.group_hints = dict(self.domain_pack.group_hints or {})
         self.location_stop_words = set(self.domain_pack.location_stop_words or ())
+        self.rewrite_templates = dict(self.domain_pack.rewrite_templates or {})
+        self.ratio_descriptor_overrides = dict(self.domain_pack.ratio_descriptor_overrides or {})
+        self.entity_label_suffixes = dict(self.domain_pack.entity_label_suffixes or {})
         self._vocabulary = sorted(
             {term for values in self.canonical_terms.values() for term in values} | set(self.canonical_terms.keys())
         )
+
+    def _template_text(self, key: str, default: str) -> str:
+        value = str(self.rewrite_templates.get(key, "") or "").strip()
+        return value or default
+
+    def _has_any_term(self, text: str, terms) -> bool:
+        padded = f" {text} "
+        for term in terms:
+            normalized = normalize_text(term)
+            if not normalized:
+                continue
+            if f" {normalized} " in padded or normalized in text:
+                return True
+        return False
+
+    def _has_connection_denominator(self, text: str) -> bool:
+        padded = f" {text} "
+        for term in self.connection_terms:
+            normalized = normalize_text(term)
+            if not normalized:
+                continue
+            if f" por {normalized} " in padded or f" para cada {normalized} " in padded or f" cada {normalized} " in padded:
+                return True
+        return False
 
     def preprocess(self, question: str) -> PreprocessedQuestion:
         normalized = normalize_text(question)
@@ -237,15 +239,13 @@ class QueryPreprocessor:
 
         if self._is_ratio_query(text):
             normalized_text = normalize_text(text)
-            if re.search(r"\bligac\w*\b.*\bpor\s+(metro|metros|km|quilometro|quilometros)\b", normalized_text):
-                base = "razao entre quantidade de ligacoes e extensao da rede"
+            if self._has_any_term(normalized_text, self.connection_terms) and re.search(r"\bpor\s+(metro|metros|km|quilometro|quilometros)\b", normalized_text):
+                base = self._template_text("ratio_count_per_length", "razao entre quantidade de ligacoes e extensao da rede")
                 if filters:
                     base = f"{base} {filters}"
                 return re.sub(r"\s+", " ", base).strip()
-            if re.search(r"\b(?:por|cada)\s+ligac", normalized_text) and any(
-                token in normalized_text.split() for token in ("metragem", "metros", "metro", "extensao", "comprimento")
-            ):
-                base = "media de extensao da rede por ligacao"
+            if self._has_connection_denominator(normalized_text) and self._has_any_term(normalized_text, self.length_terms):
+                base = self._template_text("ratio_length_per_connection", "media de extensao da rede por ligacao")
                 if filters:
                     base = f"{base} {filters}"
                 return re.sub(r"\s+", " ", base).strip()
@@ -261,18 +261,18 @@ class QueryPreprocessor:
             return re.sub(r"\s+", " ", base).strip()
 
         if attribute == "diameter" and value_mode == "max":
-            base = "qual o maior diametro da rede"
+            base = self._template_text("diameter_max", "qual o maior diametro da rede")
             if filters:
                 base = f"{base} {filters}"
             return re.sub(r"\s+", " ", base).strip()
         if attribute == "diameter" and value_mode == "min":
-            base = "qual o menor diametro da rede"
+            base = self._template_text("diameter_min", "qual o menor diametro da rede")
             if filters:
                 base = f"{base} {filters}"
             return re.sub(r"\s+", " ", base).strip()
         if attribute in {"diameter", "material"} and value_mode == "distribution":
-            attribute_text = "diametro" if attribute == "diameter" else "material"
-            base = f"quantidade da rede por {attribute_text}"
+            template_key = "diameter_distribution" if attribute == "diameter" else "material_distribution"
+            base = self._template_text(template_key, f"quantidade da rede por {'diametro' if attribute == 'diameter' else 'material'}")
             if filters:
                 base = f"{base} {filters}"
             return re.sub(r"\s+", " ", base).strip()
@@ -285,12 +285,7 @@ class QueryPreprocessor:
             "sum": "total",
         }.get(metric, "valor")
 
-        subject_text = {
-            "rede": "da rede",
-            "trecho": "dos trechos",
-            "ponto": "dos pontos",
-            "ligacao": "das ligacoes",
-        }.get(subject, "dos dados")
+        subject_text = self.entity_label_suffixes.get(subject, "dos dados")
 
         if group:
             base = f"{metric_text} {subject_text} por {group}"
@@ -493,6 +488,7 @@ class QueryPreprocessor:
         normalized = normalize_text(text)
         if not normalized:
             return False
+        ratio_metric_terms = {"quantidade", "total", "soma", "somatorio", "media", "area"} | set(self.length_terms)
         if any(term in normalized for term in RATIO_HINT_TERMS) or "share" in normalized or "taxa" in normalized:
             return True
         if re.search(r"\b(?:por|para cada)\s+(metro|metros|km|quilometro|quilometros)\b", normalized):
@@ -504,19 +500,19 @@ class QueryPreprocessor:
                 denominator_tokens = [token for token in denominator_text.split() if token]
                 if denominator_tokens:
                     first_token = denominator_tokens[0]
-                    if first_token in RATIO_DENOMINATOR_TERMS and first_token not in GROUP_LIKE_TERMS:
-                        if any(token in normalized.split() for token in ("quantidade", "total", "soma", "somatorio", "media", "metros", "metro", "extensao", "comprimento", "area")):
+                    if first_token in self.ratio_denominator_terms and first_token not in GROUP_LIKE_TERMS:
+                        if any(token in normalized.split() for token in ratio_metric_terms):
                             return True
-        if " por ligacao" in normalized or " por ligacoes" in normalized:
+        if self._has_connection_denominator(normalized):
             return True
         return False
 
     def _extract_ratio_descriptors(self, text: str):
         normalized = normalize_text(text)
-        if re.search(r"\bligac\w*\b.*\bpor\s+(metro|metros|km|quilometro|quilometros)\b", normalized):
-            return ("quantidade de ligacoes", "extensao da rede")
-        if re.search(r"\b(?:metro|metros|extensao|comprimento)\b.*\bpor\s+ligac", normalized):
-            return ("extensao da rede", "quantidade de ligacoes")
+        if self._has_any_term(normalized, self.connection_terms) and re.search(r"\bpor\s+(metro|metros|km|quilometro|quilometros)\b", normalized):
+            return self.ratio_descriptor_overrides.get("count_per_length", ("quantidade de ligacoes", "extensao da rede"))
+        if self._has_any_term(normalized, self.length_terms) and self._has_connection_denominator(normalized):
+            return self.ratio_descriptor_overrides.get("length_per_count", ("extensao da rede", "quantidade de ligacoes"))
         patterns = (
             r"\b(.+?)\s+dividid[oa]\s+por\s+(.+)$",
             r"\b(?:razao|relacao|relação|proporcao|proporção)\s+entre\s+(.+?)\s+e\s+(.+)$",
@@ -539,7 +535,7 @@ class QueryPreprocessor:
         right_tokens = right.split()
         if not right_tokens or right_tokens[0] in GROUP_LIKE_TERMS:
             return ()
-        if right_tokens[0] not in RATIO_DENOMINATOR_TERMS:
+        if right_tokens[0] not in self.ratio_denominator_terms:
             return ()
         left = self._clean_ratio_descriptor(match.group(1))
         if left and right:

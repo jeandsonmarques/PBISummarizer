@@ -25,6 +25,7 @@ NETWORK_TERMS = DEFAULT_DOMAIN_PACK.network_terms
 CONNECTION_TERMS = DEFAULT_DOMAIN_PACK.connection_terms
 LENGTH_TERMS = ("extensao", "comprimento", "metragem", "metro", "metros", "tamanho")
 COUNT_TERMS = ("quantidade", "quantos", "quantas", "numero", "número", "total")
+METRIC_HINTS = {"sum", "avg", "max", "min"}
 LOCATION_INTRO_PATTERNS = (
     r"\bem\s+([a-z0-9_ ]{2,50})",
     r"\bde\s+([a-z0-9_ ]{2,50})$",
@@ -460,6 +461,10 @@ class OperationPlanner:
                 score += min(0.12, linked_field_counts[layer.layer_id] * 0.02)
             if linked_value_counts.get(layer.layer_id):
                 score += min(0.12, linked_value_counts[layer.layer_id] * 0.03)
+            semantic_link_bonus = self._linked_semantic_bonus(layer.layer_id, preprocessed, schema_link_result)
+            if semantic_link_bonus > 0:
+                score += semantic_link_bonus
+                reasons.append("campos e valores linkados reforcaram a semantica")
 
             if use_recent_context and last_plan is not None and layer.layer_id in {
                 last_plan.target_layer_id,
@@ -481,6 +486,46 @@ class OperationPlanner:
 
         candidates.sort(key=lambda item: (item.score, item.layer_name.lower()), reverse=True)
         return candidates[:5]
+
+    def _linked_semantic_bonus(
+        self,
+        layer_id: str,
+        preprocessed: PreprocessedQuestion,
+        schema_link_result: Optional[SchemaLinkResult],
+    ) -> float:
+        if schema_link_result is None or not layer_id:
+            return 0.0
+
+        score = 0.0
+        for candidate in schema_link_result.field_candidates[:8]:
+            if candidate.layer_id != layer_id:
+                continue
+            roles = set(candidate.roles or [])
+            if preprocessed.group_hint and roles & {"location", "categorical"}:
+                score += 0.03
+            if preprocessed.attribute_hint == "diameter" and "diameter" in roles:
+                score += 0.06
+            if preprocessed.attribute_hint == "material" and "material" in roles:
+                score += 0.06
+            if preprocessed.attribute_hint == "status" and "status" in roles:
+                score += 0.05
+            if preprocessed.metric_hint in METRIC_HINTS and candidate.field_kind in {"integer", "numeric"}:
+                score += 0.03
+
+        for candidate in schema_link_result.value_candidates[:8]:
+            if candidate.layer_id != layer_id:
+                continue
+            roles = set(candidate.roles or [])
+            if preprocessed.attribute_hint == "diameter" and "diameter" in roles:
+                score += 0.05
+            if preprocessed.attribute_hint == "material" and "material" in roles:
+                score += 0.05
+            if preprocessed.attribute_hint == "status" and "status" in roles:
+                score += 0.04
+            if preprocessed.group_hint and "location" in roles:
+                score += 0.02
+
+        return min(0.18, score)
 
     def _score_layer_name_alignment(
         self,

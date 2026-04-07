@@ -9,6 +9,7 @@ from .domain_packs import (
     ProjectPack,
     build_canonical_terms,
     build_project_alias_lookup,
+    build_semantic_catalog,
     collect_project_terms,
 )
 from .text_utils import normalize_text
@@ -90,6 +91,7 @@ class PreprocessedQuestion:
     composite_mode: str = ""
     excel_mode: str = ""
     top_n: Optional[int] = None
+    semantic_terms: List[str] = field(default_factory=list)
 
 
 class QueryPreprocessor:
@@ -113,6 +115,7 @@ class QueryPreprocessor:
         self.rewrite_templates = dict(self.domain_pack.rewrite_templates or {})
         self.ratio_descriptor_overrides = dict(self.domain_pack.ratio_descriptor_overrides or {})
         self.entity_label_suffixes = dict(self.domain_pack.entity_label_suffixes or {})
+        self.semantic_catalog = build_semantic_catalog(self.domain_pack, project_pack)
         self.project_value_alias_lookup = build_project_alias_lookup(
             project_pack.value_aliases if project_pack is not None else {},
         )
@@ -181,6 +184,14 @@ class QueryPreprocessor:
         value_mode = self._value_mode(corrected)
         composite_mode = self._composite_mode(corrected)
         excel_mode = excel_mode or self._excel_mode(corrected)
+        semantic_terms = self._extract_semantic_terms(
+            corrected,
+            metric_hint=metric_hint,
+            subject_hint=subject_hint,
+            group_hint=group_hint,
+            attribute_hint=attribute_hint,
+            value_mode=value_mode,
+        )
         if excel_mode and intent_label not in {"razao", "diferenca", "percentual", "comparacao"}:
             intent_label = "formula_excel"
         return PreprocessedQuestion(
@@ -201,7 +212,64 @@ class QueryPreprocessor:
             composite_mode=composite_mode,
             excel_mode=excel_mode,
             top_n=top_n,
+            semantic_terms=semantic_terms,
         )
+
+    def _extract_semantic_terms(
+        self,
+        text: str,
+        metric_hint: str = "",
+        subject_hint: str = "",
+        group_hint: str = "",
+        attribute_hint: str = "",
+        value_mode: str = "",
+    ) -> List[str]:
+        normalized = normalize_text(text)
+        semantic_terms: List[str] = []
+        seen = set()
+
+        def _add(term: str):
+            normalized_term = normalize_text(term).replace(" ", "")
+            if not normalized_term or normalized_term in seen:
+                return
+            seen.add(normalized_term)
+            semantic_terms.append(term)
+
+        metric_map = {
+            "count": "metric:count",
+            "length": "metric:length",
+            "area": "metric:area",
+            "avg": "metric:avg",
+            "sum": "metric:sum",
+        }
+        subject_map = {
+            "rede": "subject:network",
+            "ligacao": "subject:connection",
+            "lote": "subject:lot",
+        }
+        attribute_map = {
+            "diameter": "attribute:diameter",
+            "material": "attribute:material",
+            "status": "attribute:status",
+        }
+
+        if metric_hint:
+            _add(metric_map.get(metric_hint, f"metric:{metric_hint}"))
+        if value_mode == "max":
+            _add("metric:max")
+        elif value_mode == "min":
+            _add("metric:min")
+        if subject_hint:
+            _add(subject_map.get(subject_hint, f"subject:{subject_hint}"))
+        if attribute_hint:
+            _add(attribute_map.get(attribute_hint, f"attribute:{attribute_hint}"))
+        if group_hint in self.group_hints:
+            _add("group:location")
+
+        for semantic_label, aliases in self.semantic_catalog.items():
+            if self._has_any_term(normalized, aliases):
+                _add(semantic_label)
+        return semantic_terms
 
     def _apply_replacements(self, text: str) -> str:
         updated = text

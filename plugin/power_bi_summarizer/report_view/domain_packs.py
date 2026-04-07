@@ -26,6 +26,13 @@ def _normalized(value: str) -> str:
     return normalize_text(str(value or "").strip())
 
 
+def _flatten_tuple_map(values: Mapping[str, Sequence[str]]) -> Tuple[str, ...]:
+    flattened: Tuple[str, ...] = ()
+    for items in (values or {}).values():
+        flattened = _merge_unique(flattened, _tuple(items or ()))
+    return flattened
+
+
 @dataclass(frozen=True)
 class DomainPack:
     name: str
@@ -86,6 +93,35 @@ def build_canonical_terms(
     for key, values in (project_pack.canonical_terms or {}).items():
         merged[key] = _merge_unique(merged.get(key, ()), values)
     return merged
+
+
+def build_semantic_catalog(
+    domain_pack: DomainPack,
+    project_pack: Optional[ProjectPack] = None,
+) -> Dict[str, Tuple[str, ...]]:
+    canonical_terms = build_canonical_terms(domain_pack, project_pack)
+    location_group_terms = _flatten_tuple_map(domain_pack.group_hints or {})
+    status_terms = _flatten_tuple_map(domain_pack.status_terms or {})
+    subject_lot_terms = tuple((domain_pack.subject_hints or {}).get("lote", ()))
+    return {
+        "metric:count": _merge_unique(canonical_terms.get("quantidade", ()), canonical_terms.get("contagem_excel", ())),
+        "metric:length": _merge_unique(domain_pack.length_terms, canonical_terms.get("extensao", ())),
+        "metric:area": canonical_terms.get("area", ()),
+        "metric:avg": _merge_unique(canonical_terms.get("media", ()), canonical_terms.get("media_excel", ())),
+        "metric:sum": _merge_unique(canonical_terms.get("total", ()), canonical_terms.get("soma_excel", ())),
+        "metric:max": canonical_terms.get("maximo", ()),
+        "metric:min": canonical_terms.get("minimo", ()),
+        "subject:network": domain_pack.network_terms,
+        "subject:connection": domain_pack.connection_terms,
+        "subject:lot": subject_lot_terms,
+        "attribute:diameter": _merge_unique(domain_pack.diameter_terms, canonical_terms.get("diametro", ())),
+        "attribute:material": _merge_unique(domain_pack.material_terms, canonical_terms.get("material", ())),
+        "attribute:status": _merge_unique(status_terms, canonical_terms.get("status", ())),
+        "group:location": _merge_unique(domain_pack.location_terms, location_group_terms),
+        "context:water": domain_pack.water_terms,
+        "context:sewer": domain_pack.sewer_terms,
+        "context:service": domain_pack.service_terms,
+    }
 
 
 def build_project_alias_lookup(

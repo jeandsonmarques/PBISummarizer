@@ -5,7 +5,13 @@ from dataclasses import dataclass, field
 from math import log, sqrt
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
-from .domain_packs import ProjectPack, aliases_for_target, project_pack_signature
+from .domain_packs import (
+    DEFAULT_DOMAIN_PACK,
+    ProjectPack,
+    aliases_for_target,
+    build_semantic_catalog,
+    project_pack_signature,
+)
 from .query_preprocessor import PreprocessedQuestion, QueryPreprocessor
 from .result_models import FieldSchema, FilterSpec, LayerSchema, ProjectSchema, ProjectSchemaContext
 from .text_utils import normalize_compact, normalize_text, tokenize_text
@@ -14,10 +20,12 @@ LOCATION_ROLES = {"location"}
 FILTER_ROLES = {"filter", "location", "material", "status", "diameter", "categorical"}
 GROUP_ROLES = {"location", "categorical", "status", "material", "generic"}
 METRIC_HINTS = {"sum", "avg", "max", "min"}
-STATUS_TERMS = {"ativo", "ativa", "ativos", "ativas", "inativo", "inativa", "cancelado", "cancelada", "suspenso", "suspensa"}
-SERVICE_TERMS = {"agua", "esgoto", "drenagem", "pluvial", "sanitario"}
-MATERIAL_TERMS = {"pvc", "pead", "pba", "fofo", "ferro", "aco", "fibrocimento"}
-DIAMETER_TERMS = {"dn", "diametro", "diam", "bitola"}
+STATUS_TERMS = set(DEFAULT_DOMAIN_PACK.status_terms.get("ativo", ())) | set(DEFAULT_DOMAIN_PACK.status_terms.get("inativo", ())) | set(DEFAULT_DOMAIN_PACK.status_terms.get("cancelado", ())) | set(DEFAULT_DOMAIN_PACK.status_terms.get("suspenso", ()))
+SERVICE_TERMS = set(DEFAULT_DOMAIN_PACK.service_terms)
+MATERIAL_TERMS = set(DEFAULT_DOMAIN_PACK.material_terms)
+DIAMETER_TERMS = set(DEFAULT_DOMAIN_PACK.diameter_terms)
+NETWORK_TERMS = set(DEFAULT_DOMAIN_PACK.network_terms)
+CONNECTION_TERMS = set(DEFAULT_DOMAIN_PACK.connection_terms)
 FIELD_STOP_TERMS = {"id", "codigo", "cod", "uuid", "guid", "geom", "geometry"}
 
 
@@ -78,6 +86,7 @@ class _IndexedDocument:
     value: str = ""
     roles: Tuple[str, ...] = ()
     text: str = ""
+    semantic_terms: Tuple[str, ...] = ()
     vector: Dict[str, float] = field(default_factory=dict)
     norm: float = 0.0
 
@@ -103,6 +112,7 @@ class SchemaLinkerService:
         self.max_value_candidates = max(6, int(max_value_candidates))
         self.project_pack = project_pack
         self.preprocessor = QueryPreprocessor(project_pack=project_pack)
+        self.semantic_catalog = build_semantic_catalog(DEFAULT_DOMAIN_PACK, project_pack)
         self._index_cache: Dict[Tuple, _SchemaIndex] = {}
 
     def clear_cache(self):
@@ -118,12 +128,36 @@ class SchemaLinkerService:
         preprocessed = preprocessed or self.preprocessor.preprocess(question)
         query_text = self._build_query_text(question, preprocessed)
         normalized_question = normalize_text(question)
+        query_semantic_terms = self._query_semantic_terms(preprocessed, query_text)
         index = self._get_or_build_index(schema, schema_context)
         query_vector, query_norm = self._vectorize_text(query_text, index.idf)
 
-        layer_candidates = self._rank_layers(index.layer_docs, schema_context, preprocessed, query_text, query_vector, query_norm)
-        field_candidates = self._rank_fields(index.field_docs, schema_context, preprocessed, query_text, query_vector, query_norm)
-        value_candidates = self._rank_values(index.value_docs, preprocessed, query_text, query_vector, query_norm)
+        layer_candidates = self._rank_layers(
+            index.layer_docs,
+            schema_context,
+            preprocessed,
+            query_text,
+            query_vector,
+            query_norm,
+            query_semantic_terms,
+        )
+        field_candidates = self._rank_fields(
+            index.field_docs,
+            schema_context,
+            preprocessed,
+            query_text,
+            query_vector,
+            query_norm,
+            query_semantic_terms,
+        )
+        value_candidates = self._rank_values(
+            index.value_docs,
+            preprocessed,
+            query_text,
+            query_vector,
+            query_norm,
+            query_semantic_terms,
+        )
 
         return SchemaLinkResult(
             normalized_question=normalized_question,
@@ -291,6 +325,7 @@ class SchemaLinkerService:
         query_text: str,
         query_vector: Dict[str, float],
         query_norm: float,
+        query_semantic_terms: Sequence[str],
     ) -> List[SchemaLinkLayerCandidate]:
         items: List[SchemaLinkLayerCandidate] = []
         for document in documents:
@@ -299,6 +334,12 @@ class SchemaLinkerService:
             score = similarity
             if similarity > 0.08:
                 reasons.append("similaridade semantica")
+            semantic_bonus, semantic_matches = self._semantic_overlap_score(query_semantic_terms, document.semantic_terms)
+            if semantic_bonus > 0:
+                score += min(0.24, semantic_bonus)
+                reasons.append(
+                    f"alinhamento semantico ({', '.join(match.split(':', 1)[-1] for match in semantic_matches[:2])})"
+                )
             if preprocessed.subject_hint and preprocessed.subject_hint in document.text:
                 score += 0.16
                 reasons.append("assunto proximo da camada")
@@ -342,6 +383,7 @@ class SchemaLinkerService:
         query_text: str,
         query_vector: Dict[str, float],
         query_norm: float,
+        query_semantic_terms: Sequence[str],
     ) -> List[SchemaLinkFieldCandidate]:
         items: List[SchemaLinkFieldCandidate] = []
         query_tokens = set(tokenize_text(query_text))
@@ -352,6 +394,12 @@ class SchemaLinkerService:
             reasons: List[str] = []
             if similarity > 0.08:
                 reasons.append("similaridade semantica")
+            semantic_bonus, semantic_matches = self._semantic_overlap_score(query_semantic_terms, document.semantic_terms)
+            if semantic_bonus > 0:
+                score += min(0.26, semantic_bonus)
+                reasons.append(
+                    f"papel semantico alinhado ({', '.join(match.split(':', 1)[-1] for match in semantic_matches[:2])})"
+                )
             if preprocessed.group_phrase and ("location" in roles or "categorical" in roles):
                 phrase_tokens = set(tokenize_text(preprocessed.group_phrase))
                 overlap = len(phrase_tokens & set(tokenize_text(document.text)))
@@ -400,6 +448,7 @@ class SchemaLinkerService:
         query_text: str,
         query_vector: Dict[str, float],
         query_norm: float,
+        query_semantic_terms: Sequence[str],
     ) -> List[SchemaLinkValueCandidate]:
         items: List[SchemaLinkValueCandidate] = []
         normalized_query = normalize_text(query_text)
@@ -412,6 +461,12 @@ class SchemaLinkerService:
             value_tokens = set(tokenize_text(document.value))
             score = similarity
             reasons: List[str] = []
+            semantic_bonus, semantic_matches = self._semantic_overlap_score(query_semantic_terms, document.semantic_terms)
+            if semantic_bonus > 0:
+                score += min(0.20, semantic_bonus)
+                reasons.append(
+                    f"contexto semantico alinhado ({', '.join(match.split(':', 1)[-1] for match in semantic_matches[:2])})"
+                )
             if value_text and value_text in normalized_query:
                 score += 0.42
                 reasons.append("valor encontrado na pergunta")
@@ -511,6 +566,7 @@ class SchemaLinkerService:
                 layer_name=layer.name,
                 geometry_type=layer.geometry_type,
                 text=layer_text,
+                semantic_terms=self._layer_semantic_terms(layer, context_layer),
             )
             layer_docs.append(layer_doc)
             raw_feature_sets.append(set(self._raw_features(layer_text).keys()))
@@ -544,6 +600,7 @@ class SchemaLinkerService:
                     field_kind=field.kind,
                     roles=field_roles,
                     text=field_text,
+                    semantic_terms=self._field_semantic_terms(layer, context_layer, field, field_roles),
                 )
                 field_docs.append(field_doc)
                 raw_feature_sets.append(set(self._raw_features(field_text).keys()))
@@ -584,6 +641,7 @@ class SchemaLinkerService:
                         value=value,
                         roles=field_roles,
                         text=value_text,
+                        semantic_terms=self._value_semantic_terms(layer, context_layer, field, value, field_roles),
                     )
                     value_docs.append(value_doc)
                     raw_feature_sets.append(set(self._raw_features(value_text).keys()))
@@ -620,6 +678,191 @@ class SchemaLinkerService:
         if self.project_pack is None:
             return ()
         return aliases_for_target(self.project_pack.value_aliases, value)
+
+    def _query_semantic_terms(
+        self,
+        preprocessed: PreprocessedQuestion,
+        query_text: str,
+    ) -> Tuple[str, ...]:
+        terms = list(getattr(preprocessed, "semantic_terms", []) or [])
+        terms.extend(self._semantic_labels_from_text(query_text))
+        return tuple(dict.fromkeys(term for term in terms if term))
+
+    def _layer_semantic_terms(
+        self,
+        layer: LayerSchema,
+        context_layer,
+    ) -> Tuple[str, ...]:
+        terms = list(
+            self._semantic_labels_from_text(
+                " ".join(
+                    filter(
+                        None,
+                        [
+                            layer.name,
+                            layer.search_text,
+                            getattr(context_layer, "search_text", ""),
+                            " ".join(getattr(context_layer, "entity_terms", [])),
+                            " ".join(getattr(context_layer, "semantic_tags", [])),
+                        ],
+                    )
+                )
+            )
+        )
+        if layer.geometry_type == "line":
+            terms.extend(["metric:length", "subject:network"])
+        elif layer.geometry_type == "polygon":
+            terms.extend(["metric:area", "group:location"])
+        elif layer.geometry_type == "point":
+            terms.append("subject:connection")
+
+        if context_layer is not None:
+            if getattr(context_layer, "location_field_names", []):
+                terms.append("group:location")
+            if any(term in normalize_text(" ".join(getattr(context_layer, "entity_terms", []))) for term in NETWORK_TERMS):
+                terms.append("subject:network")
+            if any(term in normalize_text(" ".join(getattr(context_layer, "entity_terms", []))) for term in CONNECTION_TERMS):
+                terms.append("subject:connection")
+
+        for field in layer.fields:
+            roles = set(getattr(field, "semantic_roles", []) or [])
+            if "diameter_field" in roles:
+                terms.append("attribute:diameter")
+            if "material_field" in roles:
+                terms.append("attribute:material")
+            if "status_field" in roles:
+                terms.append("attribute:status")
+            if getattr(field, "is_location_candidate", False):
+                terms.append("group:location")
+        return tuple(dict.fromkeys(term for term in terms if term))
+
+    def _field_semantic_terms(
+        self,
+        layer: LayerSchema,
+        context_layer,
+        field: FieldSchema,
+        field_roles: Sequence[str],
+    ) -> Tuple[str, ...]:
+        terms = list(
+            self._semantic_labels_from_text(
+                " ".join(
+                    filter(
+                        None,
+                        [
+                            layer.name,
+                            field.name,
+                            field.label,
+                            field.search_text,
+                            getattr(context_layer, "search_text", ""),
+                        ],
+                    )
+                )
+            )
+        )
+        roles = set(field_roles)
+        if "location" in roles:
+            terms.append("group:location")
+        if "diameter" in roles:
+            terms.append("attribute:diameter")
+        if "material" in roles:
+            terms.append("attribute:material")
+        if "status" in roles:
+            terms.append("attribute:status")
+        if "numeric" in roles:
+            terms.append("field:numeric")
+        if "categorical" in roles:
+            terms.append("field:categorical")
+        if layer.geometry_type == "line":
+            terms.append("subject:network")
+        elif layer.geometry_type == "point":
+            terms.append("subject:connection")
+        return tuple(dict.fromkeys(term for term in terms if term))
+
+    def _value_semantic_terms(
+        self,
+        layer: LayerSchema,
+        context_layer,
+        field: FieldSchema,
+        value: str,
+        field_roles: Sequence[str],
+    ) -> Tuple[str, ...]:
+        terms = list(
+            self._semantic_labels_from_text(
+                " ".join(
+                    filter(
+                        None,
+                        [
+                            layer.name,
+                            field.name,
+                            field.label,
+                            value,
+                            getattr(context_layer, "search_text", ""),
+                        ],
+                    )
+                )
+            )
+        )
+        roles = set(field_roles)
+        if "location" in roles:
+            terms.append("group:location")
+        if "diameter" in roles:
+            terms.append("attribute:diameter")
+        if "material" in roles:
+            terms.append("attribute:material")
+        if "status" in roles:
+            terms.append("attribute:status")
+        return tuple(dict.fromkeys(term for term in terms if term))
+
+    def _semantic_labels_from_text(self, text: str) -> Tuple[str, ...]:
+        normalized = normalize_text(text)
+        padded = f" {normalized} "
+        labels = []
+        for semantic_label, aliases in self.semantic_catalog.items():
+            if not aliases:
+                continue
+            matched = False
+            for term in aliases:
+                normalized_term = normalize_text(term)
+                if not normalized_term:
+                    continue
+                if f" {normalized_term} " in padded:
+                    matched = True
+                    break
+                if len(normalized_term) > 4 and normalized_term in normalized:
+                    matched = True
+                    break
+            if matched:
+                labels.append(semantic_label)
+        return tuple(dict.fromkeys(labels))
+
+    def _semantic_overlap_score(
+        self,
+        query_terms: Sequence[str],
+        document_terms: Sequence[str],
+    ) -> Tuple[float, List[str]]:
+        if not query_terms or not document_terms:
+            return 0.0, []
+        document_set = set(document_terms)
+        overlap = [term for term in query_terms if term in document_set]
+        if not overlap:
+            return 0.0, []
+        weights = {
+            "subject:": 0.12,
+            "attribute:": 0.11,
+            "group:": 0.09,
+            "context:": 0.08,
+            "metric:": 0.07,
+            "field:": 0.05,
+        }
+        score = 0.0
+        for term in overlap:
+            for prefix, weight in weights.items():
+                if term.startswith(prefix):
+                    score += weight
+                    break
+            else:
+                score += 0.05
+        return score, overlap
 
     def _schema_signature(self, schema: ProjectSchema) -> Tuple:
         return tuple(

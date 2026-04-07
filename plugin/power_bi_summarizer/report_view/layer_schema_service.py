@@ -682,6 +682,7 @@ class LayerSchemaService:
         search_terms = [layer.name(), self._geometry_type(layer), *layer_aliases]
         for field in fields:
             search_terms.extend([field.name, field.alias])
+            search_terms.extend(list(getattr(field, "semantic_roles", []) or [])[:3])
 
         return LayerSchema(
             layer_id=layer.id(),

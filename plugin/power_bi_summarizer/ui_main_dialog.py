@@ -172,7 +172,7 @@ class Ui_PowerBISummarizerDialog(object):
         header_layout.addLayout(layer_row)
 
         actions_row = QHBoxLayout()
-        self.auto_update_check = QCheckBox("Atualizacao automatica")
+        self.auto_update_check = QCheckBox("Atualização automática")
         self.auto_update_check.setChecked(True)
         self.auto_update_check.setProperty("role", "helper")
         actions_row.addWidget(self.auto_update_check)
@@ -243,7 +243,7 @@ class Ui_PowerBISummarizerDialog(object):
         integracao_layout.setContentsMargins(0, 0, 0, 0)
         integracao_layout.setSpacing(12)
 
-        self.integration_placeholder = QLabel("Integracoes externas serao exibidas aqui.")
+        self.integration_placeholder = QLabel("Integrações externas serão exibidas aqui.")
         self.integration_placeholder.setAlignment(Qt.AlignCenter)
         self.integration_placeholder.setProperty("role", "helper")
 
@@ -262,7 +262,7 @@ class Ui_PowerBISummarizerDialog(object):
         footer_layout.setSpacing(8)
 
         footer_layout.addStretch()
-        self.manage_connections_btn = QPushButton("Gerenciar conexoes")
+        self.manage_connections_btn = QPushButton("Gerenciar conexões")
         self.manage_connections_btn.setProperty("variant", "secondary")
         self.manage_connections_btn.setVisible(False)
         footer_layout.addWidget(self.manage_connections_btn)

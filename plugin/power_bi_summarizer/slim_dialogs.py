@@ -3,12 +3,14 @@
 from typing import Iterable, List, Optional, Sequence, Tuple
 
 from qgis.PyQt.QtCore import QByteArray, QSettings, Qt
-from qgis.PyQt.QtGui import QFont
+from qgis.PyQt.QtGui import QColor, QFont, QIcon
 from qgis.PyQt.QtWidgets import (
     QAbstractItemView,
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QFrame,
+    QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -23,83 +25,100 @@ from qgis.PyQt.QtWidgets import (
 SLIM_DIALOG_STYLE = """
 QDialog#SlimDialog {
     background-color: #FFFFFF;
-    border-radius: 0px;
 }
 QLabel {
-    color: #111827;
-    font-size: 11.5px;
+    color: #0F172A;
+    font-size: 12px;
 }
 QLabel[sublabel="true"] {
-    color: #374151;
-    font-weight: 600;
+    color: #475569;
+    font-weight: 400;
+}
+QLabel[caption="true"] {
+    color: #64748B;
+    font-size: 11px;
 }
 QLineEdit, QComboBox, QSpinBox {
-    border: 1px solid #E5E7EB;
-    border-radius: 0px;
-    padding: 4px 6px;
-    font-size: 11.5px;
+    min-height: 36px;
+    border: 1px solid #E2E8F0;
+    border-radius: 12px;
+    padding: 0 12px;
+    font-size: 12.5px;
     background-color: #FFFFFF;
-    selection-background-color: #F2C811;
+    color: #0F172A;
+    selection-background-color: rgba(90, 63, 230, 0.18);
 }
 QLineEdit:focus, QComboBox:focus, QSpinBox:focus {
-    border: 1px solid #F2C811;
+    border: 1px solid #8B7CF6;
 }
 QComboBox::drop-down {
-    width: 0px;
+    width: 24px;
     border: none;
 }
 QComboBox QAbstractItemView {
-    border: 1px solid #E5E7EB;
-    border-radius: 0px;
+    border: 1px solid #E2E8F0;
+    border-radius: 12px;
     background-color: #FFFFFF;
-    selection-background-color: rgba(242, 200, 17, 0.25);
+    selection-background-color: rgba(90, 63, 230, 0.12);
+    padding: 6px;
 }
 QPushButton {
-    border: 1px solid #E5E7EB;
-    border-radius: 0px;
-    padding: 4px 12px;
-    font-size: 11.5px;
+    min-height: 34px;
+    border: 1px solid #E2E8F0;
+    border-radius: 12px;
+    padding: 0 14px;
+    font-size: 12px;
+    font-weight: 400;
     background-color: #FFFFFF;
-    color: #111827;
+    color: #0F172A;
 }
 QPushButton:hover {
-    background-color: #F9FAFB;
+    background-color: #F8FAFC;
+    border-color: #CBD5E1;
 }
 QPushButton#SlimPrimaryButton {
-    border: none;
-    background-color: #F2C811;
-    color: #111827;
-    font-weight: 600;
+    border: 1px solid #5A3FE6;
+    background-color: #5A3FE6;
+    color: #FFFFFF;
+    font-weight: 500;
 }
 QPushButton#SlimPrimaryButton:hover {
-    background-color: #F7D94F;
+    background-color: #4E35CF;
+    border-color: #4E35CF;
+}
+QPushButton#SlimSecondaryButton {
+    background-color: #FFFFFF;
+    color: #334155;
+}
+QPushButton#SlimSecondaryButton:hover {
+    background-color: #F8FAFC;
 }
 QListWidget {
-    border: 1px solid #E5E7EB;
-    border-radius: 0px;
-    padding: 4px;
+    border: 1px solid #E2E8F0;
+    border-radius: 14px;
+    padding: 6px;
     alternate-background-color: #F9FAFB;
-    font-size: 11.5px;
+    font-size: 12px;
 }
 QListWidget::item {
-    height: 26px;
-    padding: 0 6px;
+    height: 28px;
+    padding: 0 8px;
 }
 QListWidget::item:selected {
-    background-color: rgba(242, 200, 17, 0.25);
-    color: #111827;
+    background-color: rgba(90, 63, 230, 0.12);
+    color: #0F172A;
 }
 QScrollBar:vertical {
     border: none;
     background: transparent;
     width: 10px;
     margin: 2px;
-    border-radius: 0px;
+    border-radius: 5px;
 }
 QScrollBar::handle:vertical {
     background: #D1D5DB;
     min-height: 20px;
-    border-radius: 0px;
+    border-radius: 5px;
 }
 QScrollBar::handle:vertical:hover {
     background: #9CA3AF;
@@ -109,6 +128,107 @@ QScrollBar::sub-line:vertical {
     height: 0px;
 }
 """
+
+SLIM_POPOVER_STYLE = """
+QDialog#SlimPopoverDialog {
+    background: transparent;
+}
+QFrame#SlimPopoverPanel {
+    background: #FFFFFF;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 18px;
+}
+QLabel#SlimPopoverTitle {
+    color: #0F172A;
+    font-size: 16px;
+    font-weight: 500;
+}
+QLabel#SlimPopoverSubtitle {
+    color: #64748B;
+    font-size: 11px;
+}
+QLabel#SlimDialogPrompt {
+    color: #334155;
+    font-size: 12px;
+    font-weight: 400;
+}
+QLabel#SlimDialogHint {
+    color: #64748B;
+    font-size: 11px;
+}
+QLabel#SlimMessageBody {
+    color: #0F172A;
+    font-size: 12.5px;
+    font-weight: 400;
+}
+QFrame#SlimPopoverIconWrap {
+    min-width: 28px;
+    max-width: 28px;
+    min-height: 28px;
+    max-height: 28px;
+    background: rgba(90, 63, 230, 0.08);
+    border: 1px solid rgba(90, 63, 230, 0.12);
+    border-radius: 14px;
+}
+QLabel#SlimPopoverIcon {
+    background: transparent;
+}
+QLineEdit#SlimDialogLineEdit {
+    min-height: 38px;
+    border: 1px solid #E2E8F0;
+    border-radius: 12px;
+    padding: 0 12px;
+    font-size: 13px;
+    background: #FFFFFF;
+    color: #0F172A;
+    selection-background-color: rgba(90, 63, 230, 0.18);
+}
+QLineEdit#SlimDialogLineEdit:focus {
+    border: 1px solid #8B7CF6;
+}
+QPushButton#SlimPrimaryButton {
+    min-height: 34px;
+    border: 1px solid #5A3FE6;
+    border-radius: 12px;
+    padding: 0 14px;
+    background: #5A3FE6;
+    color: #FFFFFF;
+    font-size: 12px;
+    font-weight: 500;
+}
+QPushButton#SlimPrimaryButton:hover {
+    background: #4E35CF;
+    border-color: #4E35CF;
+}
+QPushButton#SlimSecondaryButton {
+    min-height: 34px;
+    border: 1px solid #E2E8F0;
+    border-radius: 12px;
+    padding: 0 14px;
+    background: #FFFFFF;
+    color: #334155;
+    font-size: 12px;
+    font-weight: 400;
+}
+QPushButton#SlimSecondaryButton:hover {
+    background: #F8FAFC;
+    border-color: #CBD5E1;
+}
+"""
+
+
+def _build_dialog_font() -> QFont:
+    font = QFont("Segoe UI", 10)
+    if not font.exactMatch():
+        font = QFont("Arial", 10)
+    try:
+        base_size = font.pointSizeF()
+        if base_size <= 0:
+            base_size = 10.0
+    except Exception:
+        base_size = 10.0
+    font.setPointSizeF(max(10.0, base_size * 1.03))
+    return font
 
 
 class SlimDialogBase(QDialog):
@@ -120,18 +240,10 @@ class SlimDialogBase(QDialog):
         self._settings = QSettings()
         self.setObjectName("SlimDialog")
         self.setModal(True)
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setWindowFlag(Qt.WindowContextHelpButtonHint, False)
 
-        font = QFont("Montserrat", 10)
-        if not font.exactMatch():
-            font = QFont("Segoe UI", 10)
-        try:
-            base_size = font.pointSizeF()
-            if base_size <= 0:
-                base_size = 10.0
-        except Exception:
-            base_size = 10.0
-        font.setPointSizeF(base_size * 1.15)
-        self.setFont(font)
+        self.setFont(_build_dialog_font())
         self.setStyleSheet(SLIM_DIALOG_STYLE)
 
     def showEvent(self, event):
@@ -146,6 +258,239 @@ class SlimDialogBase(QDialog):
         if self._geometry_key:
             self._settings.setValue(self._geometry_key, self.saveGeometry())
         super().closeEvent(event)
+
+
+class SlimPopoverDialog(QDialog):
+    """Reusable lightweight dialog surface for small contextual edits."""
+
+    def __init__(self, parent: Optional[QWidget] = None, geometry_key: str = ""):
+        super().__init__(parent)
+        self._geometry_key = geometry_key
+        self._settings = QSettings()
+        self._did_restore_geometry = False
+        self.setObjectName("SlimPopoverDialog")
+        self.setModal(True)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
+        self.setWindowFlag(Qt.WindowContextHelpButtonHint, False)
+        self.setFont(_build_dialog_font())
+        self.setStyleSheet(SLIM_POPOVER_STYLE)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(18, 18, 18, 18)
+        root.setSpacing(0)
+
+        self.panel = QFrame(self)
+        self.panel.setObjectName("SlimPopoverPanel")
+        self.panel.setAttribute(Qt.WA_StyledBackground, True)
+        root.addWidget(self.panel)
+
+        shadow = QGraphicsDropShadowEffect(self.panel)
+        shadow.setBlurRadius(32)
+        shadow.setOffset(0, 8)
+        shadow.setColor(QColor(15, 23, 42, 28))
+        self.panel.setGraphicsEffect(shadow)
+
+        self.panel_layout = QVBoxLayout(self.panel)
+        self.panel_layout.setContentsMargins(18, 18, 18, 18)
+        self.panel_layout.setSpacing(12)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if self._did_restore_geometry:
+            return
+        self._did_restore_geometry = True
+        restored = False
+        if self._geometry_key:
+            data = self._settings.value(self._geometry_key)
+            if isinstance(data, QByteArray) and not data.isEmpty():
+                restored = self.restoreGeometry(data)
+        if not restored:
+            self.adjustSize()
+            self._center_on_parent()
+
+    def closeEvent(self, event):
+        if self._geometry_key:
+            self._settings.setValue(self._geometry_key, self.saveGeometry())
+        super().closeEvent(event)
+
+    def _center_on_parent(self):
+        parent = self.parentWidget()
+        if parent is None:
+            return
+        try:
+            parent_center = parent.mapToGlobal(parent.rect().center())
+            self.move(
+                int(parent_center.x() - (self.width() / 2)),
+                int(parent_center.y() - (self.height() / 2)),
+            )
+        except Exception:
+            pass
+
+
+class SlimTextInputDialog(SlimPopoverDialog):
+    """Small reusable popover-style text editor used by contextual actions."""
+
+    def __init__(
+        self,
+        title: str,
+        label_text: str,
+        text: str = "",
+        placeholder: str = "",
+        parent: Optional[QWidget] = None,
+        helper_text: str = "",
+        accept_label: str = "Salvar",
+        cancel_label: str = "Cancelar",
+        icon: Optional[QIcon] = None,
+        geometry_key: str = "",
+    ):
+        super().__init__(parent, geometry_key=geometry_key)
+        self.setWindowTitle(title)
+        self.setMinimumWidth(420)
+        self.setMaximumWidth(420)
+
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.setSpacing(10)
+
+        if icon is not None and not icon.isNull():
+            icon_wrap = QFrame(self.panel)
+            icon_wrap.setObjectName("SlimPopoverIconWrap")
+            icon_layout = QVBoxLayout(icon_wrap)
+            icon_layout.setContentsMargins(0, 0, 0, 0)
+            icon_layout.setSpacing(0)
+            icon_label = QLabel(icon_wrap)
+            icon_label.setObjectName("SlimPopoverIcon")
+            icon_label.setPixmap(icon.pixmap(14, 14))
+            icon_label.setAlignment(Qt.AlignCenter)
+            icon_layout.addWidget(icon_label)
+            header.addWidget(icon_wrap, 0, Qt.AlignTop)
+
+        title_column = QVBoxLayout()
+        title_column.setContentsMargins(0, 0, 0, 0)
+        title_column.setSpacing(2)
+
+        title_label = QLabel(title, self.panel)
+        title_label.setObjectName("SlimPopoverTitle")
+        title_column.addWidget(title_label)
+
+        if helper_text:
+            subtitle_label = QLabel(helper_text, self.panel)
+            subtitle_label.setObjectName("SlimPopoverSubtitle")
+            subtitle_label.setWordWrap(True)
+            title_column.addWidget(subtitle_label)
+
+        header.addLayout(title_column, 1)
+        self.panel_layout.addLayout(header)
+
+        prompt = QLabel(label_text, self.panel)
+        prompt.setObjectName("SlimDialogPrompt")
+        self.panel_layout.addWidget(prompt)
+
+        self.field = QLineEdit(self.panel)
+        self.field.setObjectName("SlimDialogLineEdit")
+        self.field.setText(text)
+        self.field.setPlaceholderText(placeholder)
+        self.panel_layout.addWidget(self.field)
+
+        actions = QHBoxLayout()
+        actions.setContentsMargins(0, 2, 0, 0)
+        actions.setSpacing(8)
+        actions.addStretch(1)
+
+        self.cancel_button = QPushButton(cancel_label, self.panel)
+        self.cancel_button.setObjectName("SlimSecondaryButton")
+        actions.addWidget(self.cancel_button, 0)
+
+        self.accept_button = QPushButton(accept_label, self.panel)
+        self.accept_button.setObjectName("SlimPrimaryButton")
+        self.accept_button.setDefault(True)
+        actions.addWidget(self.accept_button, 0)
+        self.panel_layout.addLayout(actions)
+
+        self.accept_button.clicked.connect(self.accept)
+        self.cancel_button.clicked.connect(self.reject)
+        self.field.returnPressed.connect(self.accept)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.field.setFocus(Qt.TabFocusReason)
+        self.field.selectAll()
+
+    def value(self) -> str:
+        return self.field.text()
+
+
+class SlimMessageDialog(SlimPopoverDialog):
+    """Reusable lightweight message dialog for subtle plugin notifications."""
+
+    def __init__(
+        self,
+        title: str,
+        text: str,
+        parent: Optional[QWidget] = None,
+        helper_text: str = "",
+        accept_label: str = "OK",
+        icon: Optional[QIcon] = None,
+        geometry_key: str = "",
+    ):
+        super().__init__(parent, geometry_key=geometry_key)
+        self.setWindowTitle(title)
+        self.setMinimumWidth(420)
+        self.setMaximumWidth(460)
+
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.setSpacing(10)
+
+        if icon is not None and not icon.isNull():
+            icon_wrap = QFrame(self.panel)
+            icon_wrap.setObjectName("SlimPopoverIconWrap")
+            icon_layout = QVBoxLayout(icon_wrap)
+            icon_layout.setContentsMargins(0, 0, 0, 0)
+            icon_layout.setSpacing(0)
+            icon_label = QLabel(icon_wrap)
+            icon_label.setObjectName("SlimPopoverIcon")
+            icon_label.setPixmap(icon.pixmap(14, 14))
+            icon_label.setAlignment(Qt.AlignCenter)
+            icon_layout.addWidget(icon_label)
+            header.addWidget(icon_wrap, 0, Qt.AlignTop)
+
+        title_column = QVBoxLayout()
+        title_column.setContentsMargins(0, 0, 0, 0)
+        title_column.setSpacing(2)
+
+        title_label = QLabel(title, self.panel)
+        title_label.setObjectName("SlimPopoverTitle")
+        title_column.addWidget(title_label)
+
+        if helper_text:
+            subtitle_label = QLabel(helper_text, self.panel)
+            subtitle_label.setObjectName("SlimPopoverSubtitle")
+            subtitle_label.setWordWrap(True)
+            title_column.addWidget(subtitle_label)
+
+        header.addLayout(title_column, 1)
+        self.panel_layout.addLayout(header)
+
+        body_label = QLabel(text, self.panel)
+        body_label.setObjectName("SlimMessageBody")
+        body_label.setWordWrap(True)
+        body_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.panel_layout.addWidget(body_label)
+
+        actions = QHBoxLayout()
+        actions.setContentsMargins(0, 2, 0, 0)
+        actions.setSpacing(8)
+        actions.addStretch(1)
+
+        self.accept_button = QPushButton(accept_label, self.panel)
+        self.accept_button.setObjectName("SlimSecondaryButton")
+        self.accept_button.setDefault(True)
+        actions.addWidget(self.accept_button, 0)
+        self.panel_layout.addLayout(actions)
+
+        self.accept_button.clicked.connect(self.accept)
 
 
 class SlimChecklistDialog(SlimDialogBase):
@@ -235,6 +580,7 @@ class SlimChecklistDialog(SlimDialogBase):
         self.ok_button.setAccessibleName("SlimDialogPrimaryAction")
 
         self.cancel_button = button_box.addButton("Cancelar", QDialogButtonBox.RejectRole)
+        self.cancel_button.setObjectName("SlimSecondaryButton")
         self.cancel_button.setAccessibleName("SlimDialogCancelAction")
         root.addWidget(button_box)
 
@@ -350,7 +696,8 @@ def _build_form_dialog(
     ok_button = button_box.addButton("OK", QDialogButtonBox.AcceptRole)
     ok_button.setObjectName("SlimPrimaryButton")
     ok_button.setDefault(True)
-    button_box.addButton("Cancelar", QDialogButtonBox.RejectRole)
+    cancel_button = button_box.addButton("Cancelar", QDialogButtonBox.RejectRole)
+    cancel_button.setObjectName("SlimSecondaryButton")
     layout.addWidget(button_box)
     return dialog, layout, button_box
 
@@ -401,34 +748,44 @@ def slim_get_text(
     text: str = "",
     placeholder: str = "",
     geometry_key: str = "PowerBISummarizer/dialogs/getText",
+    helper_text: str = "",
+    accept_label: str = "Salvar",
+    icon: Optional[QIcon] = None,
 ) -> Tuple[str, bool]:
-    dialog, layout, buttons = _build_form_dialog(parent, title, geometry_key)
+    dialog = SlimTextInputDialog(
+        title=title,
+        label_text=label_text,
+        text=text,
+        placeholder=placeholder,
+        parent=parent,
+        helper_text=helper_text,
+        accept_label=accept_label,
+        icon=icon,
+        geometry_key=geometry_key,
+    )
+    accepted = dialog.exec_() == QDialog.Accepted
+    return dialog.value(), accepted
 
-    prompt = QLabel(label_text)
-    prompt.setProperty("sublabel", True)
-    prompt.setAccessibleName("SlimDialogPrompt")
-    layout.insertWidget(0, prompt)
 
-    field = QLineEdit(dialog)
-    field.setText(text)
-    field.setPlaceholderText(placeholder)
-    field.setAccessibleName("SlimDialogLineEdit")
-    layout.insertWidget(1, field)
-
-    result = {"text": text, "accepted": False}
-
-    def accept():
-        result["text"] = field.text()
-        result["accepted"] = True
-        dialog.accept()
-
-    buttons.accepted.connect(accept)
-    buttons.rejected.connect(dialog.reject)
-    field.setFocus(Qt.TabFocusReason)
-    field.selectAll()
-
-    accepted = dialog.exec_() == QDialog.Accepted and result["accepted"]
-    return result["text"], accepted
+def slim_message(
+    parent: Optional[QWidget],
+    title: str,
+    text: str,
+    helper_text: str = "",
+    accept_label: str = "OK",
+    icon: Optional[QIcon] = None,
+    geometry_key: str = "",
+) -> bool:
+    dialog = SlimMessageDialog(
+        title=title,
+        text=text,
+        parent=parent,
+        helper_text=helper_text,
+        accept_label=accept_label,
+        icon=icon,
+        geometry_key=geometry_key,
+    )
+    return dialog.exec_() == QDialog.Accepted
 
 
 def slim_get_int(

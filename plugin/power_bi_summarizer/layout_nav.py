@@ -19,8 +19,8 @@ class SidebarController:
 
     ICON_MAP = {
         "resumo": ("Resumo", "Table.svg"),
-        "relatorios": ("Relatorios", "Report-Builder.svg"),
-        "integracao": ("Integracao", "Linked-Entity.svg"),
+        "relatorios": ("Relatórios", "Report-Builder.svg"),
+        "integracao": ("Integração", "Linked-Entity.svg"),
     }
 
     PAGE_MAP = {

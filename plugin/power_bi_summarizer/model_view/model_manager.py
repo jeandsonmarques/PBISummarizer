@@ -1817,7 +1817,7 @@ class ModelManager:
         if create_empty_layers:
             for table in tables_data:
                 name = table.get("name")
-                # evita duplicar se j� existir camada com mesmo nome
+                # evita duplicar se já existir camada com mesmo nome
                 exists = any(
                     isinstance(layer, QgsVectorLayer) and layer.name() == name
                     for layer in QgsProject.instance().mapLayers().values()

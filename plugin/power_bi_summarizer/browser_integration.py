@@ -249,7 +249,7 @@ class PowerBIRootItem(QgsDataCollectionItem):
         cloud_action.triggered.connect(_open_cloud_dialog)
         actions.append(cloud_action)
 
-        pg_action = QAction("Nova conexao PostgreSQL...", widget)
+        pg_action = QAction("Nova conexão PostgreSQL...", widget)
         pg_action.triggered.connect(lambda: self._open_quick_postgres(widget))
         actions.append(pg_action)
 
@@ -271,11 +271,11 @@ class PowerBIRootItem(QgsDataCollectionItem):
         saved = [conn for conn in connection_registry.saved_connections() if conn.get("fingerprint") != payload["fingerprint"]]
         saved.insert(0, payload)
         connection_registry.replace_saved_connections(saved, persist=True)
-        log_info("Conexao PostgreSQL adicionada via Navegador.")
+        log_info("Conexão PostgreSQL adicionada via Navegador.")
         QMessageBox.information(
             parent,
             "PowerBI Summarizer",
-            f"Conexao '{payload.get('name')}' salva. Expanda o no novamente para ver as tabelas.",
+            f"Conexão '{payload.get('name')}' salva. Expanda o nó novamente para ver as tabelas.",
         )
 
 
@@ -295,7 +295,7 @@ class PowerBICloudRootItem(QgsDataCollectionItem):
         cloud_session.layersChanged.connect(self.refresh)
         global _CLOUD_NODE_LOGGED
         if not _CLOUD_NODE_LOGGED:
-            log_info("No PowerBI Cloud carregado no Navegador.")
+            log_info("Nó PowerBI Cloud carregado no Navegador.")
             _CLOUD_NODE_LOGGED = True
 
     def createChildren(self) -> List[QgsDataItem]:
@@ -413,9 +413,9 @@ class PowerBICloudLayerItem(QgsLayerItem):
 
     def _warn_real_access(self):
         if cloud_session.hosting_ready():
-            message = "As camadas do PowerBI Cloud sao abertas diretamente do servidor configurado no plugin."
+            message = "As camadas do PowerBI Cloud são abertas diretamente do servidor configurado no plugin."
         else:
-            message = "Ative 'Hospedagem ativa' nas Configuracoes Cloud para usar apenas camadas reais do servidor."
+            message = "Ative 'Hospedagem ativa' nas Configurações Cloud para usar apenas camadas reais do servidor."
         QMessageBox.information(None, "PowerBI Cloud", message)
     def _can_delete_layer(self) -> bool:
         if self.meta.get("mock_only", True):
@@ -428,7 +428,7 @@ class PowerBICloudLayerItem(QgsLayerItem):
     def _delete_layer(self):
         layer_id = self.meta.get("id")
         if not layer_id:
-            QMessageBox.warning(None, "PowerBI Cloud", "Identificador da camada invalido.")
+            QMessageBox.warning(None, "PowerBI Cloud", "Identificador da camada inválido.")
             return
         layer_name = self.meta.get("name") or str(layer_id)
         confirm = QMessageBox.question(
@@ -441,7 +441,7 @@ class PowerBICloudLayerItem(QgsLayerItem):
         if confirm != QMessageBox.Yes:
             return
         QgsMessageLog.logMessage(
-            f"PowerBI Cloud solicitando exclusao da camada {layer_name} (id={layer_id})",
+            f"PowerBI Cloud solicitando exclusão da camada {layer_name} (id={layer_id})",
             "PowerBI Summarizer",
             Qgis.Info,
         )
@@ -463,11 +463,11 @@ class PowerBICloudLayerItem(QgsLayerItem):
             pass
         reload_cloud_catalog(force_remote_only=True)
         QgsMessageLog.logMessage(
-            f"PowerBI Cloud camada {layer_name} excluida com sucesso.",
+            f"PowerBI Cloud camada {layer_name} excluída com sucesso.",
             "PowerBI Summarizer",
             Qgis.Info,
         )
-        QMessageBox.information(None, "PowerBI Cloud", f"Camada '{layer_name}' foi excluida com sucesso.")
+        QMessageBox.information(None, "PowerBI Cloud", f"Camada '{layer_name}' foi excluída com sucesso.")
 
 class PowerBIPlaceholderItem(QgsDataCollectionItem):
     """Displayed when there are no saved connections."""
@@ -475,7 +475,7 @@ class PowerBIPlaceholderItem(QgsDataCollectionItem):
     def __init__(self, parent: QgsDataItem):
         super().__init__(
             parent,
-            "Nenhuma conexao local disponivel.",
+            "Nenhuma conexão local disponível.",
             f"{ROOT_PATH}/placeholder",
             PowerBISummarizerBrowserProvider.PROVIDER_NAME,
         )
@@ -735,7 +735,7 @@ def reload_cloud_catalog(force_remote_only: Optional[bool] = None) -> None:
     try:
         cloud_session.reload_cloud_layers(force_remote_only=force_remote)
     except Exception as exc:
-        log_warning(f"PowerBI Cloud falhou ao recarregar catalogo: {exc}")
+        log_warning(f"PowerBI Cloud falhou ao recarregar catálogo: {exc}")
     _refresh_browser_model()
 
 

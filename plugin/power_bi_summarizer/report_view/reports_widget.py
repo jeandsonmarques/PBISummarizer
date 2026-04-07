@@ -1,12 +1,13 @@
 from copy import deepcopy
+import os
 import uuid
 import traceback
 from string import Template
 from time import perf_counter
 from typing import Dict, List, Optional
 
-from qgis.PyQt.QtCore import QTimer, Qt, pyqtSignal
-from qgis.PyQt.QtGui import QColor, QTextOption
+from qgis.PyQt.QtCore import QTimer, QSize, Qt, pyqtSignal
+from qgis.PyQt.QtGui import QColor, QIcon, QTextOption
 from qgis.PyQt.QtWidgets import (
     QAction,
     QApplication,
@@ -43,10 +44,10 @@ from .report_logging import LOG_FILE, log_error, log_info, log_warning
 from .result_models import CandidateInterpretation, QueryPlan, QueryResult
 
 EXAMPLE_QUERIES = [
-    "extensao por cidade",
-    "quantidade por municipio",
-    "area por bairro",
-    "top 10 categorias",
+    {"label": "Extensão por cidade", "query": "extensao por cidade"},
+    {"label": "Quantidade por município", "query": "quantidade por municipio"},
+    {"label": "Área por bairro", "query": "area por bairro"},
+    {"label": "Top 10 categorias", "query": "top 10 categorias"},
 ]
 
 PREVIEW_ROWS = 6
@@ -185,7 +186,6 @@ REPORTS_STYLE_TEMPLATE = Template(
     }
     QPushButton#visualPanelButton,
     QPushButton#clearChatButton,
-    QPushButton[actionButton="true"],
     QPushButton[optionButton="true"] {
         background: ${surface};
         border: 1px solid ${border_soft};
@@ -196,12 +196,26 @@ REPORTS_STYLE_TEMPLATE = Template(
         font-size: ${font_button_px}px;
         font-weight: ${font_weight_medium};
     }
+    QPushButton[actionButton="true"] {
+        background: rgba(255, 255, 255, 0.92);
+        border: 1px solid rgba(15, 23, 42, 0.07);
+        color: ${text_secondary};
+        min-height: 29px;
+        padding: 0 11px;
+        border-radius: 14px;
+        font-size: ${font_secondary_px}px;
+        font-weight: ${font_weight_regular};
+    }
     QPushButton#visualPanelButton:hover,
     QPushButton#clearChatButton:hover,
-    QPushButton[actionButton="true"]:hover,
     QPushButton[optionButton="true"]:hover {
         background: ${surface_hover};
         border-color: ${border_hover};
+    }
+    QPushButton[actionButton="true"]:hover {
+        background: ${surface_hover};
+        border-color: ${border_hover};
+        color: ${text_primary};
     }
     QPushButton#clearChatButton:disabled {
         color: ${text_disabled};
@@ -224,7 +238,7 @@ REPORTS_STYLE_TEMPLATE = Template(
         padding: 0 12px;
         border-radius: 15px;
         font-size: ${font_chip_px}px;
-        font-weight: ${font_weight_medium};
+        font-weight: ${font_weight_regular};
     }
     QPushButton[chip="true"]:hover,
     QPushButton[filterChip="true"]:hover {
@@ -276,9 +290,10 @@ REPORTS_STYLE_TEMPLATE = Template(
     QToolButton#plusButton {
         min-width: 32px;
         max-width: 32px;
-        padding: 4px 0;
-        font-size: 18px;
-        font-weight: ${font_weight_medium};
+        min-height: 32px;
+        max-height: 32px;
+        padding: 0;
+        border-radius: 16px;
     }
     QToolButton#plusButton:hover,
     QToolButton#engineButton:hover {
@@ -390,6 +405,19 @@ def _clear_layout(layout):
             _clear_layout(child_layout)
 
 
+def _reports_icon_path(filename: str) -> str:
+    return os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "resources", "icons", filename)
+    )
+
+
+def _reports_icon(filename: str) -> QIcon:
+    path = _reports_icon_path(filename)
+    if os.path.exists(path):
+        return QIcon(path)
+    return QIcon()
+
+
 class AutoResizeTextEdit(QTextEdit):
     sendRequested = pyqtSignal()
 
@@ -427,11 +455,11 @@ class AutoResizeTextEdit(QTextEdit):
 
 
 class SuggestionChipButton(QPushButton):
-    def __init__(self, text: str, callback, parent=None):
-        super().__init__(text, parent)
+    def __init__(self, label: str, value: str, callback, parent=None):
+        super().__init__(label, parent)
         self.setProperty("chip", True)
         self.setCursor(Qt.PointingHandCursor)
-        self.clicked.connect(lambda checked=False, value=text: callback(value))
+        self.clicked.connect(lambda checked=False, query=value: callback(query))
 
 
 class EmptyConversationWidget(QFrame):
@@ -755,13 +783,13 @@ class AssistantMessageWidget(QWidget):
         self.correct_button.clicked.connect(lambda checked=False: self._emit_feedback("correct"))
         actions_row.addWidget(self.correct_button, 0)
 
-        self.incorrect_button = QPushButton("Nao era isso", self.content_widget)
+        self.incorrect_button = QPushButton("Não era isso", self.content_widget)
         self.incorrect_button.setProperty("actionButton", True)
         self.incorrect_button.clicked.connect(lambda checked=False: self._emit_feedback("incorrect"))
         actions_row.addWidget(self.incorrect_button, 0)
 
         if self._has_alternative_candidates():
-            self.choose_button = QPushButton("Escolher interpretacao", self.content_widget)
+            self.choose_button = QPushButton("Escolher interpretação", self.content_widget)
             self.choose_button.setProperty("actionButton", True)
             self.choose_button.clicked.connect(self._choose_interpretation)
             actions_row.addWidget(self.choose_button, 0)
@@ -1046,7 +1074,7 @@ class ActiveResultPanel(QFrame):
 
         self.show_empty()
 
-    def show_empty(self, message: str = "A ultima analise com grafico e tabela aparecera aqui."):
+    def show_empty(self, message: str = "A última análise com gráfico e tabela aparecerá aqui."):
         self.current_result = None
         self.preview_limit = PREVIEW_ROWS
         self._reset_content()
@@ -1062,7 +1090,7 @@ class ActiveResultPanel(QFrame):
         self.content_layout.addWidget(text)
         self.content_layout.addStretch(1)
 
-    def show_loading(self, message: str = "Preparando visualizacao atual..."):
+    def show_loading(self, message: str = "Preparando visualização atual..."):
         self.show_empty(message)
 
     def show_result(self, result: QueryResult):
@@ -1243,6 +1271,7 @@ class ReportsWidget(QWidget):
         self.project_context_enabled = False
 
         self._build_ui()
+        self._apply_local_icons()
         self._apply_local_styles()
         self._refresh_context_header()
         self._refresh_prompt_state()
@@ -1352,8 +1381,16 @@ class ReportsWidget(QWidget):
         footer_suggestions_layout = QHBoxLayout(self.footer_suggestions)
         footer_suggestions_layout.setContentsMargins(0, 0, 0, 0)
         footer_suggestions_layout.setSpacing(8)
-        for query in EXAMPLE_QUERIES:
-            footer_suggestions_layout.addWidget(SuggestionChipButton(query, self._use_example, self.footer_suggestions), 0)
+        for example in EXAMPLE_QUERIES:
+            footer_suggestions_layout.addWidget(
+                SuggestionChipButton(
+                    example["label"],
+                    example["query"],
+                    self._use_example,
+                    self.footer_suggestions,
+                ),
+                0,
+            )
         footer_suggestions_layout.addStretch(1)
         prompt_dock_layout.addWidget(self.footer_suggestions)
 
@@ -1371,8 +1408,9 @@ class ReportsWidget(QWidget):
 
         self.plus_button = QToolButton(prompt_shell)
         self.plus_button.setObjectName("plusButton")
-        self.plus_button.setText("+")
+        self.plus_button.setText("")
         self.plus_button.setCursor(Qt.PointingHandCursor)
+        self.plus_button.setToolButtonStyle(Qt.ToolButtonIconOnly)
         self.plus_button.setPopupMode(QToolButton.InstantPopup)
         self.plus_menu = QMenu(self.plus_button)
         self.plus_menu.aboutToShow.connect(self._populate_plus_menu)
@@ -1410,6 +1448,16 @@ class ReportsWidget(QWidget):
         workspace_layout.addWidget(self.chat_column, 1)
         QTimer.singleShot(0, self._update_responsive_layout)
 
+    def _apply_local_icons(self):
+        if getattr(self, "plus_button", None) is not None:
+            self.plus_button.setIcon(_reports_icon("report_add.svg"))
+            self.plus_button.setIconSize(QSize(14, 14))
+            self.plus_button.setToolTip("Adicionar contexto")
+
+        if getattr(self, "clear_chat_btn", None) is not None:
+            self.clear_chat_btn.setIcon(_reports_icon("report_clear.svg"))
+            self.clear_chat_btn.setIconSize(QSize(14, 14))
+
     def _build_context_menu(self):
         menu = QMenu(self)
 
@@ -1429,15 +1477,15 @@ class ReportsWidget(QWidget):
     def _build_engine_menu(self):
         menu = QMenu(self)
 
-        auto_action = QAction("IA automatica", menu)
+        auto_action = QAction("IA automática", menu)
         auto_action.triggered.connect(lambda: self._set_ai_mode("auto"))
         menu.addAction(auto_action)
 
-        local_action = QAction("Local rapido", menu)
+        local_action = QAction("Local rápido", menu)
         local_action.triggered.connect(lambda: self._set_ai_mode("local"))
         menu.addAction(local_action)
 
-        analytic_action = QAction("Analitico", menu)
+        analytic_action = QAction("Analítico", menu)
         analytic_action.triggered.connect(lambda: self._set_ai_mode("analytic"))
         menu.addAction(analytic_action)
 
@@ -1450,7 +1498,7 @@ class ReportsWidget(QWidget):
         self.plus_menu.clear()
 
         layer_menu = self.plus_menu.addMenu("Adicionar camada especifica")
-        limit_menu = self.plus_menu.addMenu("Limitar analise a uma camada")
+        limit_menu = self.plus_menu.addMenu("Limitar análise a uma camada")
         layers = self._project_layers()
         if not layers:
             empty_layer = QAction("Nenhuma camada carregada", layer_menu)
@@ -1544,8 +1592,8 @@ class ReportsWidget(QWidget):
     def _ai_mode_label(self) -> str:
         return {
             "auto": "IA: Automatica",
-            "local": "IA: Local rapido",
-            "analytic": "IA: Analitico",
+            "local": "IA: Local rápido",
+            "analytic": "IA: Analítico",
             "ollama": "IA: Ollama local",
         }.get(self.ai_mode, "IA: Automatica")
 
@@ -1556,10 +1604,10 @@ class ReportsWidget(QWidget):
 
                 total = len(connection_registry.all_connections() or [])
                 if total:
-                    return f"PostgreSQL ativo · {total} conexao(oes)"
+                    return f"PostgreSQL ativo · {total} conexão(ões)"
             except Exception:
                 pass
-            return "PostgreSQL ativo · sem conexao configurada"
+            return "PostgreSQL ativo · sem conexão configurada"
 
         if self.context_source == "cloud":
             try:
@@ -1573,7 +1621,7 @@ class ReportsWidget(QWidget):
                     return f"Cloud ativo · {total} camada(s)"
             except Exception:
                 pass
-            return "Cloud ativo · login necessario"
+            return "Cloud ativo · login necessário"
 
         try:
             total_layers = len(self._project_layers())
@@ -1584,7 +1632,7 @@ class ReportsWidget(QWidget):
     def _context_placeholder(self) -> str:
         base = {
             "project": "Pergunte qualquer coisa sobre o projeto e as camadas abertas...",
-            "postgres": "Pergunte algo sobre as conexoes PostgreSQL e os dados abertos...",
+            "postgres": "Pergunte algo sobre as conexões PostgreSQL e os dados abertos...",
             "cloud": "Pergunte algo sobre as camadas do cloud e o projeto atual...",
         }.get(self.context_source, "Pergunte qualquer coisa sobre o projeto...")
         if self.context_layer_name:
@@ -1634,7 +1682,7 @@ class ReportsWidget(QWidget):
     def _build_effective_question(self, question: str) -> str:
         hints = []
         if self.context_source == "postgres":
-            hints.append("Priorize as camadas e conexoes PostgreSQL abertas no projeto.")
+            hints.append("Priorize as camadas e conexões PostgreSQL abertas no projeto.")
         elif self.context_source == "cloud":
             hints.append("Priorize as camadas do cloud carregadas no projeto.")
         else:
@@ -1642,14 +1690,14 @@ class ReportsWidget(QWidget):
 
         if self.context_layer_name:
             if self.context_layer_mode == "restrict":
-                hints.append(f"Limite a analise apenas a camada {self.context_layer_name}.")
+                hints.append(f"Limite a análise apenas à camada {self.context_layer_name}.")
             elif self.context_layer_mode == "focus":
                 hints.append(f"Use a camada atual {self.context_layer_name} como foco principal.")
             else:
-                hints.append(f"Considere tambem a camada {self.context_layer_name} como contexto adicional.")
+                hints.append(f"Considere também a camada {self.context_layer_name} como contexto adicional.")
 
         if self.project_context_enabled:
-            hints.append("Inclua o contexto geral do projeto e as relacoes entre camadas abertas.")
+            hints.append("Inclua o contexto geral do projeto e as relações entre camadas abertas.")
 
         if not hints:
             return question
@@ -1718,7 +1766,7 @@ class ReportsWidget(QWidget):
         self._safe_register_explicit_feedback(
             response_widget,
             feedback_type="selected_override",
-            notes="Usuario escolheu uma alternativa de desambiguacao.",
+            notes="Usuário escolheu uma alternativa de desambiguação.",
             user_action_json={"overrides": dict(overrides or {})},
         )
         self._start_run(question, response_widget, overrides=overrides, reuse_history=True)
@@ -1728,11 +1776,11 @@ class ReportsWidget(QWidget):
             response_widget,
             feedback_type="accepted_plan",
             plan=plan,
-            notes="Usuario confirmou a interpretacao sugerida.",
+            notes="Usuário confirmou a interpretação sugerida.",
             user_action_json={"action": "execute_plan_choice"},
         )
         response_widget.show_loading(question)
-        self._show_visual_loading("Aguardando confirmacao da analise...")
+        self._show_visual_loading("Aguardando confirmação da análise...")
         response_widget.set_execution_context(
             question,
             plan,
@@ -1772,7 +1820,7 @@ class ReportsWidget(QWidget):
             response_widget,
             feedback_type="selected_filter",
             plan=selected_plan,
-            notes="Usuario escolheu um filtro detectado no card da resposta.",
+            notes="Usuário escolheu um filtro detectado no card da resposta.",
             user_action_json={"selected_filter": getattr(filter_spec, "to_dict", lambda: {})()},
         )
         self._execute_plan_choice(question, selected_plan, response_widget)
@@ -1842,33 +1890,33 @@ class ReportsWidget(QWidget):
             if interpretation.status == "confirm" and interpretation.plan is not None:
                 response_widget.show_confirmation(
                     question,
-                    interpretation.clarification_question or interpretation.message or "Confirme a interpretacao antes de executar.",
+                    interpretation.clarification_question or interpretation.message or "Confirme a interpretação antes de executar.",
                     interpretation.plan,
                     interpretation.candidate_interpretations,
                 )
-                self._show_visual_empty("Confirme a interpretacao para gerar o painel visual.")
+                self._show_visual_empty("Confirme a interpretação para gerar o painel visual.")
                 return
 
             if interpretation.status == "ambiguous":
                 if any(candidate.plan is not None for candidate in interpretation.candidate_interpretations):
                     response_widget.show_plan_choices(
                         question,
-                        interpretation.message or "Encontrei algumas interpretacoes possiveis.",
+                        interpretation.message or "Encontrei algumas interpretações possíveis.",
                         interpretation.candidate_interpretations,
                     )
-                    self._show_visual_empty("Escolha uma interpretacao para atualizar o painel visual.")
+                    self._show_visual_empty("Escolha uma interpretação para atualizar o painel visual.")
                     return
                 response_widget.show_ambiguity(
                     question,
                     interpretation.message,
                     interpretation.options,
                 )
-                self._show_visual_empty("Ainda nao houve um resultado visual para esta pergunta.")
+                self._show_visual_empty("Ainda não houve um resultado visual para esta pergunta.")
                 return
 
             if interpretation.status != "ok" or interpretation.plan is None:
                 response_widget.show_message(
-                    interpretation.message or "Nao foi possivel interpretar essa pergunta.",
+                    interpretation.message or "Não foi possível interpretar essa pergunta.",
                 )
                 self._show_visual_empty("Nenhum resultado visual foi gerado para esta pergunta.")
                 self._safe_mark_query_failure(
@@ -1879,7 +1927,7 @@ class ReportsWidget(QWidget):
                 )
                 self._ensure_ai_engine().record_interpretation_failure(
                     question=question,
-                    detail=interpretation.message or interpretation.status or "interpretacao sem plano",
+                    detail=interpretation.message or interpretation.status or "interpretação sem plano",
                     interpretation=interpretation,
                 )
                 return
@@ -1895,7 +1943,7 @@ class ReportsWidget(QWidget):
         except Exception as exc:
             detail = self._format_error_detail(exc)
             log_error(
-                "[Relatorios] falha durante a interpretacao "
+                "[Relatórios] falha durante a interpretação "
                 f"question='{question}' error={exc}\n{traceback.format_exc()}"
             )
             self._safe_mark_query_failure(
@@ -1909,8 +1957,8 @@ class ReportsWidget(QWidget):
             )
             self._show_visual_empty("Falha ao montar o resultado visual desta pergunta.")
             response_widget.show_message(
-                "Nao foi possivel analisar essa pergunta agora.\n"
-                f"Detalhe tecnico: {detail}\n"
+                "Não foi possível analisar essa pergunta agora.\n"
+                f"Detalhe técnico: {detail}\n"
                 f"Log adicional: {LOG_FILE}",
             )
         finally:
@@ -1937,8 +1985,8 @@ class ReportsWidget(QWidget):
         except Exception as exc:
             detail = self._format_error_detail(exc)
             response_widget.show_message(
-                "Nao foi possivel gerar esse relatorio agora.\n"
-                f"Detalhe tecnico: {detail}\n"
+                "Não foi possível gerar esse relatório agora.\n"
+                f"Detalhe técnico: {detail}\n"
                 f"Log adicional: {LOG_FILE}",
             )
             self._finish_ui_after_run()
@@ -1976,14 +2024,14 @@ class ReportsWidget(QWidget):
             if not result.ok:
                 self._show_visual_empty("Nenhum resultado visual foi gerado para esta pergunta.")
                 response_widget.show_message(
-                    result.message or "Nao foi possivel gerar esse relatorio.",
+                    result.message or "Não foi possível gerar esse relatório.",
                 )
             else:
                 response_widget.show_result(result)
         except Exception as exc:
             detail = self._format_error_detail(exc)
             log_error(
-                "[Relatorios] falha durante a execucao assincrona "
+                "[Relatórios] falha durante a execução assíncrona "
                 f"question='{question}' error={exc}\n{traceback.format_exc()}"
             )
             if self.active_execution_job is not None:
@@ -1994,8 +2042,8 @@ class ReportsWidget(QWidget):
                 )
             self._show_visual_empty("Falha ao gerar o painel visual desta consulta.")
             response_widget.show_message(
-                "Nao foi possivel gerar esse relatorio agora.\n"
-                f"Detalhe tecnico: {detail}\n"
+                "Não foi possível gerar esse relatório agora.\n"
+                f"Detalhe técnico: {detail}\n"
                 f"Log adicional: {LOG_FILE}",
             )
             self.active_execution_job = None
@@ -2069,7 +2117,7 @@ class ReportsWidget(QWidget):
         if self.visual_panel is not None:
             self.visual_panel.show_loading(message)
 
-    def _show_visual_empty(self, message: str = "A ultima analise com grafico e tabela aparecera aqui."):
+    def _show_visual_empty(self, message: str = "A última análise com gráfico e tabela aparecerá aqui."):
         if self.visual_panel is not None:
             self.visual_panel.show_empty(message)
 
@@ -2210,7 +2258,7 @@ class ReportsWidget(QWidget):
             )
         except Exception as exc:
             log_warning(
-                "[Relatorios] falha ao salvar interpretacao na memoria "
+                "[Relatórios] falha ao salvar interpretação na memória "
                 f"query_id={getattr(memory_handle, 'history_id', None)} error={exc}\n{traceback.format_exc()}"
             )
 
@@ -2331,7 +2379,7 @@ class ReportsWidget(QWidget):
             )
         except Exception as exc:
             log_warning(
-                "[Relatorios] falha ao reranquear interpretacao na memoria "
+                "[Relatórios] falha ao reranquear interpretação na memória "
                 f"question='{question}' error={exc}\n{traceback.format_exc()}"
             )
             return interpretation
@@ -2344,7 +2392,7 @@ class ReportsWidget(QWidget):
                 response_widget,
                 feedback_type="answer_correct",
                 plan=plan,
-                notes="Usuario marcou a resposta como correta.",
+                notes="Usuário marcou a resposta como correta.",
                 user_action_json={"action": "mark_correct"},
             )
             self._safe_approve_example(question, plan)
@@ -2356,7 +2404,7 @@ class ReportsWidget(QWidget):
                 response_widget,
                 feedback_type="answer_incorrect",
                 plan=plan,
-                notes="Usuario marcou a resposta como incorreta.",
+                notes="Usuário marcou a resposta como incorreta.",
                 user_action_json={"action": "mark_incorrect"},
             )
             response_widget.set_feedback_state("incorrect")
@@ -2374,12 +2422,12 @@ class ReportsWidget(QWidget):
         self._safe_register_implicit_feedback(
             response_widget,
             feedback_type="requested_alternative_interpretation",
-            notes="Usuario pediu para escolher outra interpretacao apos ver a resposta.",
+            notes="Usuário pediu para escolher outra interpretação após ver a resposta.",
             user_action_json={"action": "open_candidate_picker"},
         )
         response_widget.show_plan_choices(
             getattr(response_widget, "current_question", "") or "",
-            "Escolha a interpretacao que mais combina com a sua pergunta.",
+            "Escolha a interpretação que mais combina com a sua pergunta.",
             candidates,
         )
         self._scroll_to_bottom()

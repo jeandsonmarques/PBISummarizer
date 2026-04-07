@@ -45,13 +45,18 @@ from qgis.PyQt.QtWidgets import (
 )
 from qgis.core import QgsFeature, QgsField, QgsFields, QgsVectorLayer
 
-from .slim_dialogs import SlimDialogBase
+from .slim_dialogs import SlimDialogBase, slim_message
 from .browser_integration import connection_registry
 from .cloud_session import cloud_session
 from .cloud_dialogs import open_cloud_dialog
 from .utils.resources import svg_icon
 
 _ICON_DIR = os.path.join(os.path.dirname(__file__), "resources", "icons")
+
+
+def _cloud_popup_icon() -> QIcon:
+    path = os.path.join(_ICON_DIR, "cloud.svg")
+    return QIcon(path) if os.path.exists(path) else QIcon()
 
 try:  # pragma: no cover - handles platforms without QtSql
     from qgis.PyQt.QtSql import QSqlDatabase, QSqlQuery
@@ -489,7 +494,7 @@ class IntegrationPanel(QWidget):
         buttons_row = QHBoxLayout()
         buttons_row.setSpacing(8)
         self.cloud_open_btn = QPushButton("Abrir PowerBI Cloud...", self.cloud_section)
-        self.cloud_refresh_btn = QPushButton("Atualizar catalogo", self.cloud_section)
+        self.cloud_refresh_btn = QPushButton("Atualizar catálogo", self.cloud_section)
         self.cloud_refresh_btn.setProperty("variant", "ghost")
         self.cloud_browser_btn = QPushButton("Abrir no Navegador", self.cloud_section)
         self.cloud_browser_btn.setProperty("variant", "ghost")
@@ -508,7 +513,7 @@ class IntegrationPanel(QWidget):
         section_layout.addLayout(info_layout)
 
         self.cloud_warning_label = QLabel(
-            "Cloud em preparacao. Camadas reais serao liberadas assim que a hospedagem estiver ativa.",
+            "Cloud em preparação. Camadas reais serão liberadas assim que a hospedagem estiver ativa.",
             self.cloud_section,
         )
         self.cloud_warning_label.setWordWrap(True)
@@ -539,6 +544,15 @@ class IntegrationPanel(QWidget):
             """
         )
 
+    def _show_cloud_message(self, title: str, text: str, helper_text: str = ""):
+        slim_message(
+            self,
+            title=title,
+            text=text,
+            helper_text=helper_text,
+            icon=_cloud_popup_icon(),
+        )
+
     def _open_cloud_popup(self):
         open_cloud_dialog(self)
 
@@ -547,11 +561,10 @@ class IntegrationPanel(QWidget):
 
         reload_cloud_catalog()
         self._on_cloud_layers_changed()
-        QMessageBox.information(self, "PowerBI Cloud", "Catalogo Cloud atualizado.")
+        self._show_cloud_message("PowerBI Cloud", "Catálogo Cloud atualizado.")
 
     def _open_cloud_browser_hint(self):
-        QMessageBox.information(
-            self,
+        self._show_cloud_message(
             "PowerBI Cloud",
             "Abra o Navegador do QGIS e expanda PowerBI Summarizer → PowerBI Cloud para carregar as camadas disponiveis.",
         )
@@ -875,10 +888,11 @@ class IntegrationPanel(QWidget):
                     self._saved_connections[idx]["cloud_default_user"] = email
                     break
             self._save_connections()
-            QMessageBox.information(
+            slim_message(
                 dialog,
-                "PowerBI Cloud",
-                "Usuário Cloud padrão atualizado para esta conexão.",
+                title="PowerBI Cloud",
+                text="Usuário Cloud padrão atualizado para esta conexão.",
+                icon=_cloud_popup_icon(),
             )
 
         list_widget.currentItemChanged.connect(lambda *_: update_state_from_selection())
@@ -1819,7 +1833,7 @@ class DatabaseImportDialog(SlimDialogBase):
 
             quoted_table = self._quote_table_name(table, params["driver"])
             if not quoted_table:
-                QMessageBox.warning(self, "Importar", "Selecione uma tabela valida carregada da conexao.")
+                QMessageBox.warning(self, "Importar", "Selecione uma tabela válida carregada da conexão.")
                 return
             sql = self._build_select_sql(quoted_table, params["driver"], preview)
 

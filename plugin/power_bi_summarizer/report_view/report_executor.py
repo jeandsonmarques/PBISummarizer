@@ -26,7 +26,7 @@ class ReportExecutionJob:
         self.total_estimate = 0
         self.phase_label = "processando"
         self._done = False
-        self._result = QueryResult(ok=False, message="A execucao ainda nao terminou.")
+        self._result = QueryResult(ok=False, message="A execução ainda não terminou.")
 
     @property
     def done(self) -> bool:
@@ -63,11 +63,11 @@ class _ValueInsightJob(ReportExecutionJob):
         self.phase_label = "analisando dados"
         self.layer = self.executor._get_layer(plan.target_layer_id)
         if self.layer is None or not self.layer.isValid():
-            self._complete(QueryResult(ok=False, message="Nao encontrei a camada escolhida para esse relatorio."))
+            self._complete(QueryResult(ok=False, message="Não encontrei a camada escolhida para esse relatório."))
             return
         if plan.metric.operation in {"min", "max", "sum", "avg"}:
             if not plan.metric.field or plan.metric.field not in self.layer.fields().names():
-                self._complete(QueryResult(ok=False, message="O campo consultado nao existe mais nessa camada."))
+                self._complete(QueryResult(ok=False, message="O campo consultado não existe mais nessa camada."))
                 return
 
         boundary_context, error_message = self.executor._prepare_boundary_filter_context(plan, target_layer=self.layer)
@@ -222,13 +222,13 @@ class _DirectAggregateJob(ReportExecutionJob):
         self.phase_label = "analisando dados"
         self.layer = self.executor._get_layer(plan.target_layer_id)
         if self.layer is None or not self.layer.isValid():
-            self._complete(QueryResult(ok=False, message="Nao encontrei a camada escolhida para esse relatorio."))
+            self._complete(QueryResult(ok=False, message="Não encontrei a camada escolhida para esse relatório."))
             return
         if plan.group_field not in self.layer.fields().names():
-            self._complete(QueryResult(ok=False, message="O campo de agrupamento nao existe mais nessa camada."))
+            self._complete(QueryResult(ok=False, message="O campo de agrupamento não existe mais nessa camada."))
             return
         if plan.metric.field and plan.metric.field not in self.layer.fields().names():
-            self._complete(QueryResult(ok=False, message="O campo numerico usado na consulta nao existe mais."))
+            self._complete(QueryResult(ok=False, message="O campo numérico usado na consulta não existe mais."))
             return
 
         boundary_context, error_message = self.executor._prepare_boundary_filter_context(plan, target_layer=self.layer)
@@ -323,13 +323,13 @@ class _SpatialAggregateJob(ReportExecutionJob):
         self.source_layer = self.executor._get_layer(plan.source_layer_id)
         self.boundary_layer = self.executor._get_layer(plan.boundary_layer_id)
         if self.source_layer is None or not self.source_layer.isValid():
-            self._complete(QueryResult(ok=False, message="Nao encontrei a camada de origem dessa consulta."))
+            self._complete(QueryResult(ok=False, message="Não encontrei a camada de origem dessa consulta."))
             return
         if self.boundary_layer is None or not self.boundary_layer.isValid():
-            self._complete(QueryResult(ok=False, message="Nao encontrei a camada de limites dessa consulta."))
+            self._complete(QueryResult(ok=False, message="Não encontrei a camada de limites dessa consulta."))
             return
         if plan.group_field not in self.boundary_layer.fields().names():
-            self._complete(QueryResult(ok=False, message="O campo de agrupamento nao existe mais na camada de limites."))
+            self._complete(QueryResult(ok=False, message="O campo de agrupamento não existe mais na camada de limites."))
             return
 
         self.request = QgsFeatureRequest()
@@ -374,7 +374,7 @@ class _SpatialAggregateJob(ReportExecutionJob):
                 feature = next(self.boundary_iterator)
             except StopIteration:
                 if not self.boundary_features:
-                    self._complete(QueryResult(ok=False, message="A camada de limites nao possui geometrias validas."))
+                    self._complete(QueryResult(ok=False, message="A camada de limites não possui geometrias válidas."))
                     return
                 self.source_iterator = iter(self.source_layer.getFeatures())
                 self.phase_label = "analisando dados"
@@ -463,10 +463,10 @@ class _DerivedRatioJob(ReportExecutionJob):
         self.source_layer = self.executor._get_layer(plan.source_layer_id)
         self.phase_label = "analisando rede"
         if self.target_layer is None or not self.target_layer.isValid():
-            self._complete(QueryResult(ok=False, message="Nao encontrei a camada de rede usada nesse calculo."))
+            self._complete(QueryResult(ok=False, message="Não encontrei a camada de rede usada nesse cálculo."))
             return
         if self.source_layer is None or not self.source_layer.isValid():
-            self._complete(QueryResult(ok=False, message="Nao encontrei a camada de ligacoes usada nesse calculo."))
+            self._complete(QueryResult(ok=False, message="Não encontrei a camada de ligações usada nesse cálculo."))
             return
 
         self.target_boundary_context, error_message = self.executor._prepare_boundary_filter_context(
@@ -550,7 +550,7 @@ class _DerivedRatioJob(ReportExecutionJob):
 
     def _finish(self):
         if self.numerator_total <= 0 or self.denominator_total <= 0:
-            self._complete(QueryResult(ok=False, message="Nao encontrei dados suficientes para calcular metros por ligacao."))
+            self._complete(QueryResult(ok=False, message="Não encontrei dados suficientes para calcular metros por ligação."))
             return
         ratio_value = float(self.numerator_total) / max(1, int(self.denominator_total))
         self._complete(
@@ -564,7 +564,7 @@ class _DerivedRatioJob(ReportExecutionJob):
                         self.denominator_total,
                     )
                 ),
-                rows=[ResultRow(category="Metros por ligacao", value=float(ratio_value), raw_category="Metros por ligacao")],
+                rows=[ResultRow(category="Metros por ligação", value=float(ratio_value), raw_category="Metros por ligação")],
                 value_label=self.executor._value_label(self.plan),
                 show_percent=False,
                 plan=self.plan,
@@ -586,7 +586,7 @@ class _CompositeMetricJob(ReportExecutionJob):
         self.total_estimate = 0
 
         if len(self.operands) < 2:
-            self._complete(QueryResult(ok=False, message="Nao encontrei operandos suficientes para essa operacao."))
+            self._complete(QueryResult(ok=False, message="Não encontrei operandos suficientes para essa operação."))
             return
 
         for operand in self.operands:
@@ -639,12 +639,12 @@ class ReportExecutor:
             return self._execute_direct(plan)
         if plan.intent == "spatial_aggregate":
             return self._execute_spatial(plan)
-        return QueryResult(ok=False, message="Nao foi possivel montar um plano de consulta valido.")
+        return QueryResult(ok=False, message="Não foi possível montar um plano de consulta válido.")
 
     def select_plan_features(self, plan: QueryPlan) -> Tuple[bool, str]:
         layer, layer_role = self._selection_layer_for_plan(plan)
         if layer is None or not layer.isValid():
-            return False, "Nao encontrei a camada usada nesse resultado."
+            return False, "Não encontrei a camada usada nesse resultado."
 
         boundary_context = None
         if layer_role == "target":
@@ -668,10 +668,10 @@ class ReportExecutor:
                 current_layer.removeSelection()
 
         if not matching_ids:
-            return False, "Nenhuma feicao filtrada foi encontrada para selecionar no mapa."
+            return False, "Nenhuma feição filtrada foi encontrada para selecionar no mapa."
 
         layer.selectByIds(matching_ids)
-        return True, f"{len(matching_ids)} feicoes selecionadas em {layer.name()}."
+        return True, f"{len(matching_ids)} feições selecionadas em {layer.name()}."
 
     def _selection_layer_for_plan(self, plan: QueryPlan) -> Tuple[Optional[QgsVectorLayer], str]:
         if plan.intent == "spatial_aggregate":
@@ -692,7 +692,7 @@ class ReportExecutor:
         if plan.intent == "spatial_aggregate":
             return _SpatialAggregateJob(self, plan)
         job = ReportExecutionJob(self, plan)
-        job._complete(QueryResult(ok=False, message="Nao foi possivel montar um plano de consulta valido."))
+        job._complete(QueryResult(ok=False, message="Não foi possível montar um plano de consulta válido."))
         return job
 
     def _record_execution_trace(self, plan: QueryPlan, **payload) -> None:
@@ -754,7 +754,7 @@ class ReportExecutor:
             boundary_context=boundary_context,
         )
         log_info(
-            "[Relatorios] execucao sem dados "
+            "[Relatórios] execução sem dados "
             f"layer={layer_name} target_matches={target_matches} contributing_count={contributing_count} "
             f"boundary_filtered_out={boundary_filtered_out} message='{message}'"
         )
@@ -780,30 +780,30 @@ class ReportExecutor:
         boundary_filters_text = self._describe_filters(plan.filters, layer_role="boundary")
 
         if "diameter" in requested_kinds and not diameter_field:
-            return f"Encontrei a camada {layer_name}, mas nao consegui localizar um campo de diametro compativel."
+            return f"Encontrei a camada {layer_name}, mas não consegui localizar um campo de diâmetro compatível."
         if "location" in requested_kinds and not location_field and not plan.boundary_layer_id:
-            return f"Encontrei a camada {layer_name}, mas nao consegui localizar um campo geografico compativel nessa camada."
+            return f"Encontrei a camada {layer_name}, mas não consegui localizar um campo geográfico compatível nessa camada."
         if plan.metric.use_geometry and target_matches > 0 and contributing_count <= 0:
             metric_name = "comprimento" if plan.metric.operation == "length" else "area"
-            return f"A camada {layer_name} foi encontrada, mas nao possui geometria valida para calcular {metric_name} com os filtros aplicados."
+            return f"A camada {layer_name} foi encontrada, mas não possui geometria válida para calcular {metric_name} com os filtros aplicados."
         if boundary_context is not None and target_matches > 0 and contributing_count <= 0:
-            boundary_name = str((boundary_context or {}).get("layer_name") or plan.boundary_layer_name or "limite geografico")
+            boundary_name = str((boundary_context or {}).get("layer_name") or plan.boundary_layer_name or "limite geográfico")
             if boundary_filtered_out > 0:
-                return f"Encontrei o valor geografico em {boundary_name}, mas a intersecao nao retornou feicoes na camada {layer_name}."
+                return f"Encontrei o valor geográfico em {boundary_name}, mas a interseção não retornou feições na camada {layer_name}."
         if target_matches <= 0 and target_filters_text:
             if geo_mode == "textual":
-                return f"Encontrei a camada {layer_name}, mas os filtros textuais aplicados ({target_filters_text}) nao retornaram feicoes compativeis."
-            return f"Encontrei a camada {layer_name}, mas os filtros aplicados ({target_filters_text}) nao retornaram feicoes compativeis."
+                return f"Encontrei a camada {layer_name}, mas os filtros textuais aplicados ({target_filters_text}) não retornaram feições compatíveis."
+            return f"Encontrei a camada {layer_name}, mas os filtros aplicados ({target_filters_text}) não retornaram feições compatíveis."
         if plan.boundary_layer_id and boundary_filters_text and boundary_context is None:
-            return f"Encontrei a camada {layer_name}, mas nao consegui localizar o limite geografico usando {boundary_filters_text}."
+            return f"Encontrei a camada {layer_name}, mas não consegui localizar o limite geográfico usando {boundary_filters_text}."
         if not plan.metric.use_geometry and plan.metric.field and target_matches > 0 and contributing_count <= 0:
             return (
                 f"Encontrei a camada {layer_name}, mas o campo {plan.metric.field_label or plan.metric.field} "
-                "nao possui valores validos para essa operacao."
+                "não possui valores válidos para essa operação."
             )
         if plan.metric.use_geometry and "length" == plan.metric.operation and not chosen_metric_field:
-            return f"Encontrei a camada {layer_name}, mas nao encontrei uma geometria de linha valida para somar comprimento."
-        return "Nao encontrei dados compativeis com essa pergunta."
+            return f"Encontrei a camada {layer_name}, mas não encontrei uma geometria de linha válida para somar comprimento."
+        return "Não encontrei dados compatíveis com essa pergunta."
 
     def _build_boundary_fallback_plan(self, plan: QueryPlan, target_layer: QgsVectorLayer) -> Optional[QueryPlan]:
         trace = dict(plan.planning_trace or {})
@@ -940,10 +940,10 @@ class ReportExecutor:
     def _execute_value_insight(self, plan: QueryPlan) -> QueryResult:
         layer = self._get_layer(plan.target_layer_id)
         if layer is None or not layer.isValid():
-            return QueryResult(ok=False, message="Nao encontrei a camada escolhida para esse relatorio.", plan=plan)
+            return QueryResult(ok=False, message="Não encontrei a camada escolhida para esse relatório.", plan=plan)
         if plan.metric.operation in {"min", "max", "sum", "avg"}:
             if not plan.metric.field or plan.metric.field not in layer.fields().names():
-                return QueryResult(ok=False, message="O campo consultado nao existe mais nessa camada.", plan=plan)
+                return QueryResult(ok=False, message="O campo consultado não existe mais nessa camada.", plan=plan)
 
         boundary_context, error_message = self._prepare_boundary_filter_context(plan, target_layer=layer)
         if error_message:
@@ -1109,7 +1109,7 @@ class ReportExecutor:
         results: List[QueryResult],
     ) -> QueryResult:
         if len(operands) < 2 or len(results) < 2:
-            return QueryResult(ok=False, message="Nao encontrei dados suficientes para concluir essa operacao.")
+            return QueryResult(ok=False, message="Não encontrei dados suficientes para concluir essa operação.")
 
         operation = normalize_text(getattr(plan.composite, "operation", "") or plan.metric.operation or "")
         rows = [
@@ -1138,16 +1138,16 @@ class ReportExecutor:
         right_value = float(results[1].total_value)
         if operation == "ratio":
             if abs(right_value) < 0.0000001:
-                return QueryResult(ok=False, message="Nao encontrei dados suficientes no denominador para dividir.")
+                return QueryResult(ok=False, message="Não encontrei dados suficientes no denominador para dividir.")
             computed = left_value / right_value
         elif operation == "difference":
             computed = left_value - right_value
         elif operation == "percentage":
             if abs(right_value) < 0.0000001:
-                return QueryResult(ok=False, message="Nao encontrei dados suficientes no total de referencia para calcular o percentual.")
+                return QueryResult(ok=False, message="Não encontrei dados suficientes no total de referência para calcular o percentual.")
             computed = (left_value / right_value) * 100.0
         else:
-            return QueryResult(ok=False, message="Operacao composta ainda nao suportada.")
+            return QueryResult(ok=False, message="Operação composta ainda não suportada.")
 
         result_label = getattr(plan.composite, "label", "") or plan.metric.label or "Resultado"
         result_row = ResultRow(category=result_label, value=float(computed), raw_category=result_label)
@@ -1165,11 +1165,11 @@ class ReportExecutor:
     def _execute_direct(self, plan: QueryPlan) -> QueryResult:
         layer = self._get_layer(plan.target_layer_id)
         if layer is None or not layer.isValid():
-            return QueryResult(ok=False, message="Nao encontrei a camada escolhida para esse relatorio.", plan=plan)
+            return QueryResult(ok=False, message="Não encontrei a camada escolhida para esse relatório.", plan=plan)
         if plan.group_field not in layer.fields().names():
-            return QueryResult(ok=False, message="O campo de agrupamento nao existe mais nessa camada.", plan=plan)
+            return QueryResult(ok=False, message="O campo de agrupamento não existe mais nessa camada.", plan=plan)
         if plan.metric.field and plan.metric.field not in layer.fields().names():
-            return QueryResult(ok=False, message="O campo numerico usado na consulta nao existe mais.", plan=plan)
+            return QueryResult(ok=False, message="O campo numérico usado na consulta não existe mais.", plan=plan)
 
         boundary_context, error_message = self._prepare_boundary_filter_context(plan, target_layer=layer)
         if error_message:
@@ -1244,11 +1244,11 @@ class ReportExecutor:
         source_layer = self._get_layer(plan.source_layer_id)
         boundary_layer = self._get_layer(plan.boundary_layer_id)
         if source_layer is None or not source_layer.isValid():
-            return QueryResult(ok=False, message="Nao encontrei a camada de origem dessa consulta.")
+            return QueryResult(ok=False, message="Não encontrei a camada de origem dessa consulta.")
         if boundary_layer is None or not boundary_layer.isValid():
-            return QueryResult(ok=False, message="Nao encontrei a camada de limites dessa consulta.")
+            return QueryResult(ok=False, message="Não encontrei a camada de limites dessa consulta.")
         if plan.group_field not in boundary_layer.fields().names():
-            return QueryResult(ok=False, message="O campo de agrupamento nao existe mais na camada de limites.")
+            return QueryResult(ok=False, message="O campo de agrupamento não existe mais na camada de limites.")
 
         request = QgsFeatureRequest()
         if boundary_layer.fields().indexFromName(plan.group_field) >= 0:
@@ -1285,7 +1285,7 @@ class ReportExecutor:
             spatial_index.addFeature(index_feature)
 
         if not boundary_features:
-            return QueryResult(ok=False, message="A camada de limites nao possui geometrias validas.")
+            return QueryResult(ok=False, message="A camada de limites não possui geometrias válidas.")
 
         totals = defaultdict(float)
         counts = defaultdict(int)
@@ -1352,7 +1352,7 @@ class ReportExecutor:
             rows.append(ResultRow(category=str(category), value=float(value), raw_category=category))
 
         if not rows:
-            return QueryResult(ok=False, message="Nao encontrei dados compativeis com essa pergunta.", plan=plan)
+            return QueryResult(ok=False, message="Não encontrei dados compatíveis com essa pergunta.", plan=plan)
 
         if plan.group_field_kind in {"date", "datetime"}:
             rows.sort(key=lambda item: str(item.raw_category))
@@ -1385,20 +1385,20 @@ class ReportExecutor:
 
     def _build_summary(self, plan: QueryPlan, rows, processed: int) -> str:
         if not rows:
-            return "Nao encontrei dados compativeis com essa pergunta."
+            return "Não encontrei dados compatíveis com essa pergunta."
 
         top = rows[0].category
         if plan.metric.operation == "count":
             if any(token in normalize_text(plan.group_field) for token in ("dn", "diam", "diametro", "bitola")):
-                message = f"Foram encontrados {len(rows)} diametros distintos. O mais frequente e {top}."
+                message = f"Foram encontrados {len(rows)} diâmetros distintos. O mais frequente é {top}."
             else:
                 message = f"{top} possui a maior quantidade."
         elif plan.metric.operation == "length":
-            message = f"{top} possui a maior extensao total."
+            message = f"{top} possui a maior extensão total."
         elif plan.metric.operation == "area":
-            message = f"{top} possui a maior area total."
+            message = f"{top} possui a maior área total."
         elif plan.metric.operation == "avg":
-            message = f"{top} possui a maior media."
+            message = f"{top} possui a maior média."
         else:
             message = f"{top} possui o maior total."
 
@@ -1413,11 +1413,11 @@ class ReportExecutor:
         if plan.metric.operation == "count":
             message = f"Foram encontrados {value_text} registros{scope_text}."
         elif plan.metric.operation == "length":
-            message = f"A extensao total{scope_text} e {value_text}."
+            message = f"A extensão total{scope_text} é {value_text}."
         elif plan.metric.operation == "area":
-            message = f"A area total{scope_text} e {value_text}."
+            message = f"A área total{scope_text} é {value_text}."
         elif plan.metric.operation == "avg":
-            message = f"A media de {field_label.lower()}{scope_text} e {value_text}."
+            message = f"A média de {field_label.lower()}{scope_text} é {value_text}."
         elif plan.metric.operation == "sum":
             message = f"O total de {field_label.lower()}{scope_text} e {value_text}."
         elif plan.metric.operation == "min":
@@ -1433,8 +1433,8 @@ class ReportExecutor:
         length_text = self._format_summary_value(total_length)
         scope_text = self._summary_scope_text(plan)
         return (
-            f"A extensao media por ligacao{scope_text} e {ratio_text} metros. "
-            f"Foram considerados {length_text} metros de rede e {int(total_links)} ligacoes."
+            f"A extensão média por ligação{scope_text} é {ratio_text} metros. "
+            f"Foram considerados {length_text} metros de rede e {int(total_links)} ligações."
         )
 
     def _build_composite_summary(
@@ -1449,7 +1449,7 @@ class ReportExecutor:
         labels = [row.category for row in all_rows[:2]]
         values = [row.value for row in all_rows[:2]]
         if len(labels) < 2 or len(values) < 2:
-            return "Operacao composta concluida."
+            return "Operação composta concluída."
 
         left_label, right_label = labels[0], labels[1]
         left_value, right_value = values[0], values[1]
@@ -1461,7 +1461,7 @@ class ReportExecutor:
             )
         if operation == "difference":
             return (
-                f"A diferenca entre {left_label} e {right_label} e {self._format_summary_value(rows[0].value)}. "
+                f"A diferença entre {left_label} e {right_label} é {self._format_summary_value(rows[0].value)}. "
                 f"Valores comparados: {self._format_summary_value(left_value)} e {self._format_summary_value(right_value)}."
             )
         if operation == "percentage":
@@ -1471,10 +1471,10 @@ class ReportExecutor:
             )
         if operation == "ratio":
             return (
-                f"A razao entre {left_label} e {right_label} e {self._format_summary_value(rows[0].value)}. "
+                f"A razão entre {left_label} e {right_label} é {self._format_summary_value(rows[0].value)}. "
                 f"Valores usados: {self._format_summary_value(left_value)} e {self._format_summary_value(right_value)}."
             )
-        return "Operacao composta concluida."
+        return "Operação composta concluída."
 
     def _value_label(self, plan: QueryPlan) -> str:
         if plan.intent == "composite_metric":
@@ -1488,7 +1488,7 @@ class ReportExecutor:
             if operation == "comparison":
                 return getattr(plan.composite, "unit_label", "") or "Valor"
         if plan.metric.operation == "ratio":
-            return "Metros por ligacao"
+            return "Metros por ligação"
         if plan.metric.operation == "count":
             return "Quantidade"
         if plan.metric.operation == "length":
@@ -1526,7 +1526,7 @@ class ReportExecutor:
 
         boundary_layer = self._get_layer(plan.boundary_layer_id)
         if boundary_layer is None or not boundary_layer.isValid():
-            return None, "Nao encontrei a camada de limite usada para esse filtro geografico."
+            return None, "Não encontrei a camada de limite usada para esse filtro geográfico."
 
         boundary_filters = [item for item in plan.filters if isinstance(item, FilterSpec) and item.layer_role == "boundary"]
         if not boundary_filters:
@@ -1569,7 +1569,7 @@ class ReportExecutor:
             spatial_index.addFeature(index_feature)
 
         if not geometries:
-            return None, "Nao encontrei um limite geografico compativel com esse filtro."
+            return None, "Não encontrei um limite geográfico compatível com esse filtro."
         return {
             "geometries": geometries,
             "index": spatial_index,

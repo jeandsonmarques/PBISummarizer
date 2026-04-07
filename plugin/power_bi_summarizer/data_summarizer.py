@@ -1236,17 +1236,17 @@ class PowerBISummarizerDialog(QDialog):
                 QMessageBox.warning(
                     self,
                     "Tabela dinamica",
-                    f"Nao foi possivel atualizar a tabela dinamica: {exc}",
+                    f"Não foi possível atualizar a tabela dinâmica: {exc}",
                 )
                 self._set_results_view("message")
                 self.show_results_message(
-                    "<p style='margin:8px 0;'>Nao foi possivel exibir a tabela dinamica para estes dados.</p>"
+                    "<p style='margin:8px 0;'>Não foi possível exibir a tabela dinâmica para estes dados.</p>"
                 )
                 return
 
         self._set_results_view("message")
         self.show_results_message(
-            "<p style='margin:8px 0;'>Nao foi possivel exibir a tabela dinamica para estes dados.</p>"
+            "<p style='margin:8px 0;'>Não foi possível exibir a tabela dinâmica para estes dados.</p>"
         )
         return
 
@@ -1364,7 +1364,7 @@ class PowerBISummarizerDialog(QDialog):
                 </div>
             </div>
             <div class="groups-wrapper">
-                {chart_html or '<div class="empty-body">Nenhum agrupamento disponivel para exibir.</div>'}
+                {chart_html or '<div class="empty-body">Nenhum agrupamento disponível para exibir.</div>'}
             </div>
             <div class="preview-footer">Gerado em: {human_ts}</div>
         </div>
@@ -1779,7 +1779,7 @@ class PowerBISummarizerDialog(QDialog):
             QMessageBox.warning(
                 self,
                 "Exportar camadas",
-                f"Nao foi possivel criar a pasta selecionada:\n{directory}\nDetalhes: {exc}",
+                f"Não foi possível criar a pasta selecionada:\n{directory}\nDetalhes: {exc}",
             )
             return None
 
@@ -1856,7 +1856,7 @@ class PowerBISummarizerDialog(QDialog):
         export_prefix: str,
     ):
         if df is None or df.empty:
-            QMessageBox.information(self, dialog_title, "Nenhum dado disponivel para materializar.")
+            QMessageBox.information(self, dialog_title, "Nenhum dado disponível para materializar.")
             return
 
         base_name = (base_name or "resultado").strip()
@@ -1893,7 +1893,7 @@ class PowerBISummarizerDialog(QDialog):
                 QMessageBox.warning(
                     self,
                     dialog_title,
-                    error_message or "Nao foi possivel gerar a tabela.",
+                    error_message or "Não foi possível gerar a tabela.",
                 )
                 return
             QgsProject.instance().addMapLayer(layer)
@@ -1917,7 +1917,7 @@ class PowerBISummarizerDialog(QDialog):
                 layer is None
                 and can_use_geometry
                 and error_message
-                and "Nenhuma feicao" in error_message
+                and "Nenhuma feição" in error_message
             ):
                 layer, error_message = self._create_layer_from_dataframe(
                     df,
@@ -1934,14 +1934,14 @@ class PowerBISummarizerDialog(QDialog):
                 QMessageBox.warning(
                     self,
                     dialog_title,
-                    error_message or "Nao foi possivel criar a camada temporaria.",
+                    error_message or "Não foi possível criar a camada temporária.",
                 )
                 return
             QgsProject.instance().addMapLayer(layer)
             QMessageBox.information(
                 self,
                 dialog_title,
-                f"Camada '{layer.name()}' criada com {layer.featureCount()} feicoes.{fallback_note}",
+                f"Camada '{layer.name()}' criada com {layer.featureCount()} feições.{fallback_note}",
             )
             return
 
@@ -1983,7 +1983,7 @@ class PowerBISummarizerDialog(QDialog):
                 layer is None
                 and with_geometry
                 and error_message
-                and "Nenhuma feicao" in error_message
+                and "Nenhuma feição" in error_message
             ):
                 layer, error_message = self._create_layer_from_dataframe(
                     df,
@@ -2000,7 +2000,7 @@ class PowerBISummarizerDialog(QDialog):
                 QMessageBox.warning(
                     self,
                     dialog_title,
-                    error_message or "Nao foi possivel preparar os dados para exportacao.",
+                    error_message or "Não foi possível preparar os dados para exportação.",
                 )
                 return
 
@@ -2200,7 +2200,7 @@ class GetDataDialog(QDialog):
             return
         self._datasets.append((df, metadata or {"connector": "PostgreSQL"}))
         self.db_status.setText(f"Tabela carregada: {metadata.get('display_name')}")
-        # Replica conexao no Navegador, se houver
+        # Replica conexão no Navegador, se houver
         if connection_meta:
             try:
                 connection_registry.replace_saved_connections([connection_meta], persist=True)

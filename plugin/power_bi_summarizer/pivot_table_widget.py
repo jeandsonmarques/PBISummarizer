@@ -5,10 +5,11 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import pandas as pd
 from pandas.api import types as ptypes
-from qgis.PyQt.QtCore import Qt, QSortFilterProxyModel, QRegExp, QVariant, QMimeData
+from qgis.PyQt.QtCore import Qt, QSortFilterProxyModel, QRegExp, QVariant, QMimeData, QSize
 from qgis.PyQt.QtGui import QFont, QStandardItem, QStandardItemModel
 from qgis.PyQt.QtWidgets import (
     QAbstractItemView,
+    QAbstractScrollArea,
     QCheckBox,
     QComboBox,
     QFrame,
@@ -22,6 +23,7 @@ from qgis.PyQt.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
+    QLayout,
     QScrollArea,
     QSizePolicy,
     QSplitter,
@@ -107,11 +109,17 @@ _PIVOT_FIELD_MIME = "application/x-powerbisummarizer-pivot-field"
 
 
 class _PivotFieldSourceListWidget(QListWidget):
-    def __init__(self, parent=None):
+    def __init__(self, owner=None, parent=None):
         super().__init__(parent)
+        self._owner = owner
         self.setDragEnabled(True)
         self.setSelectionMode(QAbstractItemView.SingleSelection)
         self.setDragDropMode(QAbstractItemView.DragOnly)
+        self.setDefaultDropAction(Qt.CopyAction)
+        self.setContextMenuPolicy(Qt.DefaultContextMenu)
+
+    def supportedDropActions(self):
+        return Qt.CopyAction
 
     def mimeTypes(self):
         return [_PIVOT_FIELD_MIME]
@@ -126,6 +134,33 @@ class _PivotFieldSourceListWidget(QListWidget):
         mime.setData(_PIVOT_FIELD_MIME, json.dumps(payload).encode("utf-8"))
         return mime
 
+    def contextMenuEvent(self, event):
+        if self._owner is None:
+            super().contextMenuEvent(event)
+            return
+        item = self.itemAt(event.pos()) or self.currentItem()
+        if item is None:
+            return
+        spec_key = item.data(Qt.UserRole)
+        if not spec_key or spec_key == "__placeholder__":
+            return
+        spec = self._owner._field_spec_from_key(spec_key)
+        if spec is None:
+            return
+        menu = QMenu(self)
+        add_last = menu.addAction(f"Adicionar em {self._owner._area_label(self._owner._last_active_area)}")
+        add_rows = menu.addAction("Adicionar em Linhas")
+        add_columns = menu.addAction("Adicionar em Colunas")
+        action = menu.exec_(event.globalPos())
+        if action is None:
+            return
+        if action == add_last:
+            self._owner._add_field_to_area(self._owner._last_active_area, spec)
+        elif action == add_rows:
+            self._owner._add_field_to_area("row", spec)
+        elif action == add_columns:
+            self._owner._add_field_to_area("column", spec)
+
 
 class _PivotDropListWidget(QListWidget):
     def __init__(self, owner, area_name: str, allow_multiple: bool = True, parent=None):
@@ -136,9 +171,10 @@ class _PivotDropListWidget(QListWidget):
         self.setAcceptDrops(True)
         self.setDragEnabled(True)
         self.setDefaultDropAction(Qt.MoveAction)
-        self.setDragDropMode(QAbstractItemView.InternalMove)
+        self.setDragDropMode(QAbstractItemView.DragDrop)
         self.setDropIndicatorShown(True)
         self.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.setContextMenuPolicy(Qt.DefaultContextMenu)
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasFormat(_PIVOT_FIELD_MIME) or event.source() is self:
@@ -156,6 +192,8 @@ class _PivotDropListWidget(QListWidget):
         if event.source() is self:
             super().dropEvent(event)
             if self._owner is not None:
+                self._owner._set_last_active_area(self._area_name)
+                self._owner._sync_area_placeholder(self._area_name)
                 self._owner._maybe_refresh()
             return
 
@@ -178,8 +216,11 @@ class _PivotDropListWidget(QListWidget):
                 break
 
         if added:
+            event.setDropAction(Qt.CopyAction)
             event.acceptProposedAction()
             if self._owner is not None:
+                self._owner._set_last_active_area(self._area_name)
+                self._owner._sync_area_placeholder(self._area_name)
                 self._owner._maybe_refresh()
         else:
             event.ignore()
@@ -191,15 +232,34 @@ class _PivotDropListWidget(QListWidget):
             return
         super().keyPressEvent(event)
 
+    def mousePressEvent(self, event):
+        if self._owner is not None:
+            self._owner._set_last_active_area(self._area_name)
+        super().mousePressEvent(event)
+
+    def focusInEvent(self, event):
+        if self._owner is not None:
+            self._owner._set_last_active_area(self._area_name)
+        super().focusInEvent(event)
+
     def contextMenuEvent(self, event):
+        if self._owner is not None:
+            self._owner._set_last_active_area(self._area_name)
         menu = QMenu(self)
         remove_action = menu.addAction("Remover")
-        clear_action = menu.addAction("Limpar")
+        up_action = menu.addAction("Mover para cima")
+        down_action = menu.addAction("Mover para baixo")
+        menu.addSeparator()
+        clear_action = menu.addAction("Limpar área")
         action = menu.exec_(event.globalPos())
         if action == remove_action and self._owner is not None:
             self._owner._remove_selected_area_field(self._area_name)
+        elif action == up_action and self._owner is not None:
+            self._owner._move_selected_area_field(self._area_name, -1)
+        elif action == down_action and self._owner is not None:
+            self._owner._move_selected_area_field(self._area_name, 1)
         elif action == clear_action and self._owner is not None:
-            self.clear()
+            self._owner._clear_area(self._area_name)
             self._owner._maybe_refresh()
 
 
@@ -222,6 +282,8 @@ class PivotTableWidget(QWidget):
 
     def __init__(self, iface=None, parent=None):
         super().__init__(parent)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.setMinimumSize(0, 0)
         self.iface = iface
         self.raw_df: pd.DataFrame = pd.DataFrame()
         self.filtered_df: pd.DataFrame = pd.DataFrame()
@@ -243,27 +305,40 @@ class PivotTableWidget(QWidget):
         self._display_column_keys: List[tuple] = []
         self._pivot_data_column_offset = 0
         self._row_header_depth = 1
+        self._last_active_area = "row"
         self._field_specs_by_key: Dict[str, PivotFieldSpec] = {}
         self.pivot_engine = PivotEngine(iface=iface, logger=QgsMessageLog)
         self.pivot_selection_bridge = PivotSelectionBridge(iface)
         self.pivot_export_service = PivotExportService()
 
         self._build_ui()
+        self._configure_compact_sizing()
         self._apply_styles()
         self._apply_theming_tokens()
+
+    def minimumSizeHint(self):
+        return QSize(720, 360)
+
+    def sizeHint(self):
+        return QSize(1120, 560)
 
     # ------------------------------------------------------------------ UI
     def _build_ui(self):
         root = QHBoxLayout(self)
         root.setContentsMargins(4, 4, 4, 4)
         root.setSpacing(6)
+        root.setSizeConstraint(QLayout.SetNoConstraint)
 
-        splitter = QSplitter(Qt.Horizontal)
-        root.addWidget(splitter)
+        self.main_splitter = QSplitter(Qt.Horizontal)
+        self.main_splitter.setChildrenCollapsible(False)
+        self.main_splitter.setHandleWidth(6)
+        root.addWidget(self.main_splitter)
 
         # -- Left (table) -------------------------------------------------
-        left = QWidget()
-        left_layout = QVBoxLayout(left)
+        self.table_container = QWidget()
+        self.table_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.table_container.setMinimumSize(0, 0)
+        left_layout = QVBoxLayout(self.table_container)
         left_layout.setContentsMargins(6, 6, 6, 6)
         left_layout.setSpacing(4)
 
@@ -301,6 +376,9 @@ class PivotTableWidget(QWidget):
 
         self.table_view = QTableView()
         self.table_view.setModel(self.proxy_model)
+        self.table_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.table_view.setMinimumSize(0, 0)
+        self.table_view.setSizeAdjustPolicy(QAbstractScrollArea.AdjustIgnored)
         self.table_view.setSortingEnabled(True)
         self.table_view.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table_view.setSelectionMode(QAbstractItemView.ExtendedSelection)
@@ -316,29 +394,48 @@ class PivotTableWidget(QWidget):
         self.status_label.setProperty("role", "helper")
         left_layout.addWidget(self.status_label)
 
-        splitter.addWidget(left)
+        self.main_splitter.addWidget(self.table_container)
 
         # -- Right (field list) ------------------------------------------
-        right = QFrame()
-        right.setObjectName("fieldPanel")
-        right_layout = QVBoxLayout(right)
-        right_layout.setContentsMargins(6, 6, 6, 6)
-        right_layout.setSpacing(6)
+        self.side_panel = QFrame()
+        self.side_panel.setObjectName("fieldPanel")
+        self.side_panel.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
+        self.side_panel.setMinimumSize(0, 0)
+        right_layout = QVBoxLayout(self.side_panel)
+        right_layout.setContentsMargins(8, 8, 8, 8)
+        right_layout.setSpacing(8)
 
-        title = QLabel("Campos da Tabela Dinamica")
+        title = QLabel("Tabela Dinamica")
         title.setObjectName("fieldPanelTitle")
         right_layout.addWidget(title)
+
+        self.side_hint = QLabel("Duplo clique ou arraste para montar a tabela.")
+        self.side_hint.setProperty("role", "helper")
+        self.side_hint.setObjectName("fieldPanelHint")
+        right_layout.addWidget(self.side_hint)
+
+        source_card = QFrame()
+        source_card.setObjectName("pivotSideCard")
+        source_layout = QVBoxLayout(source_card)
+        source_layout.setContentsMargins(10, 10, 10, 10)
+        source_layout.setSpacing(6)
+
+        source_title = QLabel("Campos da Tabela Dinamica")
+        source_title.setObjectName("pivotSideSectionTitle")
+        source_layout.addWidget(source_title)
 
         self.field_search = QLineEdit()
         self.field_search.setPlaceholderText("Pesquisar campos...")
         self.field_search.textChanged.connect(self._filter_field_list)
-        right_layout.addWidget(self.field_search)
+        source_layout.addWidget(self.field_search)
 
-        self.fields_list = _PivotFieldSourceListWidget()
+        self.fields_list = _PivotFieldSourceListWidget(owner=self)
+        self.fields_list.setSizeAdjustPolicy(QAbstractScrollArea.AdjustIgnored)
         self.fields_list.setSelectionMode(QAbstractItemView.SingleSelection)
         self.fields_list.itemDoubleClicked.connect(self._handle_field_double_click)
-        self.fields_list.setMaximumHeight(220)
-        right_layout.addWidget(self.fields_list, stretch=1)
+        self.fields_list.setFixedHeight(176)
+        source_layout.addWidget(self.fields_list)
+        right_layout.addWidget(source_card)
 
         self.filter_field_combo = QComboBox()
         self.filter_field_combo.hide()
@@ -346,41 +443,58 @@ class PivotTableWidget(QWidget):
         self.row_field_combo.hide()
         self.column_field_combo = QComboBox()
         self.column_field_combo.hide()
-
-        areas_group = QGroupBox("Areas da Tabela Dinamica")
-        areas_layout = QGridLayout(areas_group)
-        areas_layout.setContentsMargins(8, 8, 8, 8)
-        areas_layout.setHorizontalSpacing(8)
-        areas_layout.setVerticalSpacing(10)
-        areas_layout.setColumnStretch(0, 1)
-        areas_layout.setColumnStretch(1, 1)
-
         self.filter_fields_list = _PivotDropListWidget(self, "filter", allow_multiple=False)
-        self.filter_fields_list.setMinimumHeight(48)
-        self.filter_fields_list.setMaximumHeight(84)
-        filter_hint = QLabel("Arraste um campo para filtrar")
-        filter_hint.setProperty("role", "helper")
-        areas_layout.addWidget(QLabel("Filtros"), 0, 0, 1, 2)
-        areas_layout.addWidget(self.filter_fields_list, 1, 0, 1, 2)
-        areas_layout.addWidget(filter_hint, 2, 0, 1, 2)
+        self.filter_fields_list.hide()
+
+        areas_card = QFrame()
+        areas_card.setObjectName("pivotSideCard")
+        areas_layout = QVBoxLayout(areas_card)
+        areas_layout.setContentsMargins(10, 10, 10, 10)
+        areas_layout.setSpacing(8)
+
+        areas_title = QLabel("Montagem da Pivot")
+        areas_title.setObjectName("pivotSideSectionTitle")
+        areas_layout.addWidget(areas_title)
+
+        areas_hint = QLabel("Duplo clique ou arraste para montar a tabela.")
+        areas_hint.setObjectName("fieldPanelHint")
+        areas_hint.setProperty("role", "helper")
+        areas_layout.addWidget(areas_hint)
 
         self.row_fields_list = _PivotDropListWidget(self, "row", allow_multiple=True)
-        self.row_fields_list.setMinimumHeight(112)
-        self.row_fields_list.setMaximumHeight(160)
-        row_hint = QLabel("Arraste campos para Linhas e reordene se precisar")
-        row_hint.setProperty("role", "helper")
-        areas_layout.addWidget(QLabel("Linhas"), 3, 0, 1, 2)
-        areas_layout.addWidget(self.row_fields_list, 4, 0, 1, 2)
-        areas_layout.addWidget(row_hint, 5, 0, 1, 2)
+        self.row_fields_list.setSizeAdjustPolicy(QAbstractScrollArea.AdjustIgnored)
+        self.row_fields_list.setFixedHeight(110)
 
         self.column_fields_list = _PivotDropListWidget(self, "column", allow_multiple=True)
-        self.column_fields_list.setMinimumHeight(112)
-        self.column_fields_list.setMaximumHeight(160)
-        column_hint = QLabel("Arraste campos para Colunas e reordene se precisar")
-        column_hint.setProperty("role", "helper")
-        areas_layout.addWidget(QLabel("Colunas"), 6, 0, 1, 2)
-        areas_layout.addWidget(self.column_fields_list, 7, 0, 1, 2)
-        areas_layout.addWidget(column_hint, 8, 0, 1, 2)
+        self.column_fields_list.setSizeAdjustPolicy(QAbstractScrollArea.AdjustIgnored)
+        self.column_fields_list.setFixedHeight(110)
+
+        axes_row = QHBoxLayout()
+        axes_row.setSpacing(8)
+
+        row_card = QFrame()
+        row_card.setObjectName("pivotAreaCard")
+        row_layout = QVBoxLayout(row_card)
+        row_layout.setContentsMargins(8, 8, 8, 8)
+        row_layout.setSpacing(6)
+        row_title = QLabel("Linhas")
+        row_title.setObjectName("pivotAreaTitle")
+        row_layout.addWidget(row_title)
+        row_layout.addWidget(self.row_fields_list)
+        axes_row.addWidget(row_card, 1)
+
+        col_card = QFrame()
+        col_card.setObjectName("pivotAreaCard")
+        col_layout = QVBoxLayout(col_card)
+        col_layout.setContentsMargins(8, 8, 8, 8)
+        col_layout.setSpacing(6)
+        col_title = QLabel("Colunas")
+        col_title.setObjectName("pivotAreaTitle")
+        col_layout.addWidget(col_title)
+        col_layout.addWidget(self.column_fields_list)
+        axes_row.addWidget(col_card, 1)
+
+        areas_layout.addLayout(axes_row)
 
         self.agg_combo = QComboBox()
         self.agg_combo.setObjectName("operationCombo")
@@ -388,18 +502,18 @@ class PivotTableWidget(QWidget):
             self.agg_combo.addItem(label, func)
         self.agg_combo.setCurrentIndex(self.agg_combo.findData("count"))
         self.agg_combo.currentIndexChanged.connect(self._on_operation_changed)
-        areas_layout.addWidget(QLabel("Operacao"), 9, 0)
-        areas_layout.addWidget(self.agg_combo, 10, 0, 1, 2)
+        areas_layout.addWidget(QLabel("Operacao"))
+        areas_layout.addWidget(self.agg_combo)
 
         self.advanced_group = QGroupBox("Avançado")
         self.advanced_group.setCheckable(True)
         self.advanced_group.setChecked(False)
         self.advanced_group.toggled.connect(self._on_advanced_toggled)
-        self.advanced_group.setMaximumHeight(120)
+        self.advanced_group.setFixedHeight(80)
         advanced_layout = QVBoxLayout(self.advanced_group)
-        advanced_layout.setContentsMargins(8, 8, 8, 8)
+        advanced_layout.setContentsMargins(8, 6, 8, 6)
         advanced_layout.setSpacing(6)
-        advanced_help = QLabel("Use apenas se precisar de métrica explicita.")
+        advanced_help = QLabel("Use so se precisar de metricas explicitas.")
         advanced_help.setProperty("role", "helper")
         advanced_layout.addWidget(advanced_help)
 
@@ -410,31 +524,47 @@ class PivotTableWidget(QWidget):
         advanced_layout.addWidget(self.value_field_combo)
         self.advanced_value_label.setVisible(False)
         self.value_field_combo.setVisible(False)
-        areas_layout.addWidget(self.advanced_group, 11, 0, 1, 2)
+        areas_layout.addWidget(self.advanced_group)
 
         self.only_selected_check = QCheckBox("Apenas selecionadas")
         self.only_selected_check.stateChanged.connect(self._maybe_refresh)
-        areas_layout.addWidget(self.only_selected_check, 12, 0)
-
         self.include_nulls_check = QCheckBox("Incluir nulos")
         self.include_nulls_check.stateChanged.connect(self._maybe_refresh)
-        areas_layout.addWidget(self.include_nulls_check, 12, 1)
+        flags_row = QHBoxLayout()
+        flags_row.addWidget(self.only_selected_check)
+        flags_row.addWidget(self.include_nulls_check)
+        flags_row.addStretch(1)
+        areas_layout.addLayout(flags_row)
 
         self.apply_btn = QPushButton("Atualizar")
         self.apply_btn.setFixedHeight(26)
         self.apply_btn.clicked.connect(self.refresh)
-        areas_layout.addWidget(self.apply_btn, 13, 0, 1, 2)
+        areas_layout.addWidget(self.apply_btn)
 
-        right_layout.addWidget(areas_group)
+        right_layout.addWidget(areas_card)
         right_layout.addStretch()
 
-        splitter.addWidget(right)
-        splitter.setStretchFactor(0, 5)
-        splitter.setStretchFactor(1, 2)
-        right.setMinimumWidth(300)
-        right.setMaximumWidth(380)
-        right.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
-        areas_group.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
+        self.main_splitter.addWidget(self.side_panel)
+        self.main_splitter.setStretchFactor(0, 5)
+        self.main_splitter.setStretchFactor(1, 2)
+        self.main_splitter.setSizes([840, 340])
+        self.side_panel.setFixedWidth(340)
+        areas_card.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
+
+    def _configure_compact_sizing(self):
+        for widget in (
+            self,
+            self.table_view,
+            self.fields_list,
+            self.filter_fields_list,
+            self.row_fields_list,
+            self.column_fields_list,
+            self.advanced_group,
+        ):
+            try:
+                widget.setMinimumHeight(0)
+            except Exception:
+                pass
 
     def _apply_styles(self):
         self.setStyleSheet(
@@ -468,13 +598,13 @@ class PivotTableWidget(QWidget):
                 color: #7c8aad;
             }
             QFrame#fieldPanel {
-                border: 1px solid #d5deef;
-                border-radius: 0px;
-                background-color: #f8f9fc;
+                border: 1px solid #d7e1f2;
+                border-radius: 10px;
+                background-color: #f7f9fc;
             }
             QListWidget {
-                border: 1px dashed #c7cfe2;
-                border-radius: 0px;
+                border: 1px solid #d7e1f2;
+                border-radius: 8px;
                 background-color: #ffffff;
                 min-height: 44px;
             }
@@ -486,10 +616,10 @@ class PivotTableWidget(QWidget):
                 color: #153C8A;
             }
             QGroupBox {
-                border: 1px solid #d5deef;
+                border: 1px solid #d7e1f2;
                 margin-top: 8px;
                 padding-top: 10px;
-                border-radius: 0px;
+                border-radius: 10px;
                 background-color: #ffffff;
             }
             QGroupBox::title {
@@ -499,25 +629,24 @@ class PivotTableWidget(QWidget):
                 color: #1d2a4b;
                 font-weight: 600;
             }
+            QFrame#pivotSideCard {
+                border: 1px solid #d7e1f2;
+                border-radius: 10px;
+                background-color: #ffffff;
+            }
             QLabel#fieldPanelTitle {
                 font-size: 11pt;
-                font-weight: 600;
+                font-weight: 700;
                 color: #1d2a4b;
             }
-            QHeaderView::section {
-                background-color: #edf2ff;
+            QLabel#pivotSideSectionTitle {
+                font-size: 10pt;
+                font-weight: 700;
                 color: #1d2a4b;
-                font-weight: 600;
-                border: 1px solid #d5deef;
-                padding: 4px 6px;
             }
-            QTableView {
-                border: 2px solid #153C8A;
-                border-radius: 0px;
-                gridline-color: #d1d9ec;
-                selection-background-color: #c9d7f5;
-                alternate-background-color: #f8faff;
-                background-color: #ffffff;
+            QLabel#fieldPanelHint {
+                color: #5f6f8d;
+                font-size: 9pt;
             }
             """
         )
@@ -569,6 +698,7 @@ class PivotTableWidget(QWidget):
         self.filter_fields_list.clear()
         self.row_fields_list.clear()
         self.column_fields_list.clear()
+        self._sync_area_placeholder()
 
         combos = [
             self.filter_field_combo,
@@ -584,15 +714,13 @@ class PivotTableWidget(QWidget):
 
         layer = self._current_layer
         for column in df.columns:
-            item = QListWidgetItem(column)
-            item.setData(Qt.UserRole, column)
-            if self._is_numeric_column(df[column]):
-                item.setData(Qt.UserRole + 1, True)
-            else:
-                item.setData(Qt.UserRole + 1, False)
-            self.fields_list.addItem(item)
             field_spec = self._build_attribute_field_spec(column, layer, df)
             spec_key = self._register_field_spec(field_spec)
+            item = QListWidgetItem(column)
+            item.setData(Qt.UserRole, spec_key)
+            item.setData(Qt.UserRole + 1, bool(field_spec.data_type == "numeric"))
+            item.setData(Qt.UserRole + 2, column)
+            self.fields_list.addItem(item)
             self.filter_field_combo.addItem(column, spec_key)
             self.column_field_combo.addItem(column, spec_key)
             self.row_field_combo.addItem(column, spec_key)
@@ -615,6 +743,7 @@ class PivotTableWidget(QWidget):
             if idx != -1:
                 self.row_field_combo.setCurrentIndex(idx)
                 self._add_selected_field_to_area("row", auto_refresh=False)
+                self._set_last_active_area("row")
 
         if self.numeric_candidates:
             value_candidate = self.numeric_candidates[0]
@@ -903,20 +1032,31 @@ class PivotTableWidget(QWidget):
             self.fields_list.setRowHidden(index, not visible)
 
     def _handle_field_double_click(self, item: QListWidgetItem):
-        column = item.data(Qt.UserRole)
+        spec_key = item.data(Qt.UserRole)
+        field_spec = self._field_spec_from_key(spec_key)
+        if field_spec is None:
+            return
         is_numeric = item.data(Qt.UserRole + 1)
+        target_area = getattr(self, "_last_active_area", "row")
         if is_numeric:
             if self.advanced_group.isChecked():
-                idx = self.value_field_combo.findText(column)
+                idx = self.value_field_combo.findData(spec_key)
                 if idx != -1:
                     self.value_field_combo.setCurrentIndex(idx)
+                    self._show_inline_message("", level="info")
+                else:
+                    self._show_inline_message(
+                        f"O campo {field_spec.display_name} nao pode ser usado como valor.",
+                        level="warning",
+                    )
+                self._maybe_refresh()
+                return
             else:
-                self._add_selected_field_to_area("row")
+                self._add_field_to_area(target_area, field_spec)
                 return
         else:
-            self._add_selected_field_to_area("row")
+            self._add_field_to_area(target_area, field_spec)
             return
-        self._maybe_refresh()
 
     def _handle_table_cell_clicked(self, proxy_index):
         if not proxy_index.isValid():
@@ -970,14 +1110,11 @@ class PivotTableWidget(QWidget):
         visible = self.proxy_model.rowCount()
         row_labels = [self._area_list("row").item(i).text() for i in range(self._area_list("row").count())]
         column_labels = [self._area_list("column").item(i).text() for i in range(self._area_list("column").count())]
-        filter_labels = [self._area_list("filter").item(i).text() for i in range(self._area_list("filter").count())]
         parts = [f"Mostrando {visible}/{total} linha(s)"]
         if row_labels:
             parts.append(f"Linhas: {' / '.join(row_labels)}")
         if column_labels:
             parts.append(f"Colunas: {' / '.join(column_labels)}")
-        if filter_labels:
-            parts.append(f"Filtros: {' / '.join(filter_labels)}")
         self.status_label.setText(" | ".join(parts))
 
     def _apply_theming_tokens(self):
@@ -992,6 +1129,33 @@ class PivotTableWidget(QWidget):
             self.table_view.setAlternatingRowColors(True)
         except Exception:
             pass
+
+    def _set_last_active_area(self, area: str):
+        if area in {"filter", "row", "column"}:
+            self._last_active_area = area
+
+    def _placeholder_item(self) -> QListWidgetItem:
+        item = QListWidgetItem("Nenhum campo")
+        item.setData(Qt.UserRole, "__placeholder__")
+        item.setFlags(Qt.NoItemFlags)
+        return item
+
+    def _refresh_area_placeholder(self, area: str):
+        list_widget = self._area_list(area)
+        real_items_present = False
+        for index in reversed(range(list_widget.count())):
+            if list_widget.item(index).data(Qt.UserRole) == "__placeholder__":
+                list_widget.takeItem(index)
+            else:
+                real_items_present = True
+        if not real_items_present:
+            list_widget.addItem(self._placeholder_item())
+            list_widget.setCurrentRow(0)
+
+    def _sync_area_placeholder(self, area: Optional[str] = None):
+        names = (area,) if area else ("filter", "row", "column")
+        for name in names:
+            self._refresh_area_placeholder(name)
 
     def _resolve_current_layer(self):
         metadata = dict(self._current_metadata or {})
@@ -1096,43 +1260,60 @@ class PivotTableWidget(QWidget):
         list_widget = self._area_list(area)
         for index in range(list_widget.count()):
             item = list_widget.item(index)
+            if item.data(Qt.UserRole) == "__placeholder__":
+                continue
             spec = self._field_spec_from_key(item.data(Qt.UserRole))
             if spec is not None:
                 specs.append(spec)
         return specs
 
     def _add_selected_field_to_area(self, area: str, auto_refresh: bool = True):
+        self._set_last_active_area(area)
         combo = self._area_combo(area)
-        self._add_field_to_area(area, self._field_spec_from_key(combo.currentData()), auto_refresh=auto_refresh)
+        return self._add_field_to_area(
+            area,
+            self._field_spec_from_key(combo.currentData()),
+            auto_refresh=auto_refresh,
+        )
 
     def _add_field_to_area(self, area: str, field_spec: Optional[PivotFieldSpec], auto_refresh: bool = True):
         if field_spec is None:
-            return
+            return False
         list_widget = self._area_list(area)
         spec_key = self._register_field_spec(field_spec)
+        self._set_last_active_area(area)
         if area == "filter":
             list_widget.clear()
         elif any(list_widget.item(index).data(Qt.UserRole) == spec_key for index in range(list_widget.count())):
             self._show_inline_message(
-                f"O campo '{field_spec.display_name}' ja existe em {self._area_label(area)}.",
+                f"O campo {field_spec.display_name} ja existe em {self._area_label(area)}.",
                 level="warning",
             )
-            return
+            return False
+
+        for index in reversed(range(list_widget.count())):
+            if list_widget.item(index).data(Qt.UserRole) == "__placeholder__":
+                list_widget.takeItem(index)
 
         item = QListWidgetItem(field_spec.display_name)
         item.setData(Qt.UserRole, spec_key)
         list_widget.addItem(item)
         list_widget.setCurrentItem(item)
         self._show_inline_message("", level="info")
+        self._sync_area_placeholder(area)
         if auto_refresh:
             self._maybe_refresh()
+        return True
 
     def _remove_selected_area_field(self, area: str):
         list_widget = self._area_list(area)
         row = list_widget.currentRow()
         if row < 0:
             return
+        if list_widget.item(row).data(Qt.UserRole) == "__placeholder__":
+            return
         list_widget.takeItem(row)
+        self._sync_area_placeholder(area)
         self._maybe_refresh()
 
     def _move_selected_area_field(self, area: str, offset: int):
@@ -1140,13 +1321,21 @@ class PivotTableWidget(QWidget):
         row = list_widget.currentRow()
         if row < 0:
             return
+        if list_widget.item(row).data(Qt.UserRole) == "__placeholder__":
+            return
         new_row = row + offset
         if new_row < 0 or new_row >= list_widget.count():
+            return
+        if list_widget.item(new_row).data(Qt.UserRole) == "__placeholder__":
             return
         item = list_widget.takeItem(row)
         list_widget.insertItem(new_row, item)
         list_widget.setCurrentRow(new_row)
         self._maybe_refresh()
+
+    def _clear_area(self, area: str):
+        self._area_list(area).clear()
+        self._sync_area_placeholder(area)
 
     def _ensure_default_row_area(self):
         if self.row_fields_list.count() > 0:

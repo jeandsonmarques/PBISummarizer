@@ -5,6 +5,7 @@ from qgis.PyQt.QtWidgets import (
     QComboBox,
     QFrame,
     QGridLayout,
+    QLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -154,9 +155,11 @@ class Ui_PowerBISummarizerDialog(object):
         central_layout.addWidget(self.content_frame, 1)
 
         self.pageResultados = QWidget()
+        self.pageResultados.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         resultados_layout = QVBoxLayout(self.pageResultados)
         resultados_layout.setContentsMargins(0, 0, 0, 0)
         resultados_layout.setSpacing(12)
+        resultados_layout.setSizeConstraint(QLayout.SetNoConstraint)
 
         self.results_header_frame = QFrame()
         header_layout = QVBoxLayout(self.results_header_frame)
@@ -186,13 +189,16 @@ class Ui_PowerBISummarizerDialog(object):
 
         self.results_body = QFrame()
         self.results_body.setObjectName("resultsBody")
+        self.results_body.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.results_body_layout = QVBoxLayout(self.results_body)
         self.results_body_layout.setContentsMargins(0, 0, 0, 0)
         self.results_body_layout.setSpacing(12)
+        self.results_body_layout.setSizeConstraint(QLayout.SetNoConstraint)
         resultados_layout.addWidget(self.results_body, 1)
 
         self.export_card = QFrame()
         self.export_card.setObjectName("exportCard")
+        self.export_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
         export_layout = QVBoxLayout(self.export_card)
         export_layout.setContentsMargins(16, 16, 16, 16)
         export_layout.setSpacing(12)
@@ -228,7 +234,7 @@ class Ui_PowerBISummarizerDialog(object):
         export_button_layout.addWidget(self.export_execute_btn)
         export_layout.addLayout(export_button_layout)
 
-        resultados_layout.addWidget(self.export_card)
+        self.export_card.setVisible(False)
         self.stackedWidget.addWidget(self.pageResultados)
 
         self.pageRelatorios = QWidget()

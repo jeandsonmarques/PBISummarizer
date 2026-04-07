@@ -30,6 +30,7 @@ from qgis.PyQt.QtWidgets import (
     QScrollArea,
     QTabWidget,
     QTextEdit,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
     QFrame,
@@ -284,6 +285,7 @@ class PowerBISummarizerDialog(QDialog):
         try:
             layout = self.ui.results_body_layout
             self.pivot_widget = PivotTableWidget(iface=self.iface, parent=self.ui.results_body)
+            self.pivot_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
             layout.addWidget(self.pivot_widget)
             try:
                 self.pivot_widget.set_auto_update_checkbox(self.ui.auto_update_check)
@@ -295,6 +297,7 @@ class PowerBISummarizerDialog(QDialog):
                 pass
 
             self.summary_message_widget = QTextEdit(self.ui.results_body)
+            self.summary_message_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
             self.summary_message_widget.setReadOnly(True)
             self.summary_message_widget.setStyleSheet(
                 Template(
@@ -305,9 +308,15 @@ class PowerBISummarizerDialog(QDialog):
             layout.addWidget(self.summary_message_widget)
 
             self.table_view = InteractiveTable(self.ui.results_body)
+            self.table_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
             layout.addWidget(self.table_view)
             self.table_view.setVisible(False)
-        except Exception:
+        except Exception as exc:
+            QgsMessageLog.logMessage(
+                f"Falha ao construir a aba de tabela dinamica: {exc}",
+                "PowerBISummarizer",
+                Qgis.Critical,
+            )
             self.pivot_widget = None
             self.summary_message_widget = None
             self.table_view = None

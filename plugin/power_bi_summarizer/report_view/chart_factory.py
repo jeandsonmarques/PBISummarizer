@@ -29,8 +29,8 @@ def _chart_popup_icon() -> QIcon:
 
 @dataclass
 class ChartVisualState:
-    chart_type: str = "barh"
-    palette: str = "default"
+    chart_type: str = "bar"
+    palette: str = "purple"
     show_legend: bool = False
     show_values: bool = True
     show_percent: bool = False
@@ -95,6 +95,9 @@ class ReportChartWidget(QWidget):
         "category": "Cores por categoria",
         "purple": "Paleta roxa",
         "blue": "Paleta azul",
+        "teal": "Paleta teal",
+        "sunset": "Paleta sunset",
+        "grayscale": "Paleta cinza",
     }
 
     SORT_LABELS: Dict[str, str] = {
@@ -124,7 +127,7 @@ class ReportChartWidget(QWidget):
 
     def _default_visual_state(self, payload: Optional[ChartPayload]) -> ChartVisualState:
         chart_type = self._normalize_chart_type(getattr(payload, "chart_type", "bar"))
-        state = ChartVisualState(chart_type=chart_type)
+        state = ChartVisualState(chart_type=chart_type, palette="purple")
         if chart_type in {"pie", "donut"}:
             state.show_legend = True
             state.show_values = False
@@ -146,11 +149,9 @@ class ReportChartWidget(QWidget):
         normalized = str(chart_type or "bar").strip().lower()
         if normalized == "histogram":
             return "bar"
-        if normalized == "bar":
-            return "barh"
-        if normalized in {"barh", "pie", "donut", "line", "area"}:
+        if normalized in {"bar", "barh", "pie", "donut", "line", "area"}:
             return normalized
-        return "barh"
+        return "bar"
 
     def _open_chart_menu(self, pos):
         self._build_chart_context_menu(self.mapToGlobal(pos))
@@ -363,10 +364,10 @@ class ReportChartWidget(QWidget):
 
     def _fallback_chart_type(self) -> str:
         supported_types = self._supported_chart_types()
-        for candidate in ("barh", "bar", "line", "area", "pie", "donut"):
+        for candidate in ("bar", "barh", "line", "area", "pie", "donut"):
             if supported_types.get(candidate, False):
                 return candidate
-        return "barh"
+        return "bar"
 
     def _ensure_visual_state_compatibility(self):
         supported_types = self._supported_chart_types()
@@ -389,7 +390,10 @@ class ReportChartWidget(QWidget):
         self._rerender_chart()
 
     def _set_chart_palette(self, palette_name: str):
-        self.chart_state.palette = str(palette_name or "default").strip().lower()
+        requested = str(palette_name or "purple").strip().lower()
+        if requested not in self.PALETTE_LABELS:
+            requested = "purple"
+        self.chart_state.palette = requested
         self._rerender_chart()
 
     def _toggle_show_legend(self, checked: bool):
@@ -597,7 +601,7 @@ class ReportChartWidget(QWidget):
         if not self._supported_chart_types().get(chart_type, False):
             chart_type = self._default_visual_state(self._payload).chart_type
             if not self._supported_chart_types().get(chart_type, False):
-                chart_type = "barh"
+                chart_type = "bar"
 
         return {
             "title": self._display_title(self._payload.title),
@@ -682,21 +686,48 @@ class ReportChartWidget(QWidget):
             "#93C5FD",
             "#BFDBFE",
         ]
+        teal_multi = [
+            "#0F766E",
+            "#0D9488",
+            "#14B8A6",
+            "#2DD4BF",
+            "#5EEAD4",
+            "#99F6E4",
+        ]
+        sunset_multi = [
+            "#C2410C",
+            "#EA580C",
+            "#F97316",
+            "#FB923C",
+            "#FDBA74",
+            "#FED7AA",
+        ]
+        grayscale_multi = [
+            "#111827",
+            "#374151",
+            "#4B5563",
+            "#6B7280",
+            "#9CA3AF",
+            "#D1D5DB",
+        ]
 
         palette = self.chart_state.palette
         if palette == "single":
-            base = [QColor("#2B7DE9")] * max(1, count)
+            base = [QColor("#5A3FE6")] * max(1, count)
         elif palette == "category":
             base = [QColor(default_multi[index % len(default_multi)]) for index in range(max(1, count))]
         elif palette == "purple":
             base = [QColor(purple_multi[index % len(purple_multi)]) for index in range(max(1, count))]
         elif palette == "blue":
             base = [QColor(blue_multi[index % len(blue_multi)]) for index in range(max(1, count))]
+        elif palette == "teal":
+            base = [QColor(teal_multi[index % len(teal_multi)]) for index in range(max(1, count))]
+        elif palette == "sunset":
+            base = [QColor(sunset_multi[index % len(sunset_multi)]) for index in range(max(1, count))]
+        elif palette == "grayscale":
+            base = [QColor(grayscale_multi[index % len(grayscale_multi)]) for index in range(max(1, count))]
         else:
-            if chart_type in {"pie", "donut"}:
-                base = [QColor(default_multi[index % len(default_multi)]) for index in range(max(1, count))]
-            else:
-                base = [QColor("#2B7DE9")] * max(1, count)
+            base = [QColor(purple_multi[index % len(purple_multi)]) for index in range(max(1, count))]
         return base
 
     def _draw_series_legend(self, painter: QPainter, rect: QRectF, color: QColor, text: str):
@@ -982,3 +1013,4 @@ class ReportChartWidget(QWidget):
         if math.isclose(value, round(value), rel_tol=0.0, abs_tol=1e-6):
             return f"{int(round(value)):,}".replace(",", ".")
         return f"{value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+

@@ -7,7 +7,7 @@ from time import perf_counter
 from typing import Dict, List, Optional
 
 from qgis.PyQt.QtCore import QTimer, QSize, Qt, pyqtSignal
-from qgis.PyQt.QtGui import QColor, QIcon, QTextOption
+from qgis.PyQt.QtGui import QColor, QIcon, QMovie, QTextOption
 from qgis.PyQt.QtWidgets import (
     QAction,
     QApplication,
@@ -58,13 +58,15 @@ REPORTS_FONT_SCALE = 1.0
 REPORTS_STYLE_TEMPLATE = Template(
     """
     QWidget#reportsRoot,
-    QWidget#reportsWorkspace,
+    QWidget#reportsWorkspace {
+        background: ${page_bg};
+    }
     QWidget#chatColumn,
     QWidget#conversationViewportHost,
     QWidget#conversationViewport,
     QWidget#footerSuggestions,
     QFrame#promptDock {
-        background: ${page_bg};
+        background: transparent;
     }
     QWidget#reportsRoot,
     QWidget#reportsRoot * {
@@ -122,8 +124,7 @@ REPORTS_STYLE_TEMPLATE = Template(
         font-weight: ${font_weight_semibold};
     }
     QLabel#visualPanelTitle,
-    QLabel#assistantSummary,
-    QLabel#emptyTitle {
+    QLabel#assistantSummary {
         color: ${text_primary};
         font-size: ${font_section_title_px}px;
         font-weight: ${font_weight_semibold};
@@ -138,7 +139,6 @@ REPORTS_STYLE_TEMPLATE = Template(
     }
     QLabel#visualPanelText,
     QLabel#assistantHelper,
-    QLabel#emptySubtitle,
     QLabel#reportsSubtitle {
         color: ${text_secondary};
         font-size: ${font_secondary_px}px;
@@ -228,6 +228,22 @@ REPORTS_STYLE_TEMPLATE = Template(
     QFrame#emptyConversation {
         background: transparent;
         border: none;
+    }
+    QWidget#emptyContent {
+        background: transparent;
+    }
+    QLabel#emptyIcon {
+        padding-bottom: 8px;
+    }
+    QLabel#emptyTitle {
+        color: ${text_primary};
+        font-size: 32px;
+        font-weight: ${font_weight_semibold};
+    }
+    QLabel#emptySubtitle {
+        color: ${text_muted};
+        font-size: 15px;
+        font-weight: ${font_weight_regular};
     }
     QPushButton[chip="true"],
     QPushButton[filterChip="true"] {
@@ -467,25 +483,75 @@ class EmptyConversationWidget(QFrame):
         super().__init__(parent)
         self.setObjectName("emptyConversation")
         self.setAttribute(Qt.WA_StyledBackground, True)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.setMinimumHeight(236)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 18, 8, 18)
-        layout.setSpacing(10)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(0)
+        layout.addStretch(1)
 
-        title = QLabel("Converse com os dados do projeto", self)
-        title.setObjectName("emptyTitle")
-        title.setAlignment(Qt.AlignCenter)
-        layout.addWidget(title)
+        self.content = QWidget(self)
+        self.content.setObjectName("emptyContent")
+        self.content.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
+        self.content.setMaximumWidth(680)
+        self.content.setMinimumWidth(420)
+        content_layout = QVBoxLayout(self.content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(10)
+        layout.addWidget(self.content, 0, Qt.AlignHCenter)
+        layout.addStretch(1)
 
-        subtitle = QLabel(
-            "Escolha a base no topo esquerdo e faca uma pergunta sobre o projeto, uma camada, o banco ou o contexto cloud.",
-            self,
+        self.icon_label = QLabel(self.content)
+        self.icon_label.setObjectName("emptyIcon")
+        self.icon_label.setAlignment(Qt.AlignCenter)
+        icon_added = False
+
+        logo_path = _reports_icon_path("report_home_logo.gif")
+        if os.path.exists(logo_path):
+            self.icon_movie = QMovie(logo_path)
+            if self.icon_movie.isValid():
+                self.icon_movie.setScaledSize(QSize(86, 86))
+                self.icon_label.setMovie(self.icon_movie)
+                self.icon_movie.start()
+                icon_added = True
+
+        if not icon_added:
+            icon = _reports_icon("report_chat.svg")
+            if not icon.isNull():
+                self.icon_label.setPixmap(icon.pixmap(QSize(56, 56)))
+                icon_added = True
+
+        if icon_added:
+            content_layout.addWidget(self.icon_label, 0, Qt.AlignHCenter)
+
+        self.title_label = QLabel("Converse com os dados do projeto", self.content)
+        self.title_label.setObjectName("emptyTitle")
+        self.title_label.setAlignment(Qt.AlignCenter)
+        self.title_label.setWordWrap(True)
+        content_layout.addWidget(self.title_label)
+
+        self.subtitle_label = QLabel(
+            "Faça uma pergunta para analisar camadas, banco ou cloud.",
+            self.content,
         )
-        subtitle.setObjectName("emptySubtitle")
-        subtitle.setAlignment(Qt.AlignCenter)
-        subtitle.setWordWrap(True)
-        layout.addWidget(subtitle)
+        self.subtitle_label.setObjectName("emptySubtitle")
+        self.subtitle_label.setAlignment(Qt.AlignCenter)
+        self.subtitle_label.setWordWrap(True)
+        content_layout.addWidget(self.subtitle_label, 0, Qt.AlignHCenter)
+
+        self._sync_text_widths()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._sync_text_widths()
+
+    def _sync_text_widths(self):
+        available = max(320, self.width() - 48)
+        content_width = min(680, available)
+        self.content.setFixedWidth(content_width)
+        self.title_label.setMaximumWidth(content_width)
+        self.subtitle_label.setMaximumWidth(max(320, content_width - 24))
 
 
 class UserMessageWidget(QWidget):

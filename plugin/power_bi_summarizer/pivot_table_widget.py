@@ -156,7 +156,6 @@ class _PivotFieldSourceListWidget(QListWidget):
         add_rows = menu.addAction("Adicionar em Linhas")
         add_columns = menu.addAction("Adicionar em Colunas")
         add_values = menu.addAction("Adicionar em Valores")
-        add_filters = menu.addAction("Adicionar em Filtros")
         action = menu.exec_(event.globalPos())
         if action is None:
             return
@@ -168,8 +167,6 @@ class _PivotFieldSourceListWidget(QListWidget):
             self._owner._add_field_to_area("column", spec)
         elif action == add_values:
             self._owner._add_field_to_area("value", spec)
-        elif action == add_filters:
-            self._owner._add_field_to_area("filter", spec)
 
 
 class _PivotDropListWidget(QListWidget):
@@ -407,7 +404,7 @@ class PivotTableWidget(QWidget):
         self.search_input.textChanged.connect(self._on_search_text_changed)
         toolbar.addWidget(self.search_input, 0)
 
-        self.clear_filters_btn = QPushButton("Limpar filtros")
+        self.clear_filters_btn = QPushButton("Limpar busca")
         self.clear_filters_btn.setObjectName("summarySecondaryButton")
         self.clear_filters_btn.setFixedHeight(34)
         self.clear_filters_btn.setMinimumWidth(98)
@@ -423,7 +420,7 @@ class PivotTableWidget(QWidget):
         self.export_btn.clicked.connect(self._export_pivot_table)
         toolbar.addWidget(self.export_btn, 0)
 
-        self.sidebar_toggle_btn = QPushButton("Ocultar construtor")
+        self.sidebar_toggle_btn = QPushButton("Ocultar campos")
         self.sidebar_toggle_btn.setObjectName("summaryGhostButton")
         self.sidebar_toggle_btn.setFixedHeight(34)
         self.sidebar_toggle_btn.setMinimumWidth(112)
@@ -545,7 +542,7 @@ class PivotTableWidget(QWidget):
         right_layout.setContentsMargins(12, 10, 12, 10)
         right_layout.setSpacing(6)
 
-        title = QLabel("Construtor")
+        title = QLabel("Campos da Tabela Dinamica")
         title.setObjectName("summaryBuilderTitle")
         right_layout.addWidget(title)
 
@@ -591,7 +588,7 @@ class PivotTableWidget(QWidget):
         self.value_fields_list.setMinimumHeight(74)
         self.value_fields_list.setMaximumHeight(88)
 
-        placement_title = QLabel("Montagem da pivot")
+        placement_title = QLabel("Areas da tabela dinamica")
         placement_title.setObjectName("summarySectionTitle")
         right_layout.addWidget(placement_title)
 
@@ -655,7 +652,7 @@ class PivotTableWidget(QWidget):
         value_layout = QVBoxLayout(self.value_area_card)
         value_layout.setContentsMargins(0, 0, 0, 0)
         value_layout.setSpacing(4)
-        self.value_area_title = QLabel("Campo de valor")
+        self.value_area_title = QLabel("Valores")
         self.value_area_title.setObjectName("summaryAxisTitle")
         value_layout.addWidget(self.value_area_title)
         value_layout.addWidget(self.value_fields_list)
@@ -663,6 +660,7 @@ class PivotTableWidget(QWidget):
 
         filters_title = QLabel("Filtros")
         filters_title.setObjectName("summarySectionTitle")
+        filters_title.setVisible(False)
         right_layout.addWidget(filters_title)
 
         self.filter_area_card = QWidget()
@@ -673,6 +671,7 @@ class PivotTableWidget(QWidget):
         self.filter_area_title.setObjectName("summaryAxisTitle")
         filter_layout.addWidget(self.filter_area_title)
         filter_layout.addWidget(self.filter_fields_list)
+        self.filter_area_card.setVisible(False)
         right_layout.addWidget(self.filter_area_card)
 
         self.advanced_group = QGroupBox("Avançado")
@@ -766,7 +765,7 @@ class PivotTableWidget(QWidget):
         if hasattr(self, "sidebar_toggle_btn"):
             self.sidebar_toggle_btn.blockSignals(True)
             self.sidebar_toggle_btn.setChecked(not visible)
-            self.sidebar_toggle_btn.setText("Mostrar construtor" if not visible else "Ocultar construtor")
+            self.sidebar_toggle_btn.setText("Mostrar campos" if not visible else "Ocultar campos")
             self.sidebar_toggle_btn.blockSignals(False)
 
         if hasattr(self, "side_panel"):
@@ -796,13 +795,30 @@ class PivotTableWidget(QWidget):
         self.meta_label.setVisible(has_data)
 
     def _apply_styles(self):
-        self.setStyleSheet(
-            """
+        tokens = {
+            "__FONT_UI_STACK__": str(
+                TYPOGRAPHY.get(
+                    "font_ui_stack",
+                    '"Segoe UI Variable Text", "Segoe UI", Arial, sans-serif',
+                )
+            ),
+            "__FONT_BODY_PX__": str(int(TYPOGRAPHY.get("font_body_px", 13))),
+            "__FONT_SECONDARY_PX__": str(int(TYPOGRAPHY.get("font_secondary_px", 12))),
+            "__FONT_CAPTION_PX__": str(int(TYPOGRAPHY.get("font_caption_px", 11))),
+            "__FONT_BUTTON_PX__": str(int(TYPOGRAPHY.get("font_button_px", 13))),
+            "__FONT_WEIGHT_REGULAR__": str(int(TYPOGRAPHY.get("font_weight_regular", 400))),
+            "__FONT_WEIGHT_MEDIUM__": str(int(TYPOGRAPHY.get("font_weight_medium", 500))),
+            "__FONT_WEIGHT_SEMIBOLD__": str(int(TYPOGRAPHY.get("font_weight_semibold", 600))),
+        }
+        tokens["__TITLE_PX__"] = str(
+            max(int(tokens["__FONT_BODY_PX__"]) + 2, int(tokens["__FONT_SECONDARY_PX__"]) + 3)
+        )
+        qss = """
             QWidget#summaryPivotRoot {
-                background: #f7f7fa;
-                font-family: "Segoe UI", Arial, sans-serif;
-                font-size: 12px;
-                color: #1f1a29;
+                background: #f7f7f8;
+                font-family: __FONT_UI_STACK__;
+                font-size: __FONT_BODY_PX__px;
+                color: #0f172a;
             }
             #summaryPivotRoot QWidget#summaryContextBar,
             #summaryPivotRoot QWidget#summaryToolbar {
@@ -813,26 +829,26 @@ class PivotTableWidget(QWidget):
             #summaryPivotRoot QFrame#summaryTableCard,
             #summaryPivotRoot QFrame#summaryBuilderCard {
                 background: #ffffff;
-                border: 1px solid #e7e4ec;
-                border-radius: 9px;
+                border: 1px solid rgba(15, 23, 42, 0.10);
+                border-radius: 6px;
             }
             #summaryPivotRoot QWidget#summaryBuilderContent {
                 background: transparent;
             }
             #summaryPivotRoot QLabel#summaryContextLabel,
             #summaryPivotRoot QLabel#summaryBuilderTitle {
-                color: #211b2d;
-                font-size: 12px;
-                font-weight: 600;
+                color: #0f172a;
+                font-size: __TITLE_PX__px;
+                font-weight: __FONT_WEIGHT_SEMIBOLD__;
             }
             #summaryPivotRoot QLabel#summaryBuilderTitle {
-                font-size: 13px;
+                font-size: __TITLE_PX__px;
             }
             #summaryPivotRoot QLabel#summarySectionTitle,
             #summaryPivotRoot QLabel#summaryAxisTitle {
-                color: #3a3346;
-                font-size: 12px;
-                font-weight: 500;
+                color: #334155;
+                font-size: __FONT_SECONDARY_PX__px;
+                font-weight: __FONT_WEIGHT_MEDIUM__;
             }
             #summaryPivotRoot QLabel#summaryBuilderHint,
             #summaryPivotRoot QLabel#summaryMetaLabel,
@@ -840,18 +856,19 @@ class PivotTableWidget(QWidget):
             #summaryPivotRoot QLabel#summarySelectionLabel,
             #summaryPivotRoot QLabel#summaryLayerPlaceholder,
             #summaryPivotRoot QLabel#summaryEmptyText {
-                color: #6e6878;
-                font-size: 12px;
+                color: #64748b;
+                font-size: __FONT_SECONDARY_PX__px;
+                font-weight: __FONT_WEIGHT_REGULAR__;
             }
             #summaryPivotRoot QLabel#summaryFieldLabel {
-                color: #746d80;
-                font-size: 11px;
-                font-weight: 500;
+                color: #64748b;
+                font-size: __FONT_CAPTION_PX__px;
+                font-weight: __FONT_WEIGHT_MEDIUM__;
             }
             #summaryPivotRoot QLabel#summaryEmptyTitle {
-                color: #221c30;
-                font-size: 13px;
-                font-weight: 500;
+                color: #0f172a;
+                font-size: __TITLE_PX__px;
+                font-weight: __FONT_WEIGHT_MEDIUM__;
             }
             #summaryPivotRoot QFrame#summaryLayerHost,
             #summaryPivotRoot QLineEdit#summarySearch,
@@ -861,9 +878,12 @@ class PivotTableWidget(QWidget):
             #summaryPivotRoot QComboBox,
             #summaryPivotRoot QLineEdit {
                 background: #ffffff;
-                border: 1px solid #ddd9e4;
-                border-radius: 8px;
+                border: 1px solid rgba(15, 23, 42, 0.10);
+                border-radius: 6px;
                 padding: 0 9px;
+                color: #0f172a;
+                font-size: __FONT_BODY_PX__px;
+                font-weight: __FONT_WEIGHT_REGULAR__;
             }
             #summaryPivotRoot QLineEdit#summarySearch,
             #summaryPivotRoot QLineEdit#summaryFieldSearch,
@@ -877,73 +897,82 @@ class PivotTableWidget(QWidget):
             #summaryPivotRoot QComboBox#summaryOperationCombo:focus,
             #summaryPivotRoot QComboBox:focus,
             #summaryPivotRoot QLineEdit:focus {
-                border: 1px solid #7d68f1;
+                border: 1px solid #2b7de9;
                 background: #ffffff;
             }
             #summaryPivotRoot QPushButton#summaryPrimaryButton {
-                background: #5b45d6;
+                background: #2b7de9;
                 color: #ffffff;
-                border: 1px solid #5b45d6;
-                border-radius: 8px;
+                border: 1px solid #2b7de9;
+                border-radius: 6px;
                 padding: 0 12px;
-                font-weight: 500;
+                font-size: __FONT_BUTTON_PX__px;
+                font-weight: __FONT_WEIGHT_MEDIUM__;
             }
             #summaryPivotRoot QPushButton#summaryPrimaryButton:hover {
-                background: #4f3cc0;
+                background: #2368c4;
             }
             #summaryPivotRoot QPushButton#summarySecondaryButton {
                 background: #ffffff;
-                color: #2b2537;
-                border: 1px solid #ddd8e6;
-                border-radius: 8px;
+                color: #334155;
+                border: 1px solid rgba(15, 23, 42, 0.10);
+                border-radius: 6px;
                 padding: 0 12px;
-                font-weight: 500;
+                font-size: __FONT_BUTTON_PX__px;
+                font-weight: __FONT_WEIGHT_REGULAR__;
             }
             #summaryPivotRoot QPushButton#summarySecondaryButton:hover {
-                background: #f8f7fb;
+                background: #f8fafc;
+                border-color: #d7dee8;
             }
             #summaryPivotRoot QPushButton#summaryGhostButton {
                 background: transparent;
-                color: #655f72;
+                color: #64748b;
                 border: 1px solid transparent;
-                border-radius: 8px;
+                border-radius: 6px;
                 padding: 0 8px;
-                font-weight: 500;
+                font-size: __FONT_BUTTON_PX__px;
+                font-weight: __FONT_WEIGHT_REGULAR__;
             }
             #summaryPivotRoot QPushButton#summaryGhostButton:hover {
-                background: #f4f2f8;
-                border: 1px solid #e5e1eb;
+                background: rgba(17, 24, 39, 0.06);
+                border: 1px solid #d7dee8;
             }
             #summaryPivotRoot QCheckBox#summaryAutoUpdateCheck,
             #summaryPivotRoot QCheckBox {
-                color: #5f596c;
+                color: #475569;
                 spacing: 6px;
+                font-size: __FONT_SECONDARY_PX__px;
+                font-weight: __FONT_WEIGHT_REGULAR__;
             }
             #summaryPivotRoot QLabel#summaryAxisTitle[activeArea="true"] {
-                color: #5b45d6;
+                color: #2b7de9;
             }
             #summaryPivotRoot QListWidget {
                 background: #ffffff;
-                border: 1px solid #dfdbe5;
-                border-radius: 8px;
+                border: 1px solid rgba(15, 23, 42, 0.10);
+                border-radius: 6px;
                 padding: 3px;
+                color: #0f172a;
             }
             #summaryPivotRoot QListWidget[activeArea="true"] {
-                border: 1px solid #7d68f1;
+                border: 1px solid #2b7de9;
             }
             #summaryPivotRoot QListWidget::item {
                 padding: 5px 7px;
                 margin: 1px 0;
-                border-radius: 6px;
+                border-radius: 4px;
+                font-size: __FONT_SECONDARY_PX__px;
+                font-weight: __FONT_WEIGHT_REGULAR__;
             }
             #summaryPivotRoot QListWidget::item:selected {
-                background: #ebe6ff;
-                color: #372b7a;
+                background: #dbeafe;
+                color: #0f172a;
             }
             #summaryPivotRoot QGroupBox#summaryAdvancedGroup {
-                background: #fafafe;
-                border: 1px solid #e8e4ef;
-                border-radius: 8px;
+                background: #f8fafc;
+                border: 1px solid rgba(15, 23, 42, 0.08);
+                border-radius: 6px;
                 margin-top: 6px;
                 padding-top: 10px;
             }
@@ -951,46 +980,48 @@ class PivotTableWidget(QWidget):
                 subcontrol-origin: margin;
                 left: 8px;
                 padding: 0 4px;
-                color: #3a3346;
-                font-weight: 600;
+                color: #334155;
+                font-size: __FONT_SECONDARY_PX__px;
+                font-weight: __FONT_WEIGHT_MEDIUM__;
             }
             #summaryPivotRoot QFrame#summaryTableFooter {
                 background: transparent;
-                border-top: 1px solid #efebf5;
+                border-top: 1px solid rgba(15, 23, 42, 0.08);
                 border-radius: 0px;
             }
             #summaryPivotRoot QFrame#summaryEmptyState {
-                background: #fcfbfe;
-                border: 1px dashed #e3dfee;
-                border-radius: 8px;
+                background: #f8fafc;
+                border: 1px dashed rgba(15, 23, 42, 0.14);
+                border-radius: 6px;
             }
             #summaryPivotRoot QTableView {
                 background: #ffffff;
-                border: 1px solid #ece8f2;
-                border-radius: 8px;
-                gridline-color: #efebf5;
-                alternate-background-color: #fbfbfd;
-                selection-background-color: #e9e5ff;
-                selection-color: #1f1a29;
+                border: 1px solid rgba(15, 23, 42, 0.10);
+                border-radius: 6px;
+                gridline-color: rgba(15, 23, 42, 0.08);
+                alternate-background-color: #f8fafc;
+                selection-background-color: #dbeafe;
+                selection-color: #0f172a;
             }
             #summaryPivotRoot QTableView::item {
                 padding: 6px 8px;
             }
             #summaryPivotRoot QHeaderView::section {
-                background: #faf9fc;
-                color: #2c2638;
+                background: #f8fafc;
+                color: #475569;
                 border: none;
-                border-bottom: 1px solid #e9e4f1;
+                border-bottom: 1px solid rgba(15, 23, 42, 0.08);
                 padding: 8px 8px;
-                font-weight: 600;
+                font-size: __FONT_SECONDARY_PX__px;
+                font-weight: __FONT_WEIGHT_MEDIUM__;
             }
             #summaryPivotRoot QTableCornerButton::section {
-                background: #faf9fc;
+                background: #f8fafc;
                 border: none;
-                border-bottom: 1px solid #e9e4f1;
+                border-bottom: 1px solid rgba(15, 23, 42, 0.08);
             }
             #summaryPivotRoot QSplitter::handle {
-                background: #ece8f2;
+                background: rgba(15, 23, 42, 0.08);
                 width: 4px;
                 margin: 4px 0;
             }
@@ -999,7 +1030,9 @@ class PivotTableWidget(QWidget):
                 border: none;
             }
             """
-        )
+        for key, value in tokens.items():
+            qss = qss.replace(key, value)
+        self.setStyleSheet(qss)
 
     # ------------------------------------------------------------------ Data intake
     def set_summary_data(self, summary_data: Dict):
@@ -1083,7 +1116,7 @@ class PivotTableWidget(QWidget):
         if hasattr(self, "value_area_title"):
             metric_label = self._current_metric_label()
             self.value_area_title.setText(
-                "Campo de valor" if metric_label == "Contagem de registros" else f"Campo de valor · {metric_label}"
+                "Valores" if metric_label == "Contagem de registros" else f"Valores · {metric_label}"
             )
 
     def _populate_field_panel(self, df: pd.DataFrame):
@@ -1383,10 +1416,12 @@ class PivotTableWidget(QWidget):
             has_structure = bool(self._selected_area_specs("row") or self._selected_area_specs("column"))
             if has_structure:
                 self.empty_state_title.setText("Nenhum resultado para a configuração atual")
-                self.empty_state_text.setText("Ajuste os agrupamentos, operação ou filtros para continuar a análise.")
+                self.empty_state_text.setText("Ajuste os agrupamentos ou a operacao para continuar a analise.")
             else:
                 self.empty_state_title.setText("Adicione campos em Linhas ou Colunas para começar")
-                self.empty_state_text.setText("Escolha os agrupamentos no construtor para montar a tabela dinâmica.")
+                self.empty_state_text.setText(
+                    "Escolha os agrupamentos no painel Campos da Tabela Dinamica para montar a tabela dinamica."
+                )
             self.table_stack.setCurrentWidget(self.empty_state_frame)
             self._connect_selection_summary()
             self.proxy_model.invalidate()
@@ -1838,11 +1873,13 @@ class PivotTableWidget(QWidget):
     def _apply_theming_tokens(self):
         try:
             font_family = TYPOGRAPHY.get("font_family", "Montserrat")
-            base_font = QFont(font_family, TYPOGRAPHY.get("font_body_size", 12))
-            base_font.setWeight(QFont.Medium)
+            base_font = QFont(font_family)
+            base_font.setPixelSize(int(TYPOGRAPHY.get("font_body_px", 13)))
+            base_font.setWeight(QFont.Normal)
             self.table_view.setFont(base_font)
-            header_font = QFont(font_family, TYPOGRAPHY.get("font_body_size", 12))
-            header_font.setWeight(QFont.DemiBold)
+            header_font = QFont(font_family)
+            header_font.setPixelSize(int(TYPOGRAPHY.get("font_secondary_px", 12)))
+            header_font.setWeight(QFont.Medium)
             self.table_view.horizontalHeader().setFont(header_font)
             self.table_view.setAlternatingRowColors(True)
             self.table_view.verticalHeader().setDefaultSectionSize(30)
@@ -1851,7 +1888,7 @@ class PivotTableWidget(QWidget):
             pass
 
     def _set_last_active_area(self, area: str):
-        if area in {"filter", "row", "column", "value"}:
+        if area in {"row", "column", "value"}:
             self._last_active_area = area
             self._refresh_active_area_styles()
 

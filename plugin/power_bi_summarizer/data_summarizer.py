@@ -288,11 +288,19 @@ class PowerBISummarizerDialog(QDialog):
             self.pivot_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
             layout.addWidget(self.pivot_widget)
             try:
+                self.pivot_widget.set_layer_combo(self.ui.layer_combo)
+            except Exception:
+                pass
+            try:
                 self.pivot_widget.set_auto_update_checkbox(self.ui.auto_update_check)
             except Exception:
                 pass
             try:
                 self.pivot_widget.add_dashboard_button(self.ui.dashboard_btn)
+            except Exception:
+                pass
+            try:
+                self.ui.results_header_frame.setVisible(False)
             except Exception:
                 pass
 
@@ -330,6 +338,7 @@ class PowerBISummarizerDialog(QDialog):
             self.show_summary_prompt()
         except Exception:
             pass
+        QTimer.singleShot(0, self._reset_initial_summary_layer_selection)
 
         self.model_manager = None
         self._model_backend_host = QWidget(self)
@@ -550,9 +559,41 @@ class PowerBISummarizerDialog(QDialog):
     def show_summary_prompt(self):
         self._set_ribbon_visible(False)
         self._set_integration_footer_visible(False)
+        pivot = getattr(self, "pivot_widget", None)
+        if pivot is not None:
+            try:
+                pivot.show_empty_prompt(
+                    "Selecione uma camada para começar",
+                    "Escolha a camada principal e monte a tabela dinâmica no construtor à direita.",
+                )
+                self._set_results_view("pivot")
+                return
+            except Exception:
+                pass
         self.show_results_message(
             "<p style='margin:8px 0;'>Selecione uma camada e clique em Gerar Resumo.</p>"
         )
+
+    def _reset_initial_summary_layer_selection(self):
+        combo = getattr(self.ui, "layer_combo", None)
+        if combo is None:
+            return
+        try:
+            combo.blockSignals(True)
+            try:
+                combo.setCurrentLayer(None)
+            except Exception:
+                pass
+            try:
+                combo.setCurrentIndex(-1)
+            except Exception:
+                pass
+        finally:
+            try:
+                combo.blockSignals(False)
+            except Exception:
+                pass
+        self._active_numeric_field = None
 
     def _set_integration_footer_visible(self, visible: bool):
         btn = getattr(self.ui, "manage_connections_btn", None)

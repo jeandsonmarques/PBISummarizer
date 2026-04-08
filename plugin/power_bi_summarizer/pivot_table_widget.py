@@ -28,6 +28,7 @@ from qgis.PyQt.QtWidgets import (
     QScrollArea,
     QSizePolicy,
     QSplitter,
+    QStackedWidget,
     QTableView,
     QVBoxLayout,
     QWidget,
@@ -154,6 +155,8 @@ class _PivotFieldSourceListWidget(QListWidget):
         add_last = menu.addAction(f"Adicionar em {self._owner._area_label(self._owner._last_active_area)}")
         add_rows = menu.addAction("Adicionar em Linhas")
         add_columns = menu.addAction("Adicionar em Colunas")
+        add_values = menu.addAction("Adicionar em Valores")
+        add_filters = menu.addAction("Adicionar em Filtros")
         action = menu.exec_(event.globalPos())
         if action is None:
             return
@@ -163,6 +166,10 @@ class _PivotFieldSourceListWidget(QListWidget):
             self._owner._add_field_to_area("row", spec)
         elif action == add_columns:
             self._owner._add_field_to_area("column", spec)
+        elif action == add_values:
+            self._owner._add_field_to_area("value", spec)
+        elif action == add_filters:
+            self._owner._add_field_to_area("filter", spec)
 
 
 class _PivotDropListWidget(QListWidget):
@@ -325,69 +332,155 @@ class PivotTableWidget(QWidget):
         self._apply_sidebar_visibility(not self._sidebar_collapsed, persist=False)
 
     def minimumSizeHint(self):
-        return QSize(720, 360)
+        return QSize(640, 300)
 
     def sizeHint(self):
-        return QSize(1120, 560)
+        return QSize(1040, 520)
 
     # ------------------------------------------------------------------ UI
     def _build_ui(self):
-        root = QHBoxLayout(self)
-        root.setContentsMargins(4, 4, 4, 4)
-        root.setSpacing(6)
+        self.setObjectName("summaryPivotRoot")
+        root = QVBoxLayout(self)
+        root.setContentsMargins(12, 10, 12, 10)
+        root.setSpacing(10)
         root.setSizeConstraint(QLayout.SetNoConstraint)
 
+        self.context_bar = QWidget()
+        self.context_bar.setObjectName("summaryContextBar")
+        context_layout = QVBoxLayout(self.context_bar)
+        context_layout.setContentsMargins(0, 0, 0, 0)
+        context_layout.setSpacing(4)
+
+        layer_row = QHBoxLayout()
+        layer_row.setContentsMargins(0, 0, 0, 0)
+        layer_row.setSpacing(8)
+
+        self.context_label = QLabel("Camada")
+        self.context_label.setObjectName("summaryContextLabel")
+        layer_row.addWidget(self.context_label, 0, Qt.AlignVCenter)
+
+        self.layer_combo_host = QFrame()
+        self.layer_combo_host.setObjectName("summaryLayerHost")
+        layer_host_layout = QHBoxLayout(self.layer_combo_host)
+        layer_host_layout.setContentsMargins(0, 0, 0, 0)
+        layer_host_layout.setSpacing(0)
+        self.layer_combo_placeholder = QLabel("Nenhuma camada selecionada")
+        self.layer_combo_placeholder.setObjectName("summaryLayerPlaceholder")
+        layer_host_layout.addWidget(self.layer_combo_placeholder)
+        layer_row.addWidget(self.layer_combo_host, 1)
+        context_layout.addLayout(layer_row)
+
+        self.meta_label = QLabel("")
+        self.meta_label.setObjectName("summaryMetaLabel")
+        self.meta_label.setWordWrap(True)
+        context_layout.addWidget(self.meta_label)
+        root.addWidget(self.context_bar)
+
+        self.initial_state_frame = QFrame()
+        self.initial_state_frame.setObjectName("summaryInitialState")
+        initial_layout = QVBoxLayout(self.initial_state_frame)
+        initial_layout.setContentsMargins(18, 16, 18, 16)
+        initial_layout.setSpacing(6)
+        self.initial_state_title = QLabel("Selecione uma camada para montar o resumo.")
+        self.initial_state_title.setObjectName("summaryEmptyTitle")
+        initial_layout.addWidget(self.initial_state_title)
+        self.initial_state_text = QLabel("A análise aparece depois que uma camada é escolhida.")
+        self.initial_state_text.setObjectName("summaryEmptyText")
+        self.initial_state_text.setWordWrap(True)
+        initial_layout.addWidget(self.initial_state_text)
+        initial_layout.addStretch(1)
+        root.addWidget(self.initial_state_frame, 1)
+
+        self.toolbar_frame = QWidget()
+        self.toolbar_frame.setObjectName("summaryToolbar")
+        toolbar = QHBoxLayout(self.toolbar_frame)
+        toolbar.setContentsMargins(0, 0, 0, 0)
+        toolbar.setSpacing(6)
+        self.toolbar_layout = toolbar
+
+        self.search_input = QLineEdit()
+        self.search_input.setObjectName("summarySearch")
+        self.search_input.setPlaceholderText("Pesquisar...")
+        self.search_input.setFixedHeight(34)
+        self.search_input.setMinimumWidth(140)
+        self.search_input.setMaximumWidth(176)
+        self.search_input.textChanged.connect(self._on_search_text_changed)
+        toolbar.addWidget(self.search_input, 0)
+
+        self.clear_filters_btn = QPushButton("Limpar filtros")
+        self.clear_filters_btn.setObjectName("summarySecondaryButton")
+        self.clear_filters_btn.setFixedHeight(34)
+        self.clear_filters_btn.setMinimumWidth(98)
+        self.clear_filters_btn.setMaximumWidth(112)
+        self.clear_filters_btn.clicked.connect(self._clear_filters)
+        toolbar.addWidget(self.clear_filters_btn, 0)
+
+        self.export_btn = QPushButton("Exportar")
+        self.export_btn.setObjectName("summarySecondaryButton")
+        self.export_btn.setFixedHeight(34)
+        self.export_btn.setMinimumWidth(82)
+        self.export_btn.setMaximumWidth(92)
+        self.export_btn.clicked.connect(self._export_pivot_table)
+        toolbar.addWidget(self.export_btn, 0)
+
+        self.sidebar_toggle_btn = QPushButton("Ocultar construtor")
+        self.sidebar_toggle_btn.setObjectName("summaryGhostButton")
+        self.sidebar_toggle_btn.setFixedHeight(34)
+        self.sidebar_toggle_btn.setMinimumWidth(112)
+        self.sidebar_toggle_btn.setMaximumWidth(132)
+        self.sidebar_toggle_btn.setCheckable(True)
+        self.sidebar_toggle_btn.clicked.connect(self._toggle_sidebar)
+        toolbar.addWidget(self.sidebar_toggle_btn, 0)
+        toolbar.addStretch(1)
+        root.addWidget(self.toolbar_frame)
+
         self.main_splitter = QSplitter(Qt.Horizontal)
+        self.main_splitter.setObjectName("summaryMainSplitter")
         self.main_splitter.setChildrenCollapsible(False)
         self.main_splitter.setHandleWidth(6)
-        root.addWidget(self.main_splitter)
+        root.addWidget(self.main_splitter, 1)
 
         # -- Left (table) -------------------------------------------------
         self.table_container = QWidget()
+        self.table_container.setObjectName("summaryTablePane")
         self.table_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.table_container.setMinimumSize(0, 0)
         left_layout = QVBoxLayout(self.table_container)
-        left_layout.setContentsMargins(6, 6, 6, 6)
-        left_layout.setSpacing(4)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(0)
 
-        toolbar = QHBoxLayout()
-        toolbar.setSpacing(6)
-        self.toolbar_layout = toolbar
-        self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Pesquisar em todas as colunas...")
-        self.search_input.textChanged.connect(self._on_search_text_changed)
-        toolbar.addWidget(self.search_input, stretch=1)
-
-        self.clear_filters_btn = QPushButton("Limpar filtros")
-        self.clear_filters_btn.setFixedHeight(26)
-        self.clear_filters_btn.setMinimumWidth(120)
-        self.clear_filters_btn.setProperty("variant", "secondary")
-        self.clear_filters_btn.clicked.connect(self._clear_filters)
-        toolbar.addWidget(self.clear_filters_btn)
-
-        self.export_btn = QPushButton("Exportar")
-        self.export_btn.setFixedHeight(26)
-        self.export_btn.clicked.connect(self._export_pivot_table)
-        toolbar.addWidget(self.export_btn)
-
-        self.sidebar_toggle_btn = QPushButton("Ocultar construtor")
-        self.sidebar_toggle_btn.setFixedHeight(26)
-        self.sidebar_toggle_btn.setCheckable(True)
-        self.sidebar_toggle_btn.setProperty("variant", "secondary")
-        self.sidebar_toggle_btn.clicked.connect(self._toggle_sidebar)
-        toolbar.addWidget(self.sidebar_toggle_btn)
-
-        left_layout.addLayout(toolbar)
-
-        self.meta_label = QLabel("")
-        self.meta_label.setObjectName("metaLabel")
-        self.meta_label.setProperty("role", "helper")
-        self.meta_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        left_layout.addWidget(self.meta_label)
+        self.table_card = QFrame()
+        self.table_card.setObjectName("summaryTableCard")
+        table_card_layout = QVBoxLayout(self.table_card)
+        table_card_layout.setContentsMargins(10, 10, 10, 10)
+        table_card_layout.setSpacing(6)
 
         self.table_model = QStandardItemModel(self)
         self.proxy_model = _PivotFilterProxy(self)
         self.proxy_model.setSourceModel(self.table_model)
+
+        self.table_stack = QStackedWidget()
+        self.table_stack.setObjectName("summaryTableStack")
+
+        self.empty_state_frame = QFrame()
+        self.empty_state_frame.setObjectName("summaryEmptyState")
+        empty_layout = QVBoxLayout(self.empty_state_frame)
+        empty_layout.setContentsMargins(24, 20, 24, 20)
+        empty_layout.setSpacing(6)
+        self.empty_state_title = QLabel("Adicione campos em Linhas ou Colunas para começar")
+        self.empty_state_title.setObjectName("summaryEmptyTitle")
+        empty_layout.addWidget(self.empty_state_title)
+        self.empty_state_text = QLabel("Nenhum resultado para a configuração atual.")
+        self.empty_state_text.setObjectName("summaryEmptyText")
+        self.empty_state_text.setWordWrap(True)
+        empty_layout.addWidget(self.empty_state_text)
+        empty_layout.addStretch(1)
+        self.table_stack.addWidget(self.empty_state_frame)
+
+        self.table_page = QWidget()
+        table_page_layout = QVBoxLayout(self.table_page)
+        table_page_layout.setContentsMargins(0, 0, 0, 0)
+        table_page_layout.setSpacing(0)
 
         self.table_view = QTableView()
         self.table_view.setModel(self.proxy_model)
@@ -404,67 +497,82 @@ class PivotTableWidget(QWidget):
         self.table_view.viewport().installEventFilter(self)
         self.table_view.verticalHeader().sectionClicked.connect(self._handle_row_header_clicked)
         self.table_view.horizontalHeader().sectionClicked.connect(self._handle_column_header_clicked)
-        left_layout.addWidget(self.table_view, stretch=1)
+        table_page_layout.addWidget(self.table_view, 1)
+        self.table_stack.addWidget(self.table_page)
+        self.table_stack.setCurrentWidget(self.empty_state_frame)
+        table_card_layout.addWidget(self.table_stack, 1)
 
         self.status_label = QLabel("")
-        self.status_label.setObjectName("statusLabel")
-        self.status_label.setProperty("role", "helper")
-        left_layout.addWidget(self.status_label)
+        self.status_label.setObjectName("summaryStatusLabel")
 
         self.selection_summary_bar = QFrame()
-        self.selection_summary_bar.setObjectName("selectionSummaryBar")
+        self.selection_summary_bar.setObjectName("summaryTableFooter")
         selection_layout = QHBoxLayout(self.selection_summary_bar)
-        selection_layout.setContentsMargins(10, 6, 10, 6)
+        selection_layout.setContentsMargins(2, 0, 2, 0)
         selection_layout.setSpacing(8)
+        selection_layout.addWidget(self.status_label, 1)
         self.selection_summary_label = QLabel("Selecione celulas para ver soma e contagem.")
-        self.selection_summary_label.setObjectName("selectionSummaryLabel")
-        self.selection_summary_label.setProperty("role", "helper")
-        selection_layout.addWidget(self.selection_summary_label)
-        selection_layout.addStretch(1)
-        left_layout.addWidget(self.selection_summary_bar)
+        self.selection_summary_label.setObjectName("summarySelectionLabel")
+        selection_layout.addWidget(self.selection_summary_label, 0)
+        table_card_layout.addWidget(self.selection_summary_bar)
+
+        left_layout.addWidget(self.table_card, 1)
 
         self.main_splitter.addWidget(self.table_container)
 
         # -- Right (field list) ------------------------------------------
         self.side_panel = QFrame()
-        self.side_panel.setObjectName("fieldPanel")
+        self.side_panel.setObjectName("summaryBuilderCard")
         self.side_panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         self.side_panel.setMinimumSize(0, 0)
-        right_layout = QVBoxLayout(self.side_panel)
-        right_layout.setContentsMargins(8, 8, 8, 8)
-        right_layout.setSpacing(8)
+        side_panel_layout = QVBoxLayout(self.side_panel)
+        side_panel_layout.setContentsMargins(0, 0, 0, 0)
+        side_panel_layout.setSpacing(0)
 
-        title = QLabel("Tabela Dinamica")
-        title.setObjectName("fieldPanelTitle")
+        self.builder_scroll = QScrollArea(self.side_panel)
+        self.builder_scroll.setWidgetResizable(True)
+        self.builder_scroll.setFrameShape(QScrollArea.NoFrame)
+        self.builder_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.builder_scroll.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+        side_panel_layout.addWidget(self.builder_scroll, 1)
+
+        self.builder_content = QWidget()
+        self.builder_content.setObjectName("summaryBuilderContent")
+        self.builder_content.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
+        self.builder_scroll.setWidget(self.builder_content)
+
+        right_layout = QVBoxLayout(self.builder_content)
+        right_layout.setContentsMargins(12, 10, 12, 10)
+        right_layout.setSpacing(6)
+
+        title = QLabel("Construtor")
+        title.setObjectName("summaryBuilderTitle")
         right_layout.addWidget(title)
 
         self.side_hint = QLabel("Duplo clique ou arraste para montar a tabela.")
-        self.side_hint.setProperty("role", "helper")
-        self.side_hint.setObjectName("fieldPanelHint")
+        self.side_hint.setObjectName("summaryBuilderHint")
         right_layout.addWidget(self.side_hint)
 
-        source_card = QFrame()
-        source_card.setObjectName("pivotSideCard")
-        source_layout = QVBoxLayout(source_card)
-        source_layout.setContentsMargins(10, 10, 10, 10)
-        source_layout.setSpacing(6)
-
-        source_title = QLabel("Campos da Tabela Dinamica")
-        source_title.setObjectName("pivotSideSectionTitle")
-        source_layout.addWidget(source_title)
+        source_title = QLabel("Campos")
+        source_title.setObjectName("summarySectionTitle")
+        right_layout.addWidget(source_title)
 
         self.field_search = QLineEdit()
+        self.field_search.setObjectName("summaryFieldSearch")
         self.field_search.setPlaceholderText("Pesquisar campos...")
+        self.field_search.setFixedHeight(32)
         self.field_search.textChanged.connect(self._filter_field_list)
-        source_layout.addWidget(self.field_search)
+        right_layout.addWidget(self.field_search)
 
         self.fields_list = _PivotFieldSourceListWidget(owner=self)
+        self.fields_list.setObjectName("summaryFieldsList")
         self.fields_list.setSizeAdjustPolicy(QAbstractScrollArea.AdjustIgnored)
         self.fields_list.setSelectionMode(QAbstractItemView.SingleSelection)
         self.fields_list.itemDoubleClicked.connect(self._handle_field_double_click)
-        self.fields_list.setFixedHeight(176)
-        source_layout.addWidget(self.fields_list)
-        right_layout.addWidget(source_card)
+        self.fields_list.setUniformItemSizes(True)
+        self.fields_list.setMinimumHeight(124)
+        self.fields_list.setMaximumHeight(140)
+        right_layout.addWidget(self.fields_list)
 
         self.filter_field_combo = QComboBox()
         self.filter_field_combo.hide()
@@ -473,114 +581,146 @@ class PivotTableWidget(QWidget):
         self.column_field_combo = QComboBox()
         self.column_field_combo.hide()
         self.filter_fields_list = _PivotDropListWidget(self, "filter", allow_multiple=False)
-        self.filter_fields_list.hide()
+        self.filter_fields_list.setObjectName("summaryFilterList")
+        self.filter_fields_list.setUniformItemSizes(True)
+        self.filter_fields_list.setMinimumHeight(68)
+        self.filter_fields_list.setMaximumHeight(80)
+        self.value_fields_list = _PivotDropListWidget(self, "value", allow_multiple=False)
+        self.value_fields_list.setObjectName("summaryValueList")
+        self.value_fields_list.setUniformItemSizes(True)
+        self.value_fields_list.setMinimumHeight(74)
+        self.value_fields_list.setMaximumHeight(88)
 
-        areas_card = QFrame()
-        areas_card.setObjectName("pivotSideCard")
-        areas_layout = QVBoxLayout(areas_card)
-        areas_layout.setContentsMargins(10, 10, 10, 10)
-        areas_layout.setSpacing(8)
-
-        areas_title = QLabel("Montagem da Pivot")
-        areas_title.setObjectName("pivotSideSectionTitle")
-        areas_layout.addWidget(areas_title)
-
-        areas_hint = QLabel("Duplo clique ou arraste para montar a tabela.")
-        areas_hint.setObjectName("fieldPanelHint")
-        areas_hint.setProperty("role", "helper")
-        areas_layout.addWidget(areas_hint)
+        placement_title = QLabel("Montagem da pivot")
+        placement_title.setObjectName("summarySectionTitle")
+        right_layout.addWidget(placement_title)
 
         self.row_fields_list = _PivotDropListWidget(self, "row", allow_multiple=True)
+        self.row_fields_list.setObjectName("summaryRowList")
         self.row_fields_list.setSizeAdjustPolicy(QAbstractScrollArea.AdjustIgnored)
-        self.row_fields_list.setFixedHeight(110)
+        self.row_fields_list.setUniformItemSizes(True)
+        self.row_fields_list.setMinimumHeight(78)
+        self.row_fields_list.setMaximumHeight(90)
 
         self.column_fields_list = _PivotDropListWidget(self, "column", allow_multiple=True)
+        self.column_fields_list.setObjectName("summaryColumnList")
         self.column_fields_list.setSizeAdjustPolicy(QAbstractScrollArea.AdjustIgnored)
-        self.column_fields_list.setFixedHeight(110)
+        self.column_fields_list.setUniformItemSizes(True)
+        self.column_fields_list.setMinimumHeight(78)
+        self.column_fields_list.setMaximumHeight(90)
 
         axes_row = QHBoxLayout()
         axes_row.setSpacing(8)
 
-        self.row_area_card = QFrame()
-        self.row_area_card.setObjectName("pivotAreaCard")
+        self.row_area_card = QWidget()
         row_layout = QVBoxLayout(self.row_area_card)
-        row_layout.setContentsMargins(8, 8, 8, 8)
-        row_layout.setSpacing(6)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        row_layout.setSpacing(4)
         self.row_area_title = QLabel("Linhas")
-        self.row_area_title.setObjectName("pivotAreaTitle")
-        row_title = self.row_area_title
-        row_layout.addWidget(row_title)
+        self.row_area_title.setObjectName("summaryAxisTitle")
+        row_layout.addWidget(self.row_area_title)
         row_layout.addWidget(self.row_fields_list)
         axes_row.addWidget(self.row_area_card, 1)
 
-        self.column_area_card = QFrame()
-        self.column_area_card.setObjectName("pivotAreaCard")
+        self.column_area_card = QWidget()
         col_layout = QVBoxLayout(self.column_area_card)
-        col_layout.setContentsMargins(8, 8, 8, 8)
-        col_layout.setSpacing(6)
+        col_layout.setContentsMargins(0, 0, 0, 0)
+        col_layout.setSpacing(4)
         self.column_area_title = QLabel("Colunas")
-        self.column_area_title.setObjectName("pivotAreaTitle")
-        col_title = self.column_area_title
-        col_layout.addWidget(col_title)
+        self.column_area_title.setObjectName("summaryAxisTitle")
+        col_layout.addWidget(self.column_area_title)
         col_layout.addWidget(self.column_fields_list)
         axes_row.addWidget(self.column_area_card, 1)
 
-        areas_layout.addLayout(axes_row)
+        right_layout.addLayout(axes_row)
+
+        values_title = QLabel("Valores")
+        values_title.setObjectName("summarySectionTitle")
+        right_layout.addWidget(values_title)
+
+        operation_label = QLabel("Operação")
+        operation_label.setObjectName("summaryFieldLabel")
+        right_layout.addWidget(operation_label)
 
         self.agg_combo = QComboBox()
-        self.agg_combo.setObjectName("operationCombo")
+        self.agg_combo.setObjectName("summaryOperationCombo")
+        self.agg_combo.setFixedHeight(32)
         for label, func in self.SUPPORTED_AGGREGATORS:
             self.agg_combo.addItem(label, func)
         self.agg_combo.setCurrentIndex(self.agg_combo.findData("count"))
         self.agg_combo.currentIndexChanged.connect(self._on_operation_changed)
-        areas_layout.addWidget(QLabel("Operacao"))
-        areas_layout.addWidget(self.agg_combo)
+        right_layout.addWidget(self.agg_combo)
+
+        self.value_area_card = QWidget()
+        value_layout = QVBoxLayout(self.value_area_card)
+        value_layout.setContentsMargins(0, 0, 0, 0)
+        value_layout.setSpacing(4)
+        self.value_area_title = QLabel("Campo de valor")
+        self.value_area_title.setObjectName("summaryAxisTitle")
+        value_layout.addWidget(self.value_area_title)
+        value_layout.addWidget(self.value_fields_list)
+        right_layout.addWidget(self.value_area_card)
+
+        filters_title = QLabel("Filtros")
+        filters_title.setObjectName("summarySectionTitle")
+        right_layout.addWidget(filters_title)
+
+        self.filter_area_card = QWidget()
+        filter_layout = QVBoxLayout(self.filter_area_card)
+        filter_layout.setContentsMargins(0, 0, 0, 0)
+        filter_layout.setSpacing(4)
+        self.filter_area_title = QLabel("Campo de filtro")
+        self.filter_area_title.setObjectName("summaryAxisTitle")
+        filter_layout.addWidget(self.filter_area_title)
+        filter_layout.addWidget(self.filter_fields_list)
+        right_layout.addWidget(self.filter_area_card)
 
         self.advanced_group = QGroupBox("Avançado")
+        self.advanced_group.setObjectName("summaryAdvancedGroup")
         self.advanced_group.setCheckable(True)
         self.advanced_group.setChecked(False)
         self.advanced_group.toggled.connect(self._on_advanced_toggled)
-        self.advanced_group.setFixedHeight(80)
         advanced_layout = QVBoxLayout(self.advanced_group)
         advanced_layout.setContentsMargins(8, 6, 8, 6)
         advanced_layout.setSpacing(6)
-        advanced_help = QLabel("Use so se precisar de metricas explicitas.")
+        advanced_help = QLabel("Use apenas quando precisar refinar a leitura.")
         advanced_help.setProperty("role", "helper")
         advanced_layout.addWidget(advanced_help)
 
         self.advanced_value_label = QLabel("Campo de valor")
         self.value_field_combo = QComboBox()
-        self.value_field_combo.currentIndexChanged.connect(self._maybe_refresh)
-        advanced_layout.addWidget(self.advanced_value_label)
-        advanced_layout.addWidget(self.value_field_combo)
-        self.advanced_value_label.setVisible(False)
+        self.value_field_combo.setFixedHeight(32)
+        self.value_field_combo.currentIndexChanged.connect(self._on_value_field_changed)
+        self.advanced_value_label.hide()
         self.value_field_combo.setVisible(False)
-        areas_layout.addWidget(self.advanced_group)
 
         self.only_selected_check = QCheckBox("Apenas selecionadas")
         self.only_selected_check.stateChanged.connect(self._maybe_refresh)
         self.include_nulls_check = QCheckBox("Incluir nulos")
         self.include_nulls_check.stateChanged.connect(self._maybe_refresh)
         flags_row = QHBoxLayout()
+        flags_row.setContentsMargins(0, 0, 0, 0)
+        flags_row.setSpacing(10)
         flags_row.addWidget(self.only_selected_check)
         flags_row.addWidget(self.include_nulls_check)
         flags_row.addStretch(1)
-        areas_layout.addLayout(flags_row)
+        advanced_layout.addLayout(flags_row)
+        right_layout.addWidget(self.advanced_group)
 
         self.apply_btn = QPushButton("Atualizar")
-        self.apply_btn.setFixedHeight(26)
+        self.apply_btn.setObjectName("summaryPrimaryButton")
+        self.apply_btn.setFixedHeight(36)
         self.apply_btn.clicked.connect(self.refresh)
-        areas_layout.addWidget(self.apply_btn)
-
-        right_layout.addWidget(areas_card)
-        right_layout.addStretch()
+        right_layout.addWidget(self.apply_btn)
+        right_layout.addStretch(1)
 
         self.main_splitter.addWidget(self.side_panel)
-        self.main_splitter.setStretchFactor(0, 5)
-        self.main_splitter.setStretchFactor(1, 2)
-        self.main_splitter.setSizes([840, 340])
-        self.side_panel.setMaximumWidth(420)
-        areas_card.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
+        self.main_splitter.setStretchFactor(0, 7)
+        self.main_splitter.setStretchFactor(1, 3)
+        self.main_splitter.setSizes([760, 320])
+        self.side_panel.setMinimumWidth(280)
+        self.side_panel.setMaximumWidth(360)
+        self._set_content_mode(False)
 
     def _configure_compact_sizing(self):
         for widget in (
@@ -590,6 +730,7 @@ class PivotTableWidget(QWidget):
             self.filter_fields_list,
             self.row_fields_list,
             self.column_fields_list,
+            self.value_fields_list,
             self.advanced_group,
         ):
             try:
@@ -606,7 +747,7 @@ class PivotTableWidget(QWidget):
         except Exception:
             width = 340
         self._sidebar_collapsed = bool(collapsed)
-        self._sidebar_last_width = max(260, width)
+        self._sidebar_last_width = max(280, width)
 
     def _persist_sidebar_state(self):
         settings = QSettings()
@@ -614,7 +755,7 @@ class PivotTableWidget(QWidget):
         if not self._sidebar_collapsed and self.main_splitter is not None:
             sizes = self.main_splitter.sizes()
             if len(sizes) >= 2 and sizes[1] > 0:
-                self._sidebar_last_width = max(260, sizes[1])
+                self._sidebar_last_width = max(280, sizes[1])
         settings.setValue(_SIDEBAR_WIDTH_KEY, int(self._sidebar_last_width))
 
     def _toggle_sidebar(self, checked: bool):
@@ -630,17 +771,17 @@ class PivotTableWidget(QWidget):
 
         if hasattr(self, "side_panel"):
             self.side_panel.setVisible(visible)
-            self.side_panel.setMaximumWidth(420 if visible else 0)
+            self.side_panel.setMaximumWidth(360 if visible else 0)
 
         if hasattr(self, "main_splitter"):
             if visible:
-                sidebar_width = max(260, int(self._sidebar_last_width or 340))
+                sidebar_width = max(280, int(self._sidebar_last_width or 320))
                 self.main_splitter.setSizes([max(1, self.main_splitter.width() - sidebar_width), sidebar_width])
                 self.main_splitter.widget(1).show()
             else:
                 sizes = self.main_splitter.sizes()
                 if len(sizes) >= 2 and sizes[1] > 0:
-                    self._sidebar_last_width = max(260, sizes[1])
+                    self._sidebar_last_width = max(280, sizes[1])
                 self.main_splitter.setSizes([max(1, self.main_splitter.width()), 0])
                 self.main_splitter.widget(1).hide()
 
@@ -648,103 +789,214 @@ class PivotTableWidget(QWidget):
             self._persist_sidebar_state()
         self._refresh_active_area_styles()
 
+    def _set_content_mode(self, has_data: bool):
+        self.initial_state_frame.setVisible(not has_data)
+        self.toolbar_frame.setVisible(has_data)
+        self.main_splitter.setVisible(has_data)
+        self.meta_label.setVisible(has_data)
+
     def _apply_styles(self):
         self.setStyleSheet(
             """
-            QWidget {
-                font-family: "Montserrat", "Segoe UI", Arial, sans-serif;
-                font-size: 10pt;
+            QWidget#summaryPivotRoot {
+                background: #f7f7fa;
+                font-family: "Segoe UI", Arial, sans-serif;
+                font-size: 12px;
+                color: #1f1a29;
             }
-            QLabel#metaLabel {
-                color: #5a6a85;
+            #summaryPivotRoot QWidget#summaryContextBar,
+            #summaryPivotRoot QWidget#summaryToolbar {
+                background: transparent;
+                border: none;
             }
-            QLabel#statusLabel {
-                color: #5a6a85;
+            #summaryPivotRoot QFrame#summaryInitialState,
+            #summaryPivotRoot QFrame#summaryTableCard,
+            #summaryPivotRoot QFrame#summaryBuilderCard {
+                background: #ffffff;
+                border: 1px solid #e7e4ec;
+                border-radius: 9px;
             }
-            QLineEdit {
-                padding: 4px 6px;
-                border: 1px solid #c7cfe2;
-                border-radius: 0px;
+            #summaryPivotRoot QWidget#summaryBuilderContent {
+                background: transparent;
             }
-            QPushButton {
-                background-color: #153C8A;
-                color: white;
-                padding: 4px 10px;
-                border-radius: 0px;
-            }
-            QPushButton:hover {
-                background-color: #1f4ea8;
-            }
-            QPushButton:disabled {
-                background-color: #ccd6ee;
-                color: #7c8aad;
-            }
-            QFrame#fieldPanel {
-                border: 1px solid #d7e1f2;
-                border-radius: 10px;
-                background-color: #f7f9fc;
-            }
-            QListWidget {
-                border: 1px solid #d7e1f2;
-                border-radius: 8px;
-                background-color: #ffffff;
-                min-height: 44px;
-            }
-            QListWidget::item {
-                padding: 4px 6px;
-            }
-            QListWidget::item:selected {
-                background-color: #dce8ff;
-                color: #153C8A;
-            }
-            QGroupBox {
-                border: 1px solid #d7e1f2;
-                margin-top: 8px;
-                padding-top: 10px;
-                border-radius: 10px;
-                background-color: #ffffff;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 8px;
-                padding: 0 4px 0 4px;
-                color: #1d2a4b;
+            #summaryPivotRoot QLabel#summaryContextLabel,
+            #summaryPivotRoot QLabel#summaryBuilderTitle {
+                color: #211b2d;
+                font-size: 12px;
                 font-weight: 600;
             }
-            QFrame#pivotSideCard {
-                border: 1px solid #d7e1f2;
-                border-radius: 10px;
-                background-color: #ffffff;
+            #summaryPivotRoot QLabel#summaryBuilderTitle {
+                font-size: 13px;
             }
-            QFrame#selectionSummaryBar {
-                border-top: 1px solid #d7e1f2;
-                background-color: #fbfcff;
+            #summaryPivotRoot QLabel#summarySectionTitle,
+            #summaryPivotRoot QLabel#summaryAxisTitle {
+                color: #3a3346;
+                font-size: 12px;
+                font-weight: 500;
             }
-            QFrame#pivotAreaCard[activeArea="true"] {
-                border: 1px solid #153C8A;
-                background-color: #f3f7ff;
+            #summaryPivotRoot QLabel#summaryBuilderHint,
+            #summaryPivotRoot QLabel#summaryMetaLabel,
+            #summaryPivotRoot QLabel#summaryStatusLabel,
+            #summaryPivotRoot QLabel#summarySelectionLabel,
+            #summaryPivotRoot QLabel#summaryLayerPlaceholder,
+            #summaryPivotRoot QLabel#summaryEmptyText {
+                color: #6e6878;
+                font-size: 12px;
             }
-            QLabel#fieldPanelTitle {
-                font-size: 11pt;
-                font-weight: 700;
-                color: #1d2a4b;
+            #summaryPivotRoot QLabel#summaryFieldLabel {
+                color: #746d80;
+                font-size: 11px;
+                font-weight: 500;
             }
-            QLabel#pivotSideSectionTitle {
-                font-size: 10pt;
-                font-weight: 700;
-                color: #1d2a4b;
+            #summaryPivotRoot QLabel#summaryEmptyTitle {
+                color: #221c30;
+                font-size: 13px;
+                font-weight: 500;
             }
-            QLabel#pivotAreaTitle[activeArea="true"] {
-                color: #153C8A;
-                font-weight: 700;
+            #summaryPivotRoot QFrame#summaryLayerHost,
+            #summaryPivotRoot QLineEdit#summarySearch,
+            #summaryPivotRoot QLineEdit#summaryFieldSearch,
+            #summaryPivotRoot QComboBox#summaryLayerCombo,
+            #summaryPivotRoot QComboBox#summaryOperationCombo,
+            #summaryPivotRoot QComboBox,
+            #summaryPivotRoot QLineEdit {
+                background: #ffffff;
+                border: 1px solid #ddd9e4;
+                border-radius: 8px;
+                padding: 0 9px;
             }
-            QLabel#fieldPanelHint {
-                color: #5f6f8d;
-                font-size: 9pt;
+            #summaryPivotRoot QLineEdit#summarySearch,
+            #summaryPivotRoot QLineEdit#summaryFieldSearch,
+            #summaryPivotRoot QComboBox#summaryLayerCombo,
+            #summaryPivotRoot QComboBox#summaryOperationCombo {
+                min-height: 32px;
             }
-            QLabel#selectionSummaryLabel {
-                color: #394a67;
-                font-size: 9pt;
+            #summaryPivotRoot QLineEdit#summarySearch:focus,
+            #summaryPivotRoot QLineEdit#summaryFieldSearch:focus,
+            #summaryPivotRoot QComboBox#summaryLayerCombo:focus,
+            #summaryPivotRoot QComboBox#summaryOperationCombo:focus,
+            #summaryPivotRoot QComboBox:focus,
+            #summaryPivotRoot QLineEdit:focus {
+                border: 1px solid #7d68f1;
+                background: #ffffff;
+            }
+            #summaryPivotRoot QPushButton#summaryPrimaryButton {
+                background: #5b45d6;
+                color: #ffffff;
+                border: 1px solid #5b45d6;
+                border-radius: 8px;
+                padding: 0 12px;
+                font-weight: 500;
+            }
+            #summaryPivotRoot QPushButton#summaryPrimaryButton:hover {
+                background: #4f3cc0;
+            }
+            #summaryPivotRoot QPushButton#summarySecondaryButton {
+                background: #ffffff;
+                color: #2b2537;
+                border: 1px solid #ddd8e6;
+                border-radius: 8px;
+                padding: 0 12px;
+                font-weight: 500;
+            }
+            #summaryPivotRoot QPushButton#summarySecondaryButton:hover {
+                background: #f8f7fb;
+            }
+            #summaryPivotRoot QPushButton#summaryGhostButton {
+                background: transparent;
+                color: #655f72;
+                border: 1px solid transparent;
+                border-radius: 8px;
+                padding: 0 8px;
+                font-weight: 500;
+            }
+            #summaryPivotRoot QPushButton#summaryGhostButton:hover {
+                background: #f4f2f8;
+                border: 1px solid #e5e1eb;
+            }
+            #summaryPivotRoot QCheckBox#summaryAutoUpdateCheck,
+            #summaryPivotRoot QCheckBox {
+                color: #5f596c;
+                spacing: 6px;
+            }
+            #summaryPivotRoot QLabel#summaryAxisTitle[activeArea="true"] {
+                color: #5b45d6;
+            }
+            #summaryPivotRoot QListWidget {
+                background: #ffffff;
+                border: 1px solid #dfdbe5;
+                border-radius: 8px;
+                padding: 3px;
+            }
+            #summaryPivotRoot QListWidget[activeArea="true"] {
+                border: 1px solid #7d68f1;
+            }
+            #summaryPivotRoot QListWidget::item {
+                padding: 5px 7px;
+                margin: 1px 0;
+                border-radius: 6px;
+            }
+            #summaryPivotRoot QListWidget::item:selected {
+                background: #ebe6ff;
+                color: #372b7a;
+            }
+            #summaryPivotRoot QGroupBox#summaryAdvancedGroup {
+                background: #fafafe;
+                border: 1px solid #e8e4ef;
+                border-radius: 8px;
+                margin-top: 6px;
+                padding-top: 10px;
+            }
+            #summaryPivotRoot QGroupBox#summaryAdvancedGroup::title {
+                subcontrol-origin: margin;
+                left: 8px;
+                padding: 0 4px;
+                color: #3a3346;
+                font-weight: 600;
+            }
+            #summaryPivotRoot QFrame#summaryTableFooter {
+                background: transparent;
+                border-top: 1px solid #efebf5;
+                border-radius: 0px;
+            }
+            #summaryPivotRoot QFrame#summaryEmptyState {
+                background: #fcfbfe;
+                border: 1px dashed #e3dfee;
+                border-radius: 8px;
+            }
+            #summaryPivotRoot QTableView {
+                background: #ffffff;
+                border: 1px solid #ece8f2;
+                border-radius: 8px;
+                gridline-color: #efebf5;
+                alternate-background-color: #fbfbfd;
+                selection-background-color: #e9e5ff;
+                selection-color: #1f1a29;
+            }
+            #summaryPivotRoot QTableView::item {
+                padding: 6px 8px;
+            }
+            #summaryPivotRoot QHeaderView::section {
+                background: #faf9fc;
+                color: #2c2638;
+                border: none;
+                border-bottom: 1px solid #e9e4f1;
+                padding: 8px 8px;
+                font-weight: 600;
+            }
+            #summaryPivotRoot QTableCornerButton::section {
+                background: #faf9fc;
+                border: none;
+                border-bottom: 1px solid #e9e4f1;
+            }
+            #summaryPivotRoot QSplitter::handle {
+                background: #ece8f2;
+                width: 4px;
+                margin: 4px 0;
+            }
+            #summaryPivotRoot QScrollArea {
+                background: transparent;
+                border: none;
             }
             """
         )
@@ -779,6 +1031,7 @@ class PivotTableWidget(QWidget):
         finally:
             self._block_updates = False
 
+        self._set_content_mode(True)
         self.refresh()
 
     def _update_meta_label(self, metadata: Dict, filter_desc: Optional[str]):
@@ -794,6 +1047,44 @@ class PivotTableWidget(QWidget):
                 f"Feicoes carregadas: {total_feat:,} | Filtro: {filter_text}"
             )
         self.meta_label.setText(message)
+        self._update_context_summary()
+
+    def set_layer_combo(self, combo: QComboBox):
+        if combo is None or not hasattr(self, "layer_combo_host"):
+            return
+        layout = self.layer_combo_host.layout()
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.setParent(None)
+        if combo.parent() is not self.layer_combo_host:
+            combo.setParent(self.layer_combo_host)
+        combo.setObjectName("summaryLayerCombo")
+        combo.setMinimumHeight(34)
+        layout.addWidget(combo)
+
+    def _current_filter_description(self) -> str:
+        summary_filter = str(self._current_summary_data.get("filter_description") or "").strip()
+        metadata_filter = str(self._current_metadata.get("filter_expression") or "").strip()
+        return summary_filter or metadata_filter or "Nenhum"
+
+    def _current_metric_label(self) -> str:
+        aggregation = str(self.agg_combo.currentData() or "count")
+        if aggregation == "count":
+            return "Contagem de registros"
+        current_text = str(self.value_field_combo.currentText() or "").strip()
+        if current_text and current_text != "(Nenhum)":
+            return current_text
+        metadata_field = str(self._current_metadata.get("field_name") or "").strip()
+        return metadata_field or "Contagem de registros"
+
+    def _update_context_summary(self):
+        if hasattr(self, "value_area_title"):
+            metric_label = self._current_metric_label()
+            self.value_area_title.setText(
+                "Campo de valor" if metric_label == "Contagem de registros" else f"Campo de valor · {metric_label}"
+            )
 
     def _populate_field_panel(self, df: pd.DataFrame):
         self.fields_list.clear()
@@ -801,6 +1092,7 @@ class PivotTableWidget(QWidget):
         self.filter_fields_list.clear()
         self.row_fields_list.clear()
         self.column_fields_list.clear()
+        self.value_fields_list.clear()
         self._sync_area_placeholder()
 
         combos = [
@@ -835,28 +1127,11 @@ class PivotTableWidget(QWidget):
                 spec_key = self._register_field_spec(field_spec)
                 self.value_field_combo.addItem(field_spec.display_name, spec_key)
 
-        # Default selections
-        if df.columns.size:
-            # Default row: first non-numeric column, else first column
-            row_candidate = next(
-                (col for col in df.columns if not self._is_numeric_column(df[col])),
-                df.columns[0],
-            )
-            idx = self.row_field_combo.findText(row_candidate)
-            if idx != -1:
-                self.row_field_combo.setCurrentIndex(idx)
-                self._add_selected_field_to_area("row", auto_refresh=False)
-                self._set_last_active_area("row")
-
-        if self.numeric_candidates:
-            value_candidate = next(
-                (candidate for candidate in self.numeric_candidates if not self._is_identifier_like_field(candidate)),
-                None,
-            )
-            if value_candidate is not None:
-                idx = self.value_field_combo.findText(value_candidate)
-                if idx != -1:
-                    self.value_field_combo.setCurrentIndex(idx)
+        self.value_field_combo.blockSignals(True)
+        self.value_field_combo.setCurrentIndex(0)
+        self.value_field_combo.blockSignals(False)
+        self._sync_value_area_from_combo()
+        self._update_context_summary()
 
     def _configuration_key_from_metadata(self, metadata: Optional[Dict[str, Any]]) -> str:
         metadata = dict(metadata or {})
@@ -892,6 +1167,7 @@ class PivotTableWidget(QWidget):
         self.filter_fields_list.clear()
         self.row_fields_list.clear()
         self.column_fields_list.clear()
+        self.value_fields_list.clear()
         self._sync_area_placeholder()
 
         aggregation = str(config.get("aggregation") or "count")
@@ -927,6 +1203,7 @@ class PivotTableWidget(QWidget):
                 idx = self.value_field_combo.findData(spec_key)
                 if idx != -1:
                     self.value_field_combo.setCurrentIndex(idx)
+        self._sync_value_area_from_combo()
 
         self.only_selected_check.setChecked(bool(config.get("only_selected")))
         self.include_nulls_check.setChecked(bool(config.get("include_nulls")))
@@ -953,6 +1230,15 @@ class PivotTableWidget(QWidget):
         self._apply_filters()
         layer = self._resolve_current_layer()
         self._current_layer = layer
+        has_structure = bool(self._selected_area_specs("row") or self._selected_area_specs("column"))
+        has_explicit_value = bool(self.value_field_combo.currentData())
+        aggregation = str(self.agg_combo.currentData() or "count")
+        if layer is not None and not has_structure and not (aggregation != "count" and has_explicit_value):
+            self._current_pivot_request = None
+            self._current_pivot_result = None
+            self.pivot_df = pd.DataFrame()
+            self._populate_table()
+            return
         if layer is not None:
             self._compute_layer_backed_pivot(layer)
         else:
@@ -1094,6 +1380,14 @@ class PivotTableWidget(QWidget):
             self.table_model = new_model
             self.proxy_model.setSourceModel(self.table_model)
             self.table_view.setModel(self.proxy_model)
+            has_structure = bool(self._selected_area_specs("row") or self._selected_area_specs("column"))
+            if has_structure:
+                self.empty_state_title.setText("Nenhum resultado para a configuração atual")
+                self.empty_state_text.setText("Ajuste os agrupamentos, operação ou filtros para continuar a análise.")
+            else:
+                self.empty_state_title.setText("Adicione campos em Linhas ou Colunas para começar")
+                self.empty_state_text.setText("Escolha os agrupamentos no construtor para montar a tabela dinâmica.")
+            self.table_stack.setCurrentWidget(self.empty_state_frame)
             self._connect_selection_summary()
             self.proxy_model.invalidate()
             self._update_status_label()
@@ -1161,6 +1455,7 @@ class PivotTableWidget(QWidget):
         self.table_model = new_model
         self.proxy_model.setSourceModel(self.table_model)
         self.table_view.setModel(self.proxy_model)
+        self.table_stack.setCurrentWidget(self.table_page)
         self._connect_selection_summary()
         self.proxy_model.invalidate()
         self.table_view.resizeColumnsToContents()
@@ -1190,13 +1485,18 @@ class PivotTableWidget(QWidget):
         self.advanced_group.setChecked(aggregation != "count")
         self.advanced_group.blockSignals(False)
         self._on_advanced_toggled(aggregation != "count")
-        self._update_status_label()
         if aggregation != "count":
             self._sync_default_value_field()
+            self._sync_value_area_from_combo()
+        self._update_status_label()
 
     def _on_advanced_toggled(self, checked: bool):
-        self.advanced_value_label.setVisible(bool(checked))
-        self.value_field_combo.setVisible(bool(checked))
+        self._update_context_summary()
+        self._maybe_refresh()
+
+    def _on_value_field_changed(self, *args):
+        self._sync_value_area_from_combo()
+        self._update_context_summary()
         self._maybe_refresh()
 
     def _sync_default_value_field(self):
@@ -1242,25 +1542,16 @@ class PivotTableWidget(QWidget):
             return
         is_numeric = item.data(Qt.UserRole + 1)
         target_area = getattr(self, "_last_active_area", "row")
-        if is_numeric:
-            if self.advanced_group.isChecked():
-                idx = self.value_field_combo.findData(spec_key)
-                if idx != -1:
-                    self.value_field_combo.setCurrentIndex(idx)
-                    self._show_inline_message("", level="info")
-                else:
-                    self._show_inline_message(
-                        f"O campo {field_spec.display_name} nao pode ser usado como valor.",
-                        level="warning",
-                    )
-                self._maybe_refresh()
+        if target_area == "value":
+            if not is_numeric and field_spec.source_type != "geometry":
+                self._show_inline_message(
+                    f"O campo {field_spec.display_name} nao pode ser usado como valor.",
+                    level="warning",
+                )
                 return
-            else:
-                self._add_field_to_area(target_area, field_spec)
-                return
-        else:
-            self._add_field_to_area(target_area, field_spec)
+            self._add_field_to_area("value", field_spec)
             return
+        self._add_field_to_area(target_area, field_spec)
 
     def _handle_table_cell_clicked(self, proxy_index):
         if not proxy_index.isValid():
@@ -1341,6 +1632,7 @@ class PivotTableWidget(QWidget):
         if column_labels:
             parts.append(f"Colunas: {' / '.join(column_labels)}")
         self.status_label.setText(" | ".join(parts))
+        self._update_context_summary()
 
     def _connect_selection_summary(self):
         try:
@@ -1553,26 +1845,30 @@ class PivotTableWidget(QWidget):
             header_font.setWeight(QFont.DemiBold)
             self.table_view.horizontalHeader().setFont(header_font)
             self.table_view.setAlternatingRowColors(True)
+            self.table_view.verticalHeader().setDefaultSectionSize(30)
+            self.table_view.horizontalHeader().setMinimumHeight(34)
         except Exception:
             pass
 
     def _set_last_active_area(self, area: str):
-        if area in {"filter", "row", "column"}:
+        if area in {"filter", "row", "column", "value"}:
             self._last_active_area = area
             self._refresh_active_area_styles()
 
     def _refresh_active_area_styles(self):
         active = self._last_active_area
-        for card, title, area in (
-            (getattr(self, "row_area_card", None), getattr(self, "row_area_title", None), "row"),
-            (getattr(self, "column_area_card", None), getattr(self, "column_area_title", None), "column"),
+        for widget, title, area in (
+            (getattr(self, "row_fields_list", None), getattr(self, "row_area_title", None), "row"),
+            (getattr(self, "column_fields_list", None), getattr(self, "column_area_title", None), "column"),
+            (getattr(self, "value_fields_list", None), getattr(self, "value_area_title", None), "value"),
+            (getattr(self, "filter_fields_list", None), getattr(self, "filter_area_title", None), "filter"),
         ):
-            if card is None or title is None:
+            if widget is None or title is None:
                 continue
-            card.setProperty("activeArea", active == area)
+            widget.setProperty("activeArea", active == area)
             title.setProperty("activeArea", active == area)
-            card.style().unpolish(card)
-            card.style().polish(card)
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
             title.style().unpolish(title)
             title.style().polish(title)
 
@@ -1595,9 +1891,21 @@ class PivotTableWidget(QWidget):
             list_widget.setCurrentRow(0)
 
     def _sync_area_placeholder(self, area: Optional[str] = None):
-        names = (area,) if area else ("filter", "row", "column")
+        names = (area,) if area else ("filter", "row", "column", "value")
         for name in names:
             self._refresh_area_placeholder(name)
+
+    def _sync_value_area_from_combo(self):
+        if not hasattr(self, "value_fields_list"):
+            return
+        self.value_fields_list.clear()
+        spec = self._field_spec_from_key(self.value_field_combo.currentData())
+        if spec is not None:
+            item = QListWidgetItem(spec.display_name)
+            item.setData(Qt.UserRole, self._register_field_spec(spec))
+            self.value_fields_list.addItem(item)
+            self.value_fields_list.setCurrentItem(item)
+        self._sync_area_placeholder("value")
 
     def _resolve_current_layer(self):
         metadata = dict(self._current_metadata or {})
@@ -1681,6 +1989,8 @@ class PivotTableWidget(QWidget):
             return self.row_field_combo
         if area == "column":
             return self.column_field_combo
+        if area == "value":
+            return self.value_field_combo
         return self.filter_field_combo
 
     def _area_list(self, area: str) -> QListWidget:
@@ -1688,6 +1998,8 @@ class PivotTableWidget(QWidget):
             return self.row_fields_list
         if area == "column":
             return self.column_fields_list
+        if area == "value":
+            return self.value_fields_list
         return self.filter_fields_list
 
     def _area_label(self, area: str) -> str:
@@ -1695,6 +2007,8 @@ class PivotTableWidget(QWidget):
             return "Linhas"
         if area == "column":
             return "Colunas"
+        if area == "value":
+            return "Valores"
         return "Filtros"
 
     def _selected_area_specs(self, area: str) -> List[PivotFieldSpec]:
@@ -1724,7 +2038,7 @@ class PivotTableWidget(QWidget):
         list_widget = self._area_list(area)
         spec_key = self._register_field_spec(field_spec)
         self._set_last_active_area(area)
-        if area == "filter":
+        if area in {"filter", "value"}:
             list_widget.clear()
         elif any(list_widget.item(index).data(Qt.UserRole) == spec_key for index in range(list_widget.count())):
             self._show_inline_message(
@@ -1741,6 +2055,12 @@ class PivotTableWidget(QWidget):
         item.setData(Qt.UserRole, spec_key)
         list_widget.addItem(item)
         list_widget.setCurrentItem(item)
+        if area == "value":
+            combo_index = self.value_field_combo.findData(spec_key)
+            if combo_index != -1:
+                self.value_field_combo.blockSignals(True)
+                self.value_field_combo.setCurrentIndex(combo_index)
+                self.value_field_combo.blockSignals(False)
         self._show_inline_message("", level="info")
         self._sync_area_placeholder(area)
         if auto_refresh:
@@ -1755,6 +2075,10 @@ class PivotTableWidget(QWidget):
         if list_widget.item(row).data(Qt.UserRole) == "__placeholder__":
             return
         list_widget.takeItem(row)
+        if area == "value":
+            self.value_field_combo.blockSignals(True)
+            self.value_field_combo.setCurrentIndex(0)
+            self.value_field_combo.blockSignals(False)
         self._sync_area_placeholder(area)
         self._maybe_refresh()
 
@@ -1777,6 +2101,10 @@ class PivotTableWidget(QWidget):
 
     def _clear_area(self, area: str):
         self._area_list(area).clear()
+        if area == "value":
+            self.value_field_combo.blockSignals(True)
+            self.value_field_combo.setCurrentIndex(0)
+            self.value_field_combo.blockSignals(False)
         self._sync_area_placeholder(area)
 
     def _ensure_default_row_area(self):
@@ -1821,7 +2149,7 @@ class PivotTableWidget(QWidget):
         aggregation = str(self.agg_combo.currentData() or "count")
         if aggregation == "count":
             return None
-        if self.advanced_group.isChecked() and self.value_field_combo.currentData():
+        if self.value_field_combo.currentData():
             spec = self._field_spec_from_key(self.value_field_combo.currentData())
             if spec is not None:
                 return spec
@@ -2017,7 +2345,9 @@ class PivotTableWidget(QWidget):
             if self._external_auto_checkbox is not None:
                 self.toolbar_layout.removeWidget(self._external_auto_checkbox)
                 self._external_auto_checkbox.setVisible(False)
-            checkbox.setMinimumHeight(26)
+            checkbox.setObjectName("summaryAutoUpdateCheck")
+            checkbox.setMinimumHeight(34)
+            checkbox.setContentsMargins(0, 0, 0, 0)
             self.toolbar_layout.addWidget(checkbox)
             checkbox.setVisible(True)
         self.auto_update_check = checkbox
@@ -2030,7 +2360,10 @@ class PivotTableWidget(QWidget):
 
         if button.parent() is not self:
             button.setParent(self)
-        button.setMinimumHeight(26)
+        button.setMinimumHeight(34)
+        button.setMinimumWidth(148)
+        button.setMaximumWidth(168)
+        button.setObjectName("summaryPrimaryButton")
 
         # Position immediately before the export button if possible
         target_index = self.toolbar_layout.indexOf(self.export_btn)
@@ -2042,6 +2375,53 @@ class PivotTableWidget(QWidget):
     def clear_all_filters(self):
         """Expose filter reset so external buttons can reuse it."""
         self._clear_filters()
+
+    def show_empty_prompt(self, title: str, text: str):
+        self.raw_df = pd.DataFrame()
+        self.filtered_df = pd.DataFrame()
+        self.pivot_df = pd.DataFrame()
+        self._current_summary_data = {}
+        self._current_metadata = {}
+        self._current_pivot_request = None
+        self._current_pivot_result = None
+        self.meta_label.setText("")
+        self.status_label.setText("")
+        self.selection_summary_label.setText("Selecione células para ver soma e contagem.")
+        self.empty_state_title.setText(title)
+        self.empty_state_text.setText(text)
+        self.fields_list.clear()
+        self.row_fields_list.clear()
+        self.column_fields_list.clear()
+        self.filter_fields_list.clear()
+        self.value_fields_list.clear()
+        self._sync_area_placeholder()
+        for combo in (
+            self.filter_field_combo,
+            self.column_field_combo,
+            self.row_field_combo,
+            self.value_field_combo,
+        ):
+            combo.blockSignals(True)
+            combo.clear()
+            combo.addItem("(Nenhum)", None)
+            combo.blockSignals(False)
+        self.agg_combo.blockSignals(True)
+        count_index = self.agg_combo.findData("count")
+        if count_index != -1:
+            self.agg_combo.setCurrentIndex(count_index)
+        self.agg_combo.blockSignals(False)
+        self.advanced_group.blockSignals(True)
+        self.advanced_group.setChecked(False)
+        self.advanced_group.blockSignals(False)
+        self.table_model = QStandardItemModel(self)
+        self.proxy_model.setSourceModel(self.table_model)
+        self.table_view.setModel(self.proxy_model)
+        self.table_stack.setCurrentWidget(self.empty_state_frame)
+        self.initial_state_title.setText(title)
+        self.initial_state_text.setText(text)
+        self._sync_value_area_from_combo()
+        self._update_context_summary()
+        self._set_content_mode(False)
 
     # ------------------------------------------------------------------ Helpers
     def _detect_numeric_candidates(self, df: pd.DataFrame) -> List[str]:

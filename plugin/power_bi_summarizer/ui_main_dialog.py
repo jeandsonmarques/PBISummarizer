@@ -30,8 +30,8 @@ class Ui_PowerBISummarizerDialog(object):
         Dialog.setWindowTitle("Power BI Summarizer - QGIS")
 
         self.verticalLayout = QVBoxLayout(Dialog)
-        self.verticalLayout.setContentsMargins(12, 12, 12, 12)
-        self.verticalLayout.setSpacing(8)
+        self.verticalLayout.setContentsMargins(6, 6, 6, 6)
+        self.verticalLayout.setSpacing(6)
 
         self.header_widget = QFrame()
         self.header_widget.setObjectName("headerBar")
@@ -133,8 +133,8 @@ class Ui_PowerBISummarizerDialog(object):
 
         self.central_frame = QFrame()
         central_layout = QHBoxLayout(self.central_frame)
-        central_layout.setContentsMargins(0, 12, 0, 12)
-        central_layout.setSpacing(12)
+        central_layout.setContentsMargins(0, 4, 0, 4)
+        central_layout.setSpacing(8)
 
         self.sidebar_container = QFrame()
         self.sidebar_container.setObjectName("sidebarContainer")

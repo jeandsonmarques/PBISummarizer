@@ -134,18 +134,28 @@ _TOOLBAR_SVG_ICONS = {
     "fields": """<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
 <path d="M20.25 6.375C20.25 8.65317 16.5563 10.5 12 10.5C7.44365 10.5 3.75 8.65317 3.75 6.375M20.25 6.375C20.25 4.09683 16.5563 2.25 12 2.25C7.44365 2.25 3.75 4.09683 3.75 6.375M20.25 6.375V17.625C20.25 19.9032 16.5563 21.75 12 21.75C7.44365 21.75 3.75 19.9032 3.75 17.625V6.375M20.25 6.375V10.125M3.75 6.375V10.125M20.25 10.125V13.875C20.25 16.1532 16.5563 18 12 18C7.44365 18 3.75 16.1532 3.75 13.875V10.125M20.25 10.125C20.25 12.4032 16.5563 14.25 12 14.25C7.44365 14.25 3.75 12.4032 3.75 10.125" stroke="__COLOR__" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>""",
+    "field_text": """<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M7.5 4.5H15L19.5 9V19.125C19.5 20.1605 18.6605 21 17.625 21H7.875C6.83947 21 6 20.1605 6 19.125V6.375C6 5.33947 6.83947 4.5 7.875 4.5H7.5Z" stroke="__COLOR__" stroke-width="1.5" stroke-linejoin="round"/>
+<path d="M9 12H16.5M9 15.75H16.5" stroke="__COLOR__" stroke-width="1.5" stroke-linecap="round"/>
+</svg>""",
+    "field_numeric": """<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M8.25 4.5L6.75 19.5M15.75 4.5L14.25 19.5M4.5 9.75H18.75M3.75 14.25H18" stroke="__COLOR__" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>""",
+    "filter_panel": """<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M4.5 6H19.5L13.5 13.0312V18.75L10.5 17.25V13.0312L4.5 6Z" stroke="__COLOR__" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>""",
 }
 
 
-def _svg_icon_from_template(svg_template: str, size: int = 16) -> QIcon:
+def _svg_icon_from_template(svg_template: str, size: int = 16, color_map: Optional[Dict[int, str]] = None) -> QIcon:
     icon = QIcon()
-    color_map = {
+    mode_colors = color_map or {
         QIcon.Normal: "#6b7280",
         QIcon.Active: "#111827",
         QIcon.Selected: "#111827",
         QIcon.Disabled: "#c7cdd6",
     }
-    for mode, color in color_map.items():
+    for mode, color in mode_colors.items():
         svg_data = QByteArray(svg_template.replace("__COLOR__", color).encode("utf-8"))
         renderer = QSvgRenderer(svg_data)
         pixmap = QPixmap(size, size)
@@ -360,7 +370,10 @@ class PivotTableWidget(QWidget):
         self._last_active_area = "row"
         self._sidebar_collapsed = False
         self._sidebar_last_width = _SIDEBAR_DEFAULT_WIDTH
-        self._context_in_sidebar = False
+        self._tools_panels_hidden = False
+        self._tools_fields_width = 132
+        self._tools_builder_width = 188
+        self._context_in_fields_panel = False
         self._field_specs_by_key: Dict[str, PivotFieldSpec] = {}
         self._saved_configurations: Dict[str, Dict[str, Any]] = {}
         self.pivot_engine = PivotEngine(iface=iface, logger=QgsMessageLog)
@@ -385,8 +398,8 @@ class PivotTableWidget(QWidget):
     def _build_ui(self):
         self.setObjectName("summaryPivotRoot")
         root = QVBoxLayout(self)
-        root.setContentsMargins(10, 6, 10, 6)
-        root.setSpacing(6)
+        root.setContentsMargins(4, 2, 4, 3)
+        root.setSpacing(4)
         root.setSizeConstraint(QLayout.SetNoConstraint)
 
         self.context_bar = QWidget()
@@ -490,15 +503,15 @@ class PivotTableWidget(QWidget):
         self.main_column.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         main_column_layout = QVBoxLayout(self.main_column)
         main_column_layout.setContentsMargins(0, 0, 0, 0)
-        main_column_layout.setSpacing(6)
+        main_column_layout.setSpacing(4)
 
         self.controls_zone = QWidget()
         self.controls_zone.setObjectName("summaryControlsZone")
-        controls_layout = QVBoxLayout(self.controls_zone)
-        controls_layout.setContentsMargins(0, 0, 0, 0)
-        controls_layout.setSpacing(4)
-        controls_layout.addWidget(self.context_bar)
-        controls_layout.addWidget(self.toolbar_frame)
+        self.controls_layout = QVBoxLayout(self.controls_zone)
+        self.controls_layout.setContentsMargins(0, 0, 0, 0)
+        self.controls_layout.setSpacing(3)
+        self.controls_layout.addWidget(self.context_bar)
+        self.controls_layout.addWidget(self.toolbar_frame)
         main_column_layout.addWidget(self.controls_zone, 0)
 
         self.content_zone = QWidget()
@@ -510,11 +523,84 @@ class PivotTableWidget(QWidget):
         self.content_zone_layout.addWidget(self.initial_state_frame, 1)
         main_column_layout.addWidget(self.content_zone, 1)
 
+        self.analytics_splitter = QSplitter(Qt.Horizontal)
+        self.analytics_splitter.setObjectName("summaryAnalyticsSplitter")
+        self.analytics_splitter.setChildrenCollapsible(False)
+        self.analytics_splitter.setHandleWidth(2)
+        self.analytics_splitter.setOpaqueResize(False)
+        self.analytics_splitter.splitterMoved.connect(self._handle_analytics_splitter_moved)
+        self.content_zone_layout.addWidget(self.analytics_splitter, 1)
+
+        self.fields_panel = QFrame()
+        self.fields_panel.setObjectName("summaryFieldsPanel")
+        self.fields_panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+        self.fields_panel.setMinimumWidth(120)
+        self.fields_panel.setMaximumWidth(160)
+        self.fields_panel_layout = QVBoxLayout(self.fields_panel)
+        self.fields_panel_layout.setContentsMargins(8, 8, 8, 8)
+        self.fields_panel_layout.setSpacing(6)
+        self.fields_panel_header = QWidget(self.fields_panel)
+        self.fields_panel_header.setObjectName("summaryPanelHeader")
+        self.fields_panel_header_layout = QHBoxLayout(self.fields_panel_header)
+        self.fields_panel_header_layout.setContentsMargins(0, 0, 0, 0)
+        self.fields_panel_header_layout.setSpacing(6)
+        self.fields_panel_icon = QLabel(self.fields_panel_header)
+        self.fields_panel_icon.setObjectName("summaryPanelIcon")
+        self.fields_panel_header_layout.addWidget(self.fields_panel_icon, 0, Qt.AlignVCenter)
+        self.fields_panel_title = QLabel("Field List")
+        self.fields_panel_title.setObjectName("summaryPanelTitle")
+        self.fields_panel_header_layout.addWidget(self.fields_panel_title, 1, Qt.AlignVCenter)
+        self.fields_panel_layout.addWidget(self.fields_panel_header)
+        self.fields_context_card = QWidget(self.fields_panel)
+        self.fields_context_card.setObjectName("summaryFieldsContextCard")
+        self.fields_context_layout = QVBoxLayout(self.fields_context_card)
+        self.fields_context_layout.setContentsMargins(0, 0, 0, 0)
+        self.fields_context_layout.setSpacing(3)
+        self.fields_panel_layout.addWidget(self.fields_context_card, 0)
+        self.analytics_splitter.addWidget(self.fields_panel)
+
+        self.filters_panel = QFrame()
+        self.filters_panel.setObjectName("summaryFiltersPanel")
+        self.filters_panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+        self.filters_panel.setMinimumWidth(164)
+        self.filters_panel.setMaximumWidth(214)
+        self.filters_panel_layout = QVBoxLayout(self.filters_panel)
+        self.filters_panel_layout.setContentsMargins(8, 8, 8, 8)
+        self.filters_panel_layout.setSpacing(6)
+        self.filters_panel_header = QWidget(self.filters_panel)
+        self.filters_panel_header.setObjectName("summaryPanelHeader")
+        self.filters_panel_header_layout = QHBoxLayout(self.filters_panel_header)
+        self.filters_panel_header_layout.setContentsMargins(0, 0, 0, 0)
+        self.filters_panel_header_layout.setSpacing(6)
+        self.filters_panel_icon = QLabel(self.filters_panel_header)
+        self.filters_panel_icon.setObjectName("summaryPanelIcon")
+        self.filters_panel_header_layout.addWidget(self.filters_panel_icon, 0, Qt.AlignVCenter)
+        self.filter_area_title = QLabel("Filters")
+        self.filter_area_title.setObjectName("summaryPanelTitle")
+        self.filters_panel_header_layout.addWidget(self.filter_area_title, 1, Qt.AlignVCenter)
+        self.filters_panel_layout.addWidget(self.filters_panel_header)
+
+        self.filters_builder_scroll = QScrollArea(self.filters_panel)
+        self.filters_builder_scroll.setWidgetResizable(True)
+        self.filters_builder_scroll.setFrameShape(QScrollArea.NoFrame)
+        self.filters_builder_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.filters_builder_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.filters_builder_scroll.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+        self.filters_panel_layout.addWidget(self.filters_builder_scroll, 1)
+
+        self.filters_builder_content = QWidget()
+        self.filters_builder_content.setObjectName("summaryFiltersBuilderContent")
+        self.filters_builder_scroll.setWidget(self.filters_builder_content)
+        self.filters_builder_layout = QVBoxLayout(self.filters_builder_content)
+        self.filters_builder_layout.setContentsMargins(0, 0, 0, 0)
+        self.filters_builder_layout.setSpacing(10)
+        self.analytics_splitter.addWidget(self.filters_panel)
+
         # -- Left (table) -------------------------------------------------
         self.table_container = QWidget()
         self.table_container.setObjectName("summaryTablePane")
         self.table_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.table_container.setMinimumSize(0, 0)
+        self.table_container.setMinimumSize(360, 0)
         left_layout = QVBoxLayout(self.table_container)
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(0)
@@ -588,7 +674,11 @@ class PivotTableWidget(QWidget):
 
         left_layout.addWidget(self.table_card, 1)
 
-        self.content_zone_layout.addWidget(self.table_container, 1)
+        self.analytics_splitter.addWidget(self.table_container)
+        self.analytics_splitter.setStretchFactor(0, 18)
+        self.analytics_splitter.setStretchFactor(1, 16)
+        self.analytics_splitter.setStretchFactor(2, 66)
+        self.analytics_splitter.setSizes([132, 188, 720])
         self.main_splitter.addWidget(self.main_column)
 
         # -- Right (field list) ------------------------------------------
@@ -637,20 +727,6 @@ class PivotTableWidget(QWidget):
         right_layout.setContentsMargins(16, 12, 16, 16)
         right_layout.setSpacing(16)
 
-        self.sidebar_context_card = QWidget()
-        self.sidebar_context_card.setProperty("sidebarSection", True)
-        self.sidebar_context_layout = QVBoxLayout(self.sidebar_context_card)
-        self.sidebar_context_layout.setContentsMargins(0, 0, 0, 0)
-        self.sidebar_context_layout.setSpacing(6)
-        self.sidebar_context_title = QLabel("Camada")
-        self.sidebar_context_title.setObjectName("summarySectionTitle")
-        self.sidebar_context_layout.addWidget(self.sidebar_context_title)
-        right_layout.addWidget(self.sidebar_context_card)
-
-        source_title = QLabel("Campos")
-        source_title.setObjectName("summarySectionTitle")
-        right_layout.addWidget(source_title)
-
         self.field_search = None
 
         self.fields_list = _PivotFieldSourceListWidget(owner=self)
@@ -659,9 +735,12 @@ class PivotTableWidget(QWidget):
         self.fields_list.setSelectionMode(QAbstractItemView.SingleSelection)
         self.fields_list.itemDoubleClicked.connect(self._handle_field_double_click)
         self.fields_list.setUniformItemSizes(True)
-        self.fields_list.setMinimumHeight(176)
-        self.fields_list.setMaximumHeight(240)
-        right_layout.addWidget(self.fields_list)
+        self.fields_list.setSpacing(1)
+        self.fields_list.setMinimumHeight(0)
+        self.fields_list.setMaximumHeight(16777215)
+        self.fields_list.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.fields_list.setIconSize(QSize(14, 14))
+        self.fields_panel_layout.addWidget(self.fields_list, 1)
 
         self.filter_field_combo = QComboBox()
         self.filter_field_combo.hide()
@@ -672,55 +751,61 @@ class PivotTableWidget(QWidget):
         self.filter_fields_list = _PivotDropListWidget(self, "filter", allow_multiple=False)
         self.filter_fields_list.setObjectName("summaryFilterList")
         self.filter_fields_list.setUniformItemSizes(True)
-        self.filter_fields_list.setMinimumHeight(68)
-        self.filter_fields_list.setMaximumHeight(80)
+        self.filter_fields_list.setSpacing(2)
+        self.filter_fields_list.setMinimumHeight(78)
+        self.filter_fields_list.setMaximumHeight(120)
+        self.filter_fields_list.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.filter_fields_list.hide()
         self.value_fields_list = _PivotDropListWidget(self, "value", allow_multiple=False)
         self.value_fields_list.setObjectName("summaryValueList")
         self.value_fields_list.setUniformItemSizes(True)
-        self.value_fields_list.setMinimumHeight(74)
-        self.value_fields_list.setMaximumHeight(88)
+        self.value_fields_list.setSpacing(2)
+        self.value_fields_list.setMinimumHeight(58)
+        self.value_fields_list.setMaximumHeight(74)
 
         self.row_fields_list = _PivotDropListWidget(self, "row", allow_multiple=True)
         self.row_fields_list.setObjectName("summaryRowList")
         self.row_fields_list.setSizeAdjustPolicy(QAbstractScrollArea.AdjustIgnored)
         self.row_fields_list.setUniformItemSizes(True)
-        self.row_fields_list.setMinimumHeight(78)
-        self.row_fields_list.setMaximumHeight(90)
+        self.row_fields_list.setSpacing(2)
+        self.row_fields_list.setMinimumHeight(58)
+        self.row_fields_list.setMaximumHeight(80)
 
         self.column_fields_list = _PivotDropListWidget(self, "column", allow_multiple=True)
         self.column_fields_list.setObjectName("summaryColumnList")
         self.column_fields_list.setSizeAdjustPolicy(QAbstractScrollArea.AdjustIgnored)
         self.column_fields_list.setUniformItemSizes(True)
-        self.column_fields_list.setMinimumHeight(78)
-        self.column_fields_list.setMaximumHeight(90)
+        self.column_fields_list.setSpacing(2)
+        self.column_fields_list.setMinimumHeight(58)
+        self.column_fields_list.setMaximumHeight(80)
 
         self.row_area_card = QWidget()
         self.row_area_card.setProperty("sidebarSection", True)
         row_layout = QVBoxLayout(self.row_area_card)
         row_layout.setContentsMargins(0, 0, 0, 0)
-        row_layout.setSpacing(7)
+        row_layout.setSpacing(4)
         self.row_area_title = QLabel("Linhas")
         self.row_area_title.setObjectName("summaryAxisTitle")
         row_layout.addWidget(self.row_area_title)
         row_layout.addWidget(self.row_fields_list)
-        right_layout.addWidget(self.row_area_card)
+        self.filters_builder_layout.addWidget(self.row_area_card)
 
         self.column_area_card = QWidget()
         self.column_area_card.setProperty("sidebarSection", True)
         col_layout = QVBoxLayout(self.column_area_card)
         col_layout.setContentsMargins(0, 0, 0, 0)
-        col_layout.setSpacing(7)
+        col_layout.setSpacing(4)
         self.column_area_title = QLabel("Colunas")
         self.column_area_title.setObjectName("summaryAxisTitle")
         col_layout.addWidget(self.column_area_title)
         col_layout.addWidget(self.column_fields_list)
-        right_layout.addWidget(self.column_area_card)
+        self.filters_builder_layout.addWidget(self.column_area_card)
 
         self.value_area_card = QWidget()
         self.value_area_card.setProperty("sidebarSection", True)
         value_layout = QVBoxLayout(self.value_area_card)
         value_layout.setContentsMargins(0, 0, 0, 0)
-        value_layout.setSpacing(7)
+        value_layout.setSpacing(4)
         self.value_area_title = QLabel("Valores")
         self.value_area_title.setObjectName("summaryAxisTitle")
         value_layout.addWidget(self.value_area_title)
@@ -737,18 +822,7 @@ class PivotTableWidget(QWidget):
         self.agg_combo.currentIndexChanged.connect(self._on_operation_changed)
         value_layout.addWidget(self.agg_combo)
         value_layout.addWidget(self.value_fields_list)
-        right_layout.addWidget(self.value_area_card)
-
-        self.filter_area_card = QWidget()
-        filter_layout = QVBoxLayout(self.filter_area_card)
-        filter_layout.setContentsMargins(0, 0, 0, 0)
-        filter_layout.setSpacing(6)
-        self.filter_area_title = QLabel("Campo de filtro")
-        self.filter_area_title.setObjectName("summaryAxisTitle")
-        filter_layout.addWidget(self.filter_area_title)
-        filter_layout.addWidget(self.filter_fields_list)
-        self.filter_area_card.setVisible(False)
-        right_layout.addWidget(self.filter_area_card)
+        self.filters_builder_layout.addWidget(self.value_area_card)
 
         self.advanced_group = QGroupBox("Avançado")
         self.advanced_group.setObjectName("summaryAdvancedGroup")
@@ -778,13 +852,14 @@ class PivotTableWidget(QWidget):
         flags_row.addWidget(self.include_nulls_check)
         flags_row.addStretch(1)
         advanced_layout.addLayout(flags_row)
-        right_layout.addWidget(self.advanced_group)
+        self.filters_builder_layout.addWidget(self.advanced_group)
+        self.filters_builder_layout.addStretch(1)
 
-        self.sidebar_footer = QFrame(self.side_panel)
-        self.sidebar_footer.setObjectName("summarySidebarFooter")
-        self.sidebar_footer.setMinimumHeight(56)
-        footer_layout = QVBoxLayout(self.sidebar_footer)
-        footer_layout.setContentsMargins(16, 8, 16, 12)
+        self.filters_panel_footer = QFrame(self.filters_panel)
+        self.filters_panel_footer.setObjectName("summaryFiltersFooter")
+        self.filters_panel_footer.setMinimumHeight(56)
+        footer_layout = QVBoxLayout(self.filters_panel_footer)
+        footer_layout.setContentsMargins(0, 8, 0, 0)
         footer_layout.setSpacing(0)
 
         self.apply_btn = QPushButton("Atualizar")
@@ -792,7 +867,7 @@ class PivotTableWidget(QWidget):
         self.apply_btn.setFixedHeight(36)
         self.apply_btn.clicked.connect(self.refresh)
         footer_layout.addWidget(self.apply_btn)
-        side_panel_layout.addWidget(self.sidebar_footer, 0)
+        self.filters_panel_layout.addWidget(self.filters_panel_footer, 0)
 
         self.main_splitter.addWidget(self.side_panel)
         self.main_splitter.setStretchFactor(0, 7)
@@ -800,6 +875,7 @@ class PivotTableWidget(QWidget):
         self.main_splitter.setSizes([760, _SIDEBAR_DEFAULT_WIDTH])
         self.side_panel.setMinimumWidth(_SIDEBAR_MIN_WIDTH)
         self.side_panel.setMaximumWidth(_SIDEBAR_MAX_WIDTH)
+        self.side_panel.hide()
         self._refresh_toolbar_chrome()
         self._set_content_mode(False)
 
@@ -840,10 +916,10 @@ class PivotTableWidget(QWidget):
         settings.setValue(_SIDEBAR_WIDTH_KEY, int(self._sidebar_last_width))
 
     def _toggle_sidebar(self, checked: bool):
-        self._apply_sidebar_visibility(not checked, persist=True)
+        self._apply_tools_panels_visibility(not checked)
 
     def _toggle_sidebar_from_panel(self):
-        self._apply_sidebar_visibility(self._sidebar_collapsed, persist=True)
+        self._apply_tools_panels_visibility(self._tools_panels_hidden)
 
     def _clamp_sidebar_width(self, width: int) -> int:
         try:
@@ -882,6 +958,125 @@ class PivotTableWidget(QWidget):
             self.side_panel.style().unpolish(self.side_panel)
             self.side_panel.style().polish(self.side_panel)
 
+    def _create_area_chip_widget(self, area: str, field_spec: PivotFieldSpec) -> QWidget:
+        row_widget = QWidget()
+        row_widget.setObjectName("summaryAreaChipRow")
+        row_layout = QHBoxLayout(row_widget)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        row_layout.setSpacing(0)
+
+        chip = QFrame(row_widget)
+        chip.setObjectName("summaryAreaChip")
+        chip.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
+        layout = QHBoxLayout(chip)
+        layout.setContentsMargins(6, 4, 6, 4)
+        layout.setSpacing(6)
+
+        remove_btn = QToolButton(chip)
+        remove_btn.setObjectName("summaryAreaChipRemove")
+        remove_btn.setCursor(Qt.PointingHandCursor)
+        remove_btn.setAutoRaise(True)
+        remove_btn.setFixedSize(18, 18)
+        remove_btn.setIcon(
+            _svg_icon_from_template(
+                _TOOLBAR_SVG_ICONS["clear"],
+                size=14,
+                color_map={
+                    QIcon.Normal: "#ef4444",
+                    QIcon.Active: "#dc2626",
+                    QIcon.Selected: "#dc2626",
+                    QIcon.Disabled: "#fca5a5",
+                },
+            )
+        )
+        remove_btn.setIconSize(QSize(14, 14))
+        remove_btn.setToolTip(f"Remover de {self._area_label(area)}")
+        remove_btn.clicked.connect(partial(self._remove_area_field_by_key, area, self._register_field_spec(field_spec)))
+        layout.addWidget(remove_btn, 0, Qt.AlignTop)
+
+        label = QLabel(field_spec.display_name)
+        label.setObjectName("summaryAreaChipText")
+        label.setWordWrap(False)
+        label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Preferred)
+        layout.addWidget(label, 0, Qt.AlignVCenter)
+
+        row_layout.addWidget(chip, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        row_layout.addStretch(1)
+        return row_widget
+
+    def _refresh_area_item_widgets(self, area: str):
+        list_widget = self._area_list(area)
+        for index in range(list_widget.count()):
+            item = list_widget.item(index)
+            spec_key = item.data(Qt.UserRole)
+            if spec_key == "__placeholder__":
+                list_widget.removeItemWidget(item)
+                item.setSizeHint(QSize(0, 28))
+                continue
+            spec = self._field_spec_from_key(spec_key)
+            if spec is None:
+                continue
+            item.setSizeHint(QSize(0, 28))
+            list_widget.setItemWidget(item, self._create_area_chip_widget(area, spec))
+
+    def _handle_analytics_splitter_moved(self, pos: int, index: int):
+        if getattr(self, "_tools_panels_hidden", False) or not hasattr(self, "analytics_splitter"):
+            return
+        sizes = self.analytics_splitter.sizes()
+        if len(sizes) >= 3:
+            if sizes[0] > 0:
+                self._tools_fields_width = int(sizes[0])
+            if sizes[1] > 0:
+                self._tools_builder_width = int(sizes[1])
+
+    def _apply_tools_panels_visibility(self, visible: bool):
+        self._tools_panels_hidden = not visible
+        if hasattr(self, "sidebar_toggle_btn"):
+            self.sidebar_toggle_btn.blockSignals(True)
+            self.sidebar_toggle_btn.setChecked(not visible)
+            self.sidebar_toggle_btn.blockSignals(False)
+        self._refresh_toolbar_chrome()
+
+        if hasattr(self, "fields_panel"):
+            self.fields_panel.setVisible(visible)
+        if hasattr(self, "filters_panel"):
+            self.filters_panel.setVisible(visible)
+
+        if hasattr(self, "analytics_splitter"):
+            sizes = self.analytics_splitter.sizes()
+            total_width = sum(size for size in sizes if size > 0)
+            if total_width <= 0:
+                total_width = max(int(self.analytics_splitter.width() or 0), 1040)
+
+            if visible:
+                fields_width = max(120, int(getattr(self, "_tools_fields_width", 132) or 132))
+                builder_width = max(164, int(getattr(self, "_tools_builder_width", 188) or 188))
+                table_width = max(1, total_width - fields_width - builder_width)
+                self.analytics_splitter.setSizes([fields_width, builder_width, table_width])
+            else:
+                if len(sizes) >= 3:
+                    if sizes[0] > 0:
+                        self._tools_fields_width = int(sizes[0])
+                    if sizes[1] > 0:
+                        self._tools_builder_width = int(sizes[1])
+                self.analytics_splitter.setSizes([0, 0, total_width])
+
+        self._refresh_active_area_styles()
+
+    def _place_context_bar(self, in_fields_panel: bool):
+        target_in_fields = bool(in_fields_panel)
+        if getattr(self, "_context_in_fields_panel", False) == target_in_fields:
+            return
+        if not hasattr(self, "context_bar"):
+            return
+
+        self.context_bar.setParent(None)
+        if target_in_fields and hasattr(self, "fields_context_layout"):
+            self.fields_context_layout.addWidget(self.context_bar)
+        elif hasattr(self, "controls_layout"):
+            self.controls_layout.insertWidget(0, self.context_bar)
+        self._context_in_fields_panel = target_in_fields
+
     def _configure_toolbar_button(self, button: Optional[QPushButton]):
         if button is None:
             return
@@ -899,27 +1094,6 @@ class PivotTableWidget(QWidget):
             style.polish(button)
         button.update()
 
-    def _move_context_widget(self, widget: Optional[QWidget], target_layout: Optional[QLayout], stretch: int = 0):
-        if widget is None or target_layout is None:
-            return
-        widget.setParent(None)
-        if stretch > 0:
-            target_layout.addWidget(widget, stretch)
-        else:
-            target_layout.addWidget(widget)
-
-    def _set_context_location(self, in_sidebar: bool):
-        desired_location = bool(in_sidebar)
-        if getattr(self, "_context_in_sidebar", False) == desired_location:
-            return
-        if desired_location:
-            self._move_context_widget(self.layer_combo_host, self.sidebar_context_layout)
-            self._move_context_widget(self.meta_label, self.sidebar_context_layout)
-        else:
-            self._move_context_widget(self.layer_combo_host, self.context_layer_row, stretch=1)
-            self._move_context_widget(self.meta_label, self.context_layout)
-        self._context_in_sidebar = desired_location
-
     def _refresh_toolbar_chrome(self):
         icon_size = QSize(18, 18)
         search_icon = _svg_icon_from_template(_TOOLBAR_SVG_ICONS["search"], size=18)
@@ -927,6 +1101,8 @@ class PivotTableWidget(QWidget):
         dashboard_icon = _svg_icon_from_template(_TOOLBAR_SVG_ICONS["dashboard"], size=18)
         export_icon = _svg_icon_from_template(_TOOLBAR_SVG_ICONS["export"], size=18)
         fields_icon = _svg_icon_from_template(_TOOLBAR_SVG_ICONS["fields"], size=18)
+        panel_field_icon = _svg_icon_from_template(_TOOLBAR_SVG_ICONS["fields"], size=14)
+        panel_filter_icon = _svg_icon_from_template(_TOOLBAR_SVG_ICONS["filter_panel"], size=14)
 
         if hasattr(self, "search_input") and self.search_input is not None:
             if getattr(self, "_search_icon_action", None) is None:
@@ -956,11 +1132,11 @@ class PivotTableWidget(QWidget):
             self._polish_toolbar_button(self.export_btn)
 
         if hasattr(self, "sidebar_toggle_btn") and self.sidebar_toggle_btn is not None:
-            collapsed = bool(getattr(self, "_sidebar_collapsed", False))
+            collapsed = bool(getattr(self, "_tools_panels_hidden", False))
             self._configure_toolbar_button(self.sidebar_toggle_btn)
-            self.sidebar_toggle_btn.setText("Campos")
+            self.sidebar_toggle_btn.setText("Paineis")
             self.sidebar_toggle_btn.setToolTip(
-                "Mostrar campos" if collapsed else "Ocultar campos"
+                "Mostrar campos e filtros" if collapsed else "Ocultar campos e filtros"
             )
             self.sidebar_toggle_btn.setIcon(fields_icon)
             self.sidebar_toggle_btn.setIconSize(icon_size)
@@ -982,6 +1158,11 @@ class PivotTableWidget(QWidget):
         if self._external_auto_checkbox is not None:
             self._external_auto_checkbox.setText("Auto")
             self._external_auto_checkbox.setToolTip("Atualizacao automatica")
+
+        if hasattr(self, "fields_panel_icon"):
+            self.fields_panel_icon.setPixmap(panel_field_icon.pixmap(14, 14))
+        if hasattr(self, "filters_panel_icon"):
+            self.filters_panel_icon.setPixmap(panel_filter_icon.pixmap(14, 14))
 
     def _handle_splitter_moved(self, pos: int, index: int):
         if self._sidebar_collapsed or self.main_splitter is None:
@@ -1030,21 +1211,23 @@ class PivotTableWidget(QWidget):
         self._refresh_active_area_styles()
 
     def _set_content_mode(self, has_data: bool):
-        self._set_context_location(has_data)
+        self._place_context_bar(has_data)
         self.initial_state_frame.setVisible(not has_data)
-        self.context_bar.setVisible(not has_data)
+        self.context_bar.setVisible(True)
+        if hasattr(self, "fields_context_card"):
+            self.fields_context_card.setVisible(has_data)
         self.toolbar_frame.setVisible(has_data)
+        self.analytics_splitter.setVisible(has_data)
         self.table_container.setVisible(has_data)
         self.meta_label.setVisible(has_data)
         self.main_splitter.setVisible(True)
         if hasattr(self, "side_panel"):
-            if has_data:
-                self._apply_sidebar_visibility(not self._sidebar_collapsed, persist=False)
-            else:
-                self.side_panel.hide()
-                if hasattr(self, "main_splitter"):
-                    total_width = max(int(self.main_splitter.width() or 0), 760)
-                    self.main_splitter.setSizes([total_width, 0])
+            self.side_panel.hide()
+            if hasattr(self, "main_splitter"):
+                total_width = max(int(self.main_splitter.width() or 0), 760)
+                self.main_splitter.setSizes([total_width, 0])
+        if has_data:
+            self._apply_tools_panels_visibility(not self._tools_panels_hidden)
 
     def _apply_styles(self):
         tokens = {
@@ -1087,6 +1270,52 @@ class PivotTableWidget(QWidget):
                 background: #ffffff;
                 border: 1px solid rgba(17, 24, 39, 0.09);
                 border-radius: 5px;
+            }
+            #summaryPivotRoot QSplitter#summaryAnalyticsSplitter {
+                background: transparent;
+            }
+            #summaryPivotRoot QSplitter#summaryAnalyticsSplitter::handle {
+                background: rgba(17, 24, 39, 0.08);
+                width: 1px;
+                margin: 0;
+            }
+            #summaryPivotRoot QFrame#summaryFieldsPanel,
+            #summaryPivotRoot QFrame#summaryFiltersPanel {
+                background: #fafafb;
+                border: 1px solid rgba(17, 24, 39, 0.09);
+                border-radius: 2px;
+            }
+            #summaryPivotRoot QWidget#summaryPanelHeader {
+                background: transparent;
+                border: none;
+            }
+            #summaryPivotRoot QWidget#summaryFieldsContextCard {
+                background: transparent;
+                border: none;
+            }
+            #summaryPivotRoot QLabel#summaryPanelIcon {
+                min-width: 14px;
+                max-width: 14px;
+                min-height: 14px;
+                max-height: 14px;
+            }
+            #summaryPivotRoot QWidget#summaryFieldsContextCard QLabel#summaryContextLabel {
+                color: #6b7280;
+                font-size: __FONT_CAPTION_PX__px;
+                font-weight: __FONT_WEIGHT_MEDIUM__;
+            }
+            #summaryPivotRoot QWidget#summaryFieldsContextCard QLabel#summaryMetaLabel {
+                color: #8b95a1;
+                font-size: __FONT_CAPTION_PX__px;
+            }
+            #summaryPivotRoot QLabel#summaryPanelTitle {
+                color: #4b5563;
+                font-size: __FONT_CAPTION_PX__px;
+                font-weight: __FONT_WEIGHT_MEDIUM__;
+                padding: 0 0 1px 0;
+            }
+            #summaryPivotRoot QLabel#summaryPanelTitle[activeArea="true"] {
+                color: #516074;
             }
             #summaryPivotRoot QFrame#summarySidebarPanel {
                 background: #f7f7f8;
@@ -1146,10 +1375,11 @@ class PivotTableWidget(QWidget):
                 font-weight: __FONT_WEIGHT_MEDIUM__;
                 padding: 1px 0 2px 0;
             }
-            #summaryPivotRoot QFrame#summarySidebarPanel QLabel#summaryAxisTitle {
+            #summaryPivotRoot QFrame#summarySidebarPanel QLabel#summaryAxisTitle,
+            #summaryPivotRoot QFrame#summaryFiltersPanel QLabel#summaryAxisTitle {
                 color: #374151;
-                font-size: __FONT_SECONDARY_PX__px;
-                font-weight: __FONT_WEIGHT_REGULAR__;
+                font-size: __FONT_CAPTION_PX__px;
+                font-weight: __FONT_WEIGHT_MEDIUM__;
                 padding: 0 0 1px 0;
             }
             #summaryPivotRoot QLabel#summaryMetaLabel,
@@ -1164,7 +1394,8 @@ class PivotTableWidget(QWidget):
             #summaryPivotRoot QLabel#summaryMetaLabel {
                 color: #a8b0bb;
             }
-            #summaryPivotRoot QFrame#summarySidebarPanel QLabel#summaryFieldLabel {
+            #summaryPivotRoot QFrame#summarySidebarPanel QLabel#summaryFieldLabel,
+            #summaryPivotRoot QFrame#summaryFiltersPanel QLabel#summaryFieldLabel {
                 color: #6b7280;
                 font-size: __FONT_CAPTION_PX__px;
                 font-weight: __FONT_WEIGHT_REGULAR__;
@@ -1305,40 +1536,52 @@ class PivotTableWidget(QWidget):
                 background: #7b8798;
                 border-color: #6b7280;
             }
-            #summaryPivotRoot QFrame#summarySidebarPanel QLabel#summaryAxisTitle[activeArea="true"] {
+            #summaryPivotRoot QFrame#summarySidebarPanel QLabel#summaryAxisTitle[activeArea="true"],
+            #summaryPivotRoot QFrame#summaryFiltersPanel QLabel#summaryAxisTitle[activeArea="true"] {
                 color: #516074;
             }
-            #summaryPivotRoot QFrame#summarySidebarPanel QWidget[sidebarSection="true"] {
+            #summaryPivotRoot QFrame#summarySidebarPanel QWidget[sidebarSection="true"],
+            #summaryPivotRoot QFrame#summaryFiltersPanel QWidget[sidebarSection="true"] {
                 background: transparent;
                 border: none;
             }
             #summaryPivotRoot QFrame#summarySidebarPanel QLineEdit#summaryFieldSearch,
             #summaryPivotRoot QFrame#summarySidebarPanel QComboBox#summaryOperationCombo,
             #summaryPivotRoot QFrame#summarySidebarPanel QComboBox,
-            #summaryPivotRoot QFrame#summarySidebarPanel QLineEdit {
+            #summaryPivotRoot QFrame#summarySidebarPanel QLineEdit,
+            #summaryPivotRoot QFrame#summaryFiltersPanel QComboBox#summaryOperationCombo,
+            #summaryPivotRoot QFrame#summaryFiltersPanel QComboBox,
+            #summaryPivotRoot QFrame#summaryFiltersPanel QLineEdit {
                 background: rgba(255, 255, 255, 0.96);
                 border: 1px solid rgba(17, 24, 39, 0.08);
-                border-radius: 7px;
-                padding: 0 12px;
+                border-radius: 2px;
+                padding: 0 8px;
                 color: #111827;
-                min-height: 32px;
+                min-height: 28px;
                 selection-background-color: rgba(81, 96, 116, 0.14);
             }
             #summaryPivotRoot QFrame#summarySidebarPanel QLineEdit#summaryFieldSearch:hover,
             #summaryPivotRoot QFrame#summarySidebarPanel QComboBox#summaryOperationCombo:hover,
             #summaryPivotRoot QFrame#summarySidebarPanel QComboBox:hover,
-            #summaryPivotRoot QFrame#summarySidebarPanel QLineEdit:hover {
+            #summaryPivotRoot QFrame#summarySidebarPanel QLineEdit:hover,
+            #summaryPivotRoot QFrame#summaryFiltersPanel QComboBox#summaryOperationCombo:hover,
+            #summaryPivotRoot QFrame#summaryFiltersPanel QComboBox:hover,
+            #summaryPivotRoot QFrame#summaryFiltersPanel QLineEdit:hover {
                 background: #ffffff;
                 border-color: rgba(17, 24, 39, 0.12);
             }
             #summaryPivotRoot QFrame#summarySidebarPanel QLineEdit#summaryFieldSearch:focus,
             #summaryPivotRoot QFrame#summarySidebarPanel QComboBox#summaryOperationCombo:focus,
             #summaryPivotRoot QFrame#summarySidebarPanel QComboBox:focus,
-            #summaryPivotRoot QFrame#summarySidebarPanel QLineEdit:focus {
+            #summaryPivotRoot QFrame#summarySidebarPanel QLineEdit:focus,
+            #summaryPivotRoot QFrame#summaryFiltersPanel QComboBox#summaryOperationCombo:focus,
+            #summaryPivotRoot QFrame#summaryFiltersPanel QComboBox:focus,
+            #summaryPivotRoot QFrame#summaryFiltersPanel QLineEdit:focus {
                 background: #ffffff;
                 border-color: rgba(81, 96, 116, 0.48);
             }
-            #summaryPivotRoot QFrame#summarySidebarPanel QListWidget {
+            #summaryPivotRoot QFrame#summarySidebarPanel QListWidget,
+            #summaryPivotRoot QFrame#summaryFiltersPanel QListWidget {
                 background: rgba(255, 255, 255, 0.92);
                 border: 1px solid rgba(17, 24, 39, 0.06);
                 border-radius: 10px;
@@ -1346,31 +1589,144 @@ class PivotTableWidget(QWidget):
                 color: #111827;
                 outline: 0;
             }
-            #summaryPivotRoot QFrame#summarySidebarPanel QListWidget[activeArea="true"] {
+            #summaryPivotRoot QFrame#summarySidebarPanel QListWidget[activeArea="true"],
+            #summaryPivotRoot QFrame#summaryFiltersPanel QListWidget[activeArea="true"] {
                 background: rgba(255, 255, 255, 0.96);
                 border: 1px solid rgba(81, 96, 116, 0.32);
             }
-            #summaryPivotRoot QFrame#summarySidebarPanel QListWidget::item {
+            #summaryPivotRoot QFrame#summarySidebarPanel QListWidget::item,
+            #summaryPivotRoot QFrame#summaryFiltersPanel QListWidget::item {
                 padding: 8px 10px;
                 margin: 1px 0;
                 border-radius: 6px;
                 font-size: __FONT_SECONDARY_PX__px;
                 font-weight: __FONT_WEIGHT_REGULAR__;
             }
-            #summaryPivotRoot QFrame#summarySidebarPanel QListWidget::item:hover {
+            #summaryPivotRoot QFrame#summarySidebarPanel QListWidget::item:hover,
+            #summaryPivotRoot QFrame#summaryFiltersPanel QListWidget::item:hover {
                 background: rgba(17, 24, 39, 0.035);
             }
-            #summaryPivotRoot QFrame#summarySidebarPanel QListWidget::item:selected {
+            #summaryPivotRoot QFrame#summarySidebarPanel QListWidget::item:selected,
+            #summaryPivotRoot QFrame#summaryFiltersPanel QListWidget::item:selected {
                 background: rgba(81, 96, 116, 0.12);
                 color: #111827;
             }
-            #summaryPivotRoot QFrame#summarySidebarPanel QGroupBox#summaryAdvancedGroup {
+            #summaryPivotRoot QFrame#summaryFieldsPanel QListWidget#summaryFieldsList,
+            #summaryPivotRoot QFrame#summaryFiltersPanel QListWidget#summaryFilterList {
+                background: rgba(255, 255, 255, 0.96);
+                border: 1px solid rgba(17, 24, 39, 0.09);
+                border-radius: 2px;
+                padding: 2px;
+                color: #111827;
+                outline: 0;
+            }
+            #summaryPivotRoot QFrame#summaryFiltersPanel QListWidget#summaryRowList,
+            #summaryPivotRoot QFrame#summaryFiltersPanel QListWidget#summaryColumnList,
+            #summaryPivotRoot QFrame#summaryFiltersPanel QListWidget#summaryValueList {
+                background: transparent;
+                border: none;
+                padding: 0px;
+                outline: 0;
+            }
+            #summaryPivotRoot QFrame#summaryFiltersPanel QListWidget#summaryRowList::item,
+            #summaryPivotRoot QFrame#summaryFiltersPanel QListWidget#summaryColumnList::item,
+            #summaryPivotRoot QFrame#summaryFiltersPanel QListWidget#summaryValueList::item {
+                background: transparent;
+                border: none;
+                padding: 0px;
+                margin: 0px;
+            }
+            #summaryPivotRoot QFrame#summaryFiltersPanel QListWidget#summaryRowList::item:hover,
+            #summaryPivotRoot QFrame#summaryFiltersPanel QListWidget#summaryColumnList::item:hover,
+            #summaryPivotRoot QFrame#summaryFiltersPanel QListWidget#summaryValueList::item:hover,
+            #summaryPivotRoot QFrame#summaryFiltersPanel QListWidget#summaryRowList::item:selected,
+            #summaryPivotRoot QFrame#summaryFiltersPanel QListWidget#summaryColumnList::item:selected,
+            #summaryPivotRoot QFrame#summaryFiltersPanel QListWidget#summaryValueList::item:selected {
+                background: transparent;
+                color: #111827;
+            }
+            #summaryPivotRoot QFrame#summaryFiltersPanel QListWidget#summaryFilterList[activeArea="true"] {
+                border-color: rgba(81, 96, 116, 0.28);
+                background: #ffffff;
+            }
+            #summaryPivotRoot QFrame#summaryFieldsPanel QListWidget::item,
+            #summaryPivotRoot QFrame#summaryFiltersPanel QListWidget::item {
+                padding: 4px 6px;
+                margin: 0;
+                border-radius: 2px;
+                font-size: __FONT_CAPTION_PX__px;
+                font-weight: __FONT_WEIGHT_REGULAR__;
+            }
+            #summaryPivotRoot QFrame#summaryFieldsPanel QListWidget::item:hover,
+            #summaryPivotRoot QFrame#summaryFiltersPanel QListWidget::item:hover {
+                background: rgba(17, 24, 39, 0.035);
+            }
+            #summaryPivotRoot QFrame#summaryFieldsPanel QListWidget::item:selected,
+            #summaryPivotRoot QFrame#summaryFiltersPanel QListWidget::item:selected {
+                background: rgba(81, 96, 116, 0.12);
+                color: #111827;
+            }
+            #summaryPivotRoot QFrame#summaryFieldsPanel QScrollBar:vertical,
+            #summaryPivotRoot QFrame#summaryFiltersPanel QScrollBar:vertical {
+                background: transparent;
+                width: 10px;
+                margin: 4px 0;
+            }
+            #summaryPivotRoot QFrame#summaryFieldsPanel QScrollBar::handle:vertical,
+            #summaryPivotRoot QFrame#summaryFiltersPanel QScrollBar::handle:vertical {
+                background: rgba(107, 114, 128, 0.28);
+                border-radius: 5px;
+                min-height: 24px;
+            }
+            #summaryPivotRoot QFrame#summaryFieldsPanel QScrollBar::handle:vertical:hover,
+            #summaryPivotRoot QFrame#summaryFiltersPanel QScrollBar::handle:vertical:hover {
+                background: rgba(107, 114, 128, 0.40);
+            }
+            #summaryPivotRoot QFrame#summaryFieldsPanel QScrollBar::add-line:vertical,
+            #summaryPivotRoot QFrame#summaryFieldsPanel QScrollBar::sub-line:vertical,
+            #summaryPivotRoot QFrame#summaryFiltersPanel QScrollBar::add-line:vertical,
+            #summaryPivotRoot QFrame#summaryFiltersPanel QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
+            #summaryPivotRoot QFrame#summaryFieldsPanel QScrollBar::add-page:vertical,
+            #summaryPivotRoot QFrame#summaryFieldsPanel QScrollBar::sub-page:vertical,
+            #summaryPivotRoot QFrame#summaryFiltersPanel QScrollBar::add-page:vertical,
+            #summaryPivotRoot QFrame#summaryFiltersPanel QScrollBar::sub-page:vertical {
+                background: transparent;
+            }
+            #summaryPivotRoot QWidget#summaryAreaChip {
+                background: transparent;
+                border: none;
+            }
+            #summaryPivotRoot QFrame#summaryAreaChip {
+                background: #ffffff;
+                border: 1px solid rgba(17, 24, 39, 0.10);
+                border-radius: 2px;
+            }
+            #summaryPivotRoot QLabel#summaryAreaChipText {
+                color: #111827;
+                font-size: __FONT_CAPTION_PX__px;
+                font-weight: __FONT_WEIGHT_REGULAR__;
+            }
+            #summaryPivotRoot QToolButton#summaryAreaChipRemove {
+                background: transparent;
+                border: 1px solid transparent;
+                border-radius: 2px;
+                padding: 0px;
+            }
+            #summaryPivotRoot QToolButton#summaryAreaChipRemove:hover {
+                background: rgba(239, 68, 68, 0.08);
+                border-color: rgba(239, 68, 68, 0.20);
+            }
+            #summaryPivotRoot QFrame#summarySidebarPanel QGroupBox#summaryAdvancedGroup,
+            #summaryPivotRoot QFrame#summaryFiltersPanel QGroupBox#summaryAdvancedGroup {
                 background: transparent;
                 border: none;
                 margin-top: 0px;
                 padding-top: 0px;
             }
-            #summaryPivotRoot QFrame#summarySidebarPanel QGroupBox#summaryAdvancedGroup::title {
+            #summaryPivotRoot QFrame#summarySidebarPanel QGroupBox#summaryAdvancedGroup::title,
+            #summaryPivotRoot QFrame#summaryFiltersPanel QGroupBox#summaryAdvancedGroup::title {
                 subcontrol-origin: margin;
                 left: 0px;
                 padding: 2px 0 6px 0;
@@ -1378,11 +1734,13 @@ class PivotTableWidget(QWidget):
                 font-size: __FONT_SECONDARY_PX__px;
                 font-weight: __FONT_WEIGHT_MEDIUM__;
             }
-            #summaryPivotRoot QFrame#summarySidebarPanel QGroupBox#summaryAdvancedGroup::indicator {
+            #summaryPivotRoot QFrame#summarySidebarPanel QGroupBox#summaryAdvancedGroup::indicator,
+            #summaryPivotRoot QFrame#summaryFiltersPanel QGroupBox#summaryAdvancedGroup::indicator {
                 width: 14px;
                 height: 14px;
             }
-            #summaryPivotRoot QFrame#summarySidebarPanel QCheckBox {
+            #summaryPivotRoot QFrame#summarySidebarPanel QCheckBox,
+            #summaryPivotRoot QFrame#summaryFiltersPanel QCheckBox {
                 color: #6b7280;
                 spacing: 8px;
                 font-size: __FONT_SECONDARY_PX__px;
@@ -1409,7 +1767,8 @@ class PivotTableWidget(QWidget):
             #summaryPivotRoot QFrame#summarySidebarPanel QScrollBar::sub-page:vertical {
                 background: transparent;
             }
-            #summaryPivotRoot QFrame#summarySidebarFooter QPushButton#summaryPrimaryButton {
+            #summaryPivotRoot QFrame#summarySidebarFooter QPushButton#summaryPrimaryButton,
+            #summaryPivotRoot QFrame#summaryFiltersFooter QPushButton#summaryPrimaryButton {
                 background: #1f2937;
                 color: #ffffff;
                 border: 1px solid #111827;
@@ -1419,7 +1778,8 @@ class PivotTableWidget(QWidget):
                 font-size: __FONT_BUTTON_PX__px;
                 font-weight: __FONT_WEIGHT_MEDIUM__;
             }
-            #summaryPivotRoot QFrame#summarySidebarFooter QPushButton#summaryPrimaryButton:hover {
+            #summaryPivotRoot QFrame#summarySidebarFooter QPushButton#summaryPrimaryButton:hover,
+            #summaryPivotRoot QFrame#summaryFiltersFooter QPushButton#summaryPrimaryButton:hover {
                 background: #111827;
                 border-color: #0b1220;
             }
@@ -1508,18 +1868,7 @@ class PivotTableWidget(QWidget):
         self.refresh()
 
     def _update_meta_label(self, metadata: Dict, filter_desc: Optional[str]):
-        layer = metadata.get("layer_name", "-")
-        field = metadata.get("field_name", "-")
-        total_feat = metadata.get("total_features")
-        filter_text = filter_desc or "Nenhum"
-        if total_feat is None:
-            message = f"Camada: {layer} | Campo numerico: {field} | Filtro: {filter_text}"
-        else:
-            message = (
-                f"Camada: {layer} | Campo numerico: {field} | "
-                f"Feicoes carregadas: {total_feat:,} | Filtro: {filter_text}"
-            )
-        self.meta_label.setText(message)
+        self.meta_label.setText("")
         self._update_context_summary()
 
     def set_layer_combo(self, combo: QComboBox):
@@ -1535,7 +1884,17 @@ class PivotTableWidget(QWidget):
             combo.setParent(self.layer_combo_host)
         combo.setObjectName("summaryLayerCombo")
         combo.setMinimumHeight(28)
+        combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         layout.addWidget(combo)
+        combo.setVisible(True)
+        combo.show()
+        self.layer_combo_host.setVisible(True)
+        self.context_bar.setVisible(True)
+        if hasattr(self, "controls_zone"):
+            self.controls_zone.setVisible(True)
+        layout.invalidate()
+        self.layer_combo_host.updateGeometry()
+        self.context_bar.updateGeometry()
 
     def _current_filter_description(self) -> str:
         summary_filter = str(self._current_summary_data.get("filter_description") or "").strip()
@@ -1568,6 +1927,9 @@ class PivotTableWidget(QWidget):
         self.value_fields_list.clear()
         self._sync_area_placeholder()
 
+        text_icon = _svg_icon_from_template(_TOOLBAR_SVG_ICONS["field_text"], size=14)
+        numeric_icon = _svg_icon_from_template(_TOOLBAR_SVG_ICONS["field_numeric"], size=14)
+
         combos = [
             self.filter_field_combo,
             self.column_field_combo,
@@ -1584,15 +1946,19 @@ class PivotTableWidget(QWidget):
         for column in df.columns:
             field_spec = self._build_attribute_field_spec(column, layer, df)
             spec_key = self._register_field_spec(field_spec)
-            item = QListWidgetItem(column)
+            is_numeric = bool(field_spec.data_type == "numeric")
+            item = QListWidgetItem(
+                f"# {field_spec.display_name}" if is_numeric else field_spec.display_name
+            )
             item.setData(Qt.UserRole, spec_key)
-            item.setData(Qt.UserRole + 1, bool(field_spec.data_type == "numeric"))
-            item.setData(Qt.UserRole + 2, column)
+            item.setData(Qt.UserRole + 1, is_numeric)
+            item.setData(Qt.UserRole + 2, field_spec.display_name)
+            item.setIcon(numeric_icon if is_numeric else text_icon)
             self.fields_list.addItem(item)
-            self.filter_field_combo.addItem(column, spec_key)
-            self.column_field_combo.addItem(column, spec_key)
-            self.row_field_combo.addItem(column, spec_key)
-            self.value_field_combo.addItem(column, spec_key)
+            self.filter_field_combo.addItem(field_spec.display_name, spec_key)
+            self.column_field_combo.addItem(field_spec.display_name, spec_key)
+            self.row_field_combo.addItem(field_spec.display_name, spec_key)
+            self.value_field_combo.addItem(field_spec.display_name, spec_key)
 
         if layer is not None:
             geometry_specs = self._geometry_field_specs_for_layer(layer)
@@ -2371,6 +2737,7 @@ class PivotTableWidget(QWidget):
         names = (area,) if area else ("filter", "row", "column", "value")
         for name in names:
             self._refresh_area_placeholder(name)
+            self._refresh_area_item_widgets(name)
 
     def _sync_value_area_from_combo(self):
         if not hasattr(self, "value_fields_list"):
@@ -2559,6 +2926,16 @@ class PivotTableWidget(QWidget):
         self._sync_area_placeholder(area)
         self._maybe_refresh()
 
+    def _remove_area_field_by_key(self, area: str, spec_key: str):
+        list_widget = self._area_list(area)
+        for row in range(list_widget.count()):
+            item = list_widget.item(row)
+            if item.data(Qt.UserRole) != spec_key:
+                continue
+            list_widget.setCurrentRow(row)
+            self._remove_selected_area_field(area)
+            return
+
     def _move_selected_area_field(self, area: str, offset: int):
         list_widget = self._area_list(area)
         row = list_widget.currentRow()
@@ -2574,6 +2951,7 @@ class PivotTableWidget(QWidget):
         item = list_widget.takeItem(row)
         list_widget.insertItem(new_row, item)
         list_widget.setCurrentRow(new_row)
+        self._refresh_area_item_widgets(area)
         self._maybe_refresh()
 
     def _clear_area(self, area: str):
@@ -2595,7 +2973,8 @@ class PivotTableWidget(QWidget):
         )
         spec_key = None
         for index in range(self.row_field_combo.count()):
-            if self.row_field_combo.itemText(index) == candidate:
+            spec = self._field_spec_from_key(self.row_field_combo.itemData(index))
+            if spec is not None and spec.field_name == candidate:
                 spec_key = self.row_field_combo.itemData(index)
                 break
         self._add_field_to_area("row", self._field_spec_from_key(spec_key), auto_refresh=False)
@@ -2634,7 +3013,8 @@ class PivotTableWidget(QWidget):
             if self._is_identifier_like_field(candidate):
                 continue
             for index in range(self.value_field_combo.count()):
-                if self.value_field_combo.itemText(index) == candidate:
+                spec = self._field_spec_from_key(self.value_field_combo.itemData(index))
+                if spec is not None and spec.field_name == candidate:
                     spec = self._field_spec_from_key(self.value_field_combo.itemData(index))
                     if spec is not None:
                         return spec

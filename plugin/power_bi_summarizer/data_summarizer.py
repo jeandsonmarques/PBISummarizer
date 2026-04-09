@@ -464,8 +464,8 @@ class PowerBISummarizerDialog(QDialog):
 
         layout = getattr(self.ui, "results_body_layout", None)
         if layout is not None:
-            layout.setContentsMargins(16, 16, 16, 16)
-            layout.setSpacing(12)
+            layout.setContentsMargins(2, 2, 2, 2)
+            layout.setSpacing(4)
 
     def apply_styles(self):
         """Aplica o style.qss oficial do plugin (arquivo principal de temas)."""

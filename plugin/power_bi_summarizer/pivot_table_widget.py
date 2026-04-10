@@ -6,11 +6,12 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import pandas as pd
 from pandas.api import types as ptypes
-from qgis.PyQt.QtCore import QByteArray, QEvent, QItemSelection, QItemSelectionModel, QMimeData, QRegExp, QSettings, QSize, QTimer, Qt, QSortFilterProxyModel, QVariant
+from qgis.PyQt.QtCore import QByteArray, QEvent, QItemSelection, QItemSelectionModel, QMimeData, QRect, QRegExp, QSettings, QSize, QTimer, Qt, QSortFilterProxyModel, QVariant
 from qgis.PyQt.QtGui import QColor, QFont, QIcon, QPainter, QPalette, QPixmap, QStandardItem, QStandardItemModel
 from qgis.PyQt.QtWidgets import (
     QAbstractItemView,
     QAbstractScrollArea,
+    QApplication,
     QCheckBox,
     QComboBox,
     QFrame,
@@ -29,6 +30,9 @@ from qgis.PyQt.QtWidgets import (
     QSizePolicy,
     QSplitter,
     QStackedWidget,
+    QStyle,
+    QStyleOptionViewItem,
+    QStyledItemDelegate,
     QTableView,
     QToolButton,
     QVBoxLayout,
@@ -116,6 +120,13 @@ _SIDEBAR_COLLAPSED_WIDTH = 52
 _SIDEBAR_MIN_WIDTH = 304
 _SIDEBAR_DEFAULT_WIDTH = 320
 _SIDEBAR_MAX_WIDTH = 420
+_TOOLS_PANEL_COLLAPSED_WIDTH = 34
+_TOOLS_FIELDS_MIN_WIDTH = 120
+_TOOLS_FIELDS_DEFAULT_WIDTH = 132
+_TOOLS_FIELDS_MAX_WIDTH = 260
+_TOOLS_FILTERS_MIN_WIDTH = 164
+_TOOLS_FILTERS_DEFAULT_WIDTH = 188
+_TOOLS_FILTERS_MAX_WIDTH = 280
 
 _TOOLBAR_SVG_ICONS = {
     "search": """<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -325,6 +336,65 @@ class _PivotDropListWidget(QListWidget):
             self._owner._maybe_refresh()
 
 
+class _VerticalPanelLabel(QLabel):
+    def sizeHint(self):
+        hint = super().sizeHint()
+        return QSize(max(24, hint.height() + 8), max(112, hint.width() + 12))
+
+    def minimumSizeHint(self):
+        return QSize(24, 108)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.TextAntialiasing)
+        painter.translate(self.width() / 2, self.height() / 2)
+        painter.rotate(-90)
+        rect = QRect(
+            int(-self.height() / 2),
+            int(-self.width() / 2),
+            int(self.height()),
+            int(self.width()),
+        )
+        painter.setPen(self.palette().color(QPalette.WindowText))
+        painter.setFont(self.font())
+        painter.drawText(rect, Qt.AlignCenter, self.text())
+
+
+class _PivotFieldListDelegate(QStyledItemDelegate):
+    _TEXT_COLOR = QColor("#111827")
+    _TEXT_SELECTED_COLOR = QColor("#1d4ed8")
+    _TEXT_SELECTED_BG = QColor("#dbeafe")
+    _NUMERIC_COLOR = QColor("#a855f7")
+    _NUMERIC_SELECTED_COLOR = QColor("#9333ea")
+    _NUMERIC_SELECTED_BG = QColor("#f3e8ff")
+
+    def paint(self, painter, option, index):
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+        is_numeric = bool(index.data(Qt.UserRole + 1))
+        is_selected = bool(opt.state & QStyle.State_Selected)
+
+        if is_selected:
+            painter.save()
+            painter.setRenderHint(QPainter.Antialiasing)
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(self._NUMERIC_SELECTED_BG if is_numeric else self._TEXT_SELECTED_BG)
+            painter.drawRoundedRect(opt.rect.adjusted(1, 0, -1, 0), 4, 4)
+            painter.restore()
+
+        opt.state &= ~QStyle.State_Selected
+        opt.state &= ~QStyle.State_HasFocus
+        opt.palette.setColor(QPalette.Text, self._NUMERIC_COLOR if is_numeric else self._TEXT_COLOR)
+        if is_selected:
+            opt.palette.setColor(
+                QPalette.Text,
+                self._NUMERIC_SELECTED_COLOR if is_numeric else self._TEXT_SELECTED_COLOR,
+            )
+
+        style = opt.widget.style() if opt.widget is not None else QApplication.style()
+        style.drawControl(QStyle.CE_ItemViewItem, opt, painter, opt.widget)
+
+
 class PivotTableWidget(QWidget):
     """Excel-inspired compact pivot table with column filters and field list."""
 
@@ -371,8 +441,10 @@ class PivotTableWidget(QWidget):
         self._sidebar_collapsed = False
         self._sidebar_last_width = _SIDEBAR_DEFAULT_WIDTH
         self._tools_panels_hidden = False
-        self._tools_fields_width = 132
-        self._tools_builder_width = 188
+        self._tools_fields_width = _TOOLS_FIELDS_DEFAULT_WIDTH
+        self._tools_builder_width = _TOOLS_FILTERS_DEFAULT_WIDTH
+        self._fields_panel_collapsed = False
+        self._filters_panel_collapsed = False
         self._context_in_fields_panel = False
         self._field_specs_by_key: Dict[str, PivotFieldSpec] = {}
         self._saved_configurations: Dict[str, Dict[str, Any]] = {}
@@ -527,7 +599,7 @@ class PivotTableWidget(QWidget):
         self.analytics_splitter = QSplitter(Qt.Horizontal)
         self.analytics_splitter.setObjectName("summaryAnalyticsSplitter")
         self.analytics_splitter.setChildrenCollapsible(False)
-        self.analytics_splitter.setHandleWidth(2)
+        self.analytics_splitter.setHandleWidth(6)
         self.analytics_splitter.setOpaqueResize(False)
         self.analytics_splitter.splitterMoved.connect(self._handle_analytics_splitter_moved)
         self.content_zone_layout.addWidget(self.analytics_splitter, 1)
@@ -535,8 +607,8 @@ class PivotTableWidget(QWidget):
         self.fields_panel = QFrame()
         self.fields_panel.setObjectName("summaryFieldsPanel")
         self.fields_panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
-        self.fields_panel.setMinimumWidth(120)
-        self.fields_panel.setMaximumWidth(160)
+        self.fields_panel.setMinimumWidth(_TOOLS_FIELDS_MIN_WIDTH)
+        self.fields_panel.setMaximumWidth(_TOOLS_FIELDS_MAX_WIDTH)
         self.fields_panel_layout = QVBoxLayout(self.fields_panel)
         self.fields_panel_layout.setContentsMargins(8, 8, 8, 8)
         self.fields_panel_layout.setSpacing(6)
@@ -551,20 +623,53 @@ class PivotTableWidget(QWidget):
         self.fields_panel_title = QLabel("Field List")
         self.fields_panel_title.setObjectName("summaryPanelTitle")
         self.fields_panel_header_layout.addWidget(self.fields_panel_title, 1, Qt.AlignVCenter)
+        self.fields_panel_toggle_btn = QToolButton(self.fields_panel_header)
+        self.fields_panel_toggle_btn.setObjectName("summaryPanelToggle")
+        self.fields_panel_toggle_btn.setAutoRaise(True)
+        self.fields_panel_toggle_btn.setCursor(Qt.PointingHandCursor)
+        self.fields_panel_toggle_btn.setFixedSize(22, 22)
+        self.fields_panel_toggle_btn.clicked.connect(self._toggle_fields_panel)
+        self.fields_panel_header_layout.addWidget(
+            self.fields_panel_toggle_btn, 0, Qt.AlignRight | Qt.AlignVCenter
+        )
         self.fields_panel_layout.addWidget(self.fields_panel_header)
+        self.fields_panel_body = QWidget(self.fields_panel)
+        self.fields_panel_body.setObjectName("summaryPanelBody")
+        self.fields_panel_body_layout = QVBoxLayout(self.fields_panel_body)
+        self.fields_panel_body_layout.setContentsMargins(0, 0, 0, 0)
+        self.fields_panel_body_layout.setSpacing(6)
         self.fields_context_card = QWidget(self.fields_panel)
         self.fields_context_card.setObjectName("summaryFieldsContextCard")
         self.fields_context_layout = QVBoxLayout(self.fields_context_card)
         self.fields_context_layout.setContentsMargins(0, 0, 0, 0)
         self.fields_context_layout.setSpacing(3)
-        self.fields_panel_layout.addWidget(self.fields_context_card, 0)
+        self.fields_panel_body_layout.addWidget(self.fields_context_card, 0)
+        self.fields_panel_layout.addWidget(self.fields_panel_body, 1)
+        self.fields_panel_collapsed_rail = QFrame(self.fields_panel)
+        self.fields_panel_collapsed_rail.setObjectName("summaryPanelCollapsedRail")
+        self.fields_panel_collapsed_rail.hide()
+        fields_rail_layout = QVBoxLayout(self.fields_panel_collapsed_rail)
+        fields_rail_layout.setContentsMargins(2, 6, 2, 6)
+        fields_rail_layout.setSpacing(8)
+        self.fields_panel_collapsed_btn = QToolButton(self.fields_panel_collapsed_rail)
+        self.fields_panel_collapsed_btn.setObjectName("summaryPanelToggle")
+        self.fields_panel_collapsed_btn.setAutoRaise(True)
+        self.fields_panel_collapsed_btn.setCursor(Qt.PointingHandCursor)
+        self.fields_panel_collapsed_btn.setFixedSize(22, 22)
+        self.fields_panel_collapsed_btn.clicked.connect(self._toggle_fields_panel)
+        fields_rail_layout.addWidget(self.fields_panel_collapsed_btn, 0, Qt.AlignHCenter | Qt.AlignTop)
+        self.fields_panel_collapsed_title = _VerticalPanelLabel("Field List", self.fields_panel_collapsed_rail)
+        self.fields_panel_collapsed_title.setObjectName("summaryPanelCollapsedTitle")
+        fields_rail_layout.addWidget(self.fields_panel_collapsed_title, 0, Qt.AlignHCenter | Qt.AlignTop)
+        fields_rail_layout.addStretch(1)
+        self.fields_panel_layout.addWidget(self.fields_panel_collapsed_rail, 1)
         self.analytics_splitter.addWidget(self.fields_panel)
 
         self.filters_panel = QFrame()
         self.filters_panel.setObjectName("summaryFiltersPanel")
         self.filters_panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
-        self.filters_panel.setMinimumWidth(164)
-        self.filters_panel.setMaximumWidth(214)
+        self.filters_panel.setMinimumWidth(_TOOLS_FILTERS_MIN_WIDTH)
+        self.filters_panel.setMaximumWidth(_TOOLS_FILTERS_MAX_WIDTH)
         self.filters_panel_layout = QVBoxLayout(self.filters_panel)
         self.filters_panel_layout.setContentsMargins(8, 8, 8, 8)
         self.filters_panel_layout.setSpacing(6)
@@ -579,7 +684,22 @@ class PivotTableWidget(QWidget):
         self.filter_area_title = QLabel("Filters")
         self.filter_area_title.setObjectName("summaryPanelTitle")
         self.filters_panel_header_layout.addWidget(self.filter_area_title, 1, Qt.AlignVCenter)
+        self.filters_panel_toggle_btn = QToolButton(self.filters_panel_header)
+        self.filters_panel_toggle_btn.setObjectName("summaryPanelToggle")
+        self.filters_panel_toggle_btn.setAutoRaise(True)
+        self.filters_panel_toggle_btn.setCursor(Qt.PointingHandCursor)
+        self.filters_panel_toggle_btn.setFixedSize(22, 22)
+        self.filters_panel_toggle_btn.clicked.connect(self._toggle_filters_panel)
+        self.filters_panel_header_layout.addWidget(
+            self.filters_panel_toggle_btn, 0, Qt.AlignRight | Qt.AlignVCenter
+        )
         self.filters_panel_layout.addWidget(self.filters_panel_header)
+        self.filters_panel_body = QWidget(self.filters_panel)
+        self.filters_panel_body.setObjectName("summaryPanelBody")
+        self.filters_panel_body_layout = QVBoxLayout(self.filters_panel_body)
+        self.filters_panel_body_layout.setContentsMargins(0, 0, 0, 0)
+        self.filters_panel_body_layout.setSpacing(6)
+        self.filters_panel_layout.addWidget(self.filters_panel_body, 1)
 
         self.filters_builder_scroll = QScrollArea(self.filters_panel)
         self.filters_builder_scroll.setObjectName("summaryFiltersScroll")
@@ -589,7 +709,7 @@ class PivotTableWidget(QWidget):
         self.filters_builder_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.filters_builder_scroll.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
         self.filters_builder_scroll.viewport().setObjectName("summaryFiltersViewport")
-        self.filters_panel_layout.addWidget(self.filters_builder_scroll, 1)
+        self.filters_panel_body_layout.addWidget(self.filters_builder_scroll, 1)
 
         self.filters_builder_content = QWidget()
         self.filters_builder_content.setObjectName("summaryFiltersBuilderContent")
@@ -598,6 +718,24 @@ class PivotTableWidget(QWidget):
         self.filters_builder_layout = QVBoxLayout(self.filters_builder_content)
         self.filters_builder_layout.setContentsMargins(0, 0, 0, 0)
         self.filters_builder_layout.setSpacing(10)
+        self.filters_panel_collapsed_rail = QFrame(self.filters_panel)
+        self.filters_panel_collapsed_rail.setObjectName("summaryPanelCollapsedRail")
+        self.filters_panel_collapsed_rail.hide()
+        filters_rail_layout = QVBoxLayout(self.filters_panel_collapsed_rail)
+        filters_rail_layout.setContentsMargins(2, 6, 2, 6)
+        filters_rail_layout.setSpacing(8)
+        self.filters_panel_collapsed_btn = QToolButton(self.filters_panel_collapsed_rail)
+        self.filters_panel_collapsed_btn.setObjectName("summaryPanelToggle")
+        self.filters_panel_collapsed_btn.setAutoRaise(True)
+        self.filters_panel_collapsed_btn.setCursor(Qt.PointingHandCursor)
+        self.filters_panel_collapsed_btn.setFixedSize(22, 22)
+        self.filters_panel_collapsed_btn.clicked.connect(self._toggle_filters_panel)
+        filters_rail_layout.addWidget(self.filters_panel_collapsed_btn, 0, Qt.AlignHCenter | Qt.AlignTop)
+        self.filters_panel_collapsed_title = _VerticalPanelLabel("Filters", self.filters_panel_collapsed_rail)
+        self.filters_panel_collapsed_title.setObjectName("summaryPanelCollapsedTitle")
+        filters_rail_layout.addWidget(self.filters_panel_collapsed_title, 0, Qt.AlignHCenter | Qt.AlignTop)
+        filters_rail_layout.addStretch(1)
+        self.filters_panel_layout.addWidget(self.filters_panel_collapsed_rail, 1)
         self.analytics_splitter.addWidget(self.filters_panel)
 
         # -- Left (table) -------------------------------------------------
@@ -682,7 +820,7 @@ class PivotTableWidget(QWidget):
         self.analytics_splitter.setStretchFactor(0, 18)
         self.analytics_splitter.setStretchFactor(1, 16)
         self.analytics_splitter.setStretchFactor(2, 66)
-        self.analytics_splitter.setSizes([132, 188, 720])
+        self.analytics_splitter.setSizes([_TOOLS_FIELDS_DEFAULT_WIDTH, _TOOLS_FILTERS_DEFAULT_WIDTH, 720])
         self.main_splitter.addWidget(self.main_column)
 
         # -- Right (field list) ------------------------------------------
@@ -744,7 +882,8 @@ class PivotTableWidget(QWidget):
         self.fields_list.setMaximumHeight(16777215)
         self.fields_list.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.fields_list.setIconSize(QSize(14, 14))
-        self.fields_panel_layout.addWidget(self.fields_list, 1)
+        self.fields_list.setItemDelegate(_PivotFieldListDelegate(self.fields_list))
+        self.fields_panel_body_layout.addWidget(self.fields_list, 1)
 
         self.filter_field_combo = QComboBox()
         self.filter_field_combo.hide()
@@ -880,7 +1019,7 @@ class PivotTableWidget(QWidget):
         self.apply_btn.setFixedHeight(36)
         self.apply_btn.clicked.connect(self.refresh)
         footer_layout.addWidget(self.apply_btn)
-        self.filters_panel_layout.addWidget(self.filters_panel_footer, 0)
+        self.filters_panel_body_layout.addWidget(self.filters_panel_footer, 0)
 
         self.main_splitter.addWidget(self.side_panel)
         self.main_splitter.setStretchFactor(0, 7)
@@ -1032,14 +1171,84 @@ class PivotTableWidget(QWidget):
             item.setSizeHint(QSize(0, 28))
             list_widget.setItemWidget(item, self._create_area_chip_widget(area, spec))
 
+    def _toggle_fields_panel(self):
+        if hasattr(self, "analytics_splitter") and not self._fields_panel_collapsed:
+            sizes = self.analytics_splitter.sizes()
+            if len(sizes) >= 1 and sizes[0] > _TOOLS_PANEL_COLLAPSED_WIDTH:
+                self._tools_fields_width = int(sizes[0])
+        self._fields_panel_collapsed = not self._fields_panel_collapsed
+        self._apply_tools_panels_visibility(not self._tools_panels_hidden)
+
+    def _toggle_filters_panel(self):
+        if hasattr(self, "analytics_splitter") and not self._filters_panel_collapsed:
+            sizes = self.analytics_splitter.sizes()
+            if len(sizes) >= 2 and sizes[1] > _TOOLS_PANEL_COLLAPSED_WIDTH:
+                self._tools_builder_width = int(sizes[1])
+        self._filters_panel_collapsed = not self._filters_panel_collapsed
+        self._apply_tools_panels_visibility(not self._tools_panels_hidden)
+
+    def _sync_tools_panel_chrome(self):
+        panels = (
+            (
+                getattr(self, "fields_panel", None),
+                getattr(self, "fields_panel_header", None),
+                getattr(self, "fields_panel_body", None),
+                getattr(self, "fields_panel_collapsed_rail", None),
+                getattr(self, "fields_panel_toggle_btn", None),
+                getattr(self, "fields_panel_collapsed_btn", None),
+                getattr(self, "_fields_panel_collapsed", False),
+                _TOOLS_FIELDS_MIN_WIDTH,
+                _TOOLS_FIELDS_MAX_WIDTH,
+                "Field List",
+            ),
+            (
+                getattr(self, "filters_panel", None),
+                getattr(self, "filters_panel_header", None),
+                getattr(self, "filters_panel_body", None),
+                getattr(self, "filters_panel_collapsed_rail", None),
+                getattr(self, "filters_panel_toggle_btn", None),
+                getattr(self, "filters_panel_collapsed_btn", None),
+                getattr(self, "_filters_panel_collapsed", False),
+                _TOOLS_FILTERS_MIN_WIDTH,
+                _TOOLS_FILTERS_MAX_WIDTH,
+                "Filters",
+            ),
+        )
+
+        for panel, header, body, rail, header_btn, rail_btn, collapsed, min_width, max_width, title in panels:
+            if panel is None:
+                continue
+            if header is not None:
+                header.setVisible(not collapsed)
+            if body is not None:
+                body.setVisible(not collapsed)
+            if rail is not None:
+                rail.setVisible(collapsed)
+            panel.setMinimumWidth(_TOOLS_PANEL_COLLAPSED_WIDTH if collapsed else min_width)
+            panel.setMaximumWidth(_TOOLS_PANEL_COLLAPSED_WIDTH if collapsed else max_width)
+            panel.setProperty("collapsed", collapsed)
+            if header_btn is not None:
+                header_btn.setArrowType(Qt.NoArrow)
+                header_btn.setText("‹")
+                header_btn.setToolTip(f"Recolher {title}")
+            if rail_btn is not None:
+                rail_btn.setArrowType(Qt.NoArrow)
+                rail_btn.setText("›")
+                rail_btn.setToolTip(f"Expandir {title}")
+            try:
+                panel.style().unpolish(panel)
+                panel.style().polish(panel)
+            except Exception:
+                pass
+
     def _handle_analytics_splitter_moved(self, pos: int, index: int):
         if getattr(self, "_tools_panels_hidden", False) or not hasattr(self, "analytics_splitter"):
             return
         sizes = self.analytics_splitter.sizes()
         if len(sizes) >= 3:
-            if sizes[0] > 0:
+            if not getattr(self, "_fields_panel_collapsed", False) and sizes[0] > _TOOLS_PANEL_COLLAPSED_WIDTH:
                 self._tools_fields_width = int(sizes[0])
-            if sizes[1] > 0:
+            if not getattr(self, "_filters_panel_collapsed", False) and sizes[1] > _TOOLS_PANEL_COLLAPSED_WIDTH:
                 self._tools_builder_width = int(sizes[1])
 
     def _apply_tools_panels_visibility(self, visible: bool):
@@ -1054,6 +1263,7 @@ class PivotTableWidget(QWidget):
             self.fields_panel.setVisible(visible)
         if hasattr(self, "filters_panel"):
             self.filters_panel.setVisible(visible)
+        self._sync_tools_panel_chrome()
 
         if hasattr(self, "analytics_splitter"):
             sizes = self.analytics_splitter.sizes()
@@ -1062,15 +1272,23 @@ class PivotTableWidget(QWidget):
                 total_width = max(int(self.analytics_splitter.width() or 0), 1040)
 
             if visible:
-                fields_width = max(120, int(getattr(self, "_tools_fields_width", 132) or 132))
-                builder_width = max(164, int(getattr(self, "_tools_builder_width", 188) or 188))
+                fields_width = (
+                    _TOOLS_PANEL_COLLAPSED_WIDTH
+                    if getattr(self, "_fields_panel_collapsed", False)
+                    else max(_TOOLS_FIELDS_MIN_WIDTH, int(getattr(self, "_tools_fields_width", _TOOLS_FIELDS_DEFAULT_WIDTH) or _TOOLS_FIELDS_DEFAULT_WIDTH))
+                )
+                builder_width = (
+                    _TOOLS_PANEL_COLLAPSED_WIDTH
+                    if getattr(self, "_filters_panel_collapsed", False)
+                    else max(_TOOLS_FILTERS_MIN_WIDTH, int(getattr(self, "_tools_builder_width", _TOOLS_FILTERS_DEFAULT_WIDTH) or _TOOLS_FILTERS_DEFAULT_WIDTH))
+                )
                 table_width = max(1, total_width - fields_width - builder_width)
                 self.analytics_splitter.setSizes([fields_width, builder_width, table_width])
             else:
                 if len(sizes) >= 3:
-                    if sizes[0] > 0:
+                    if sizes[0] > _TOOLS_PANEL_COLLAPSED_WIDTH:
                         self._tools_fields_width = int(sizes[0])
-                    if sizes[1] > 0:
+                    if sizes[1] > _TOOLS_PANEL_COLLAPSED_WIDTH:
                         self._tools_builder_width = int(sizes[1])
                 self.analytics_splitter.setSizes([0, 0, total_width])
 
@@ -1298,6 +1516,10 @@ class PivotTableWidget(QWidget):
                 border: 1px solid rgba(17, 24, 39, 0.09);
                 border-radius: 2px;
             }
+            #summaryPivotRoot QFrame#summaryFieldsPanel[collapsed="true"],
+            #summaryPivotRoot QFrame#summaryFiltersPanel[collapsed="true"] {
+                background: #fbfbfc;
+            }
             #summaryPivotRoot QScrollArea#summaryFiltersScroll,
             #summaryPivotRoot QWidget#summaryFiltersViewport,
             #summaryPivotRoot QWidget#summaryFiltersBuilderContent {
@@ -1307,6 +1529,33 @@ class PivotTableWidget(QWidget):
             #summaryPivotRoot QWidget#summaryPanelHeader {
                 background: transparent;
                 border: none;
+            }
+            #summaryPivotRoot QWidget#summaryPanelBody {
+                background: transparent;
+                border: none;
+            }
+            #summaryPivotRoot QFrame#summaryPanelCollapsedRail {
+                background: #fbfbfc;
+                border: none;
+            }
+            #summaryPivotRoot QLabel#summaryPanelCollapsedTitle {
+                color: #6b7280;
+                font-size: __FONT_SECONDARY_PX__px;
+                font-weight: __FONT_WEIGHT_MEDIUM__;
+            }
+            #summaryPivotRoot QToolButton#summaryPanelToggle {
+                background: transparent;
+                border: 1px solid transparent;
+                border-radius: 6px;
+                padding: 0px;
+                color: #6b7280;
+                font-size: 16px;
+                font-weight: __FONT_WEIGHT_MEDIUM__;
+            }
+            #summaryPivotRoot QToolButton#summaryPanelToggle:hover {
+                background: rgba(17, 24, 39, 0.045);
+                border-color: rgba(17, 24, 39, 0.08);
+                color: #111827;
             }
             #summaryPivotRoot QWidget#summaryFieldsContextCard {
                 background: transparent;
@@ -2016,8 +2265,26 @@ class PivotTableWidget(QWidget):
         self.value_fields_list.clear()
         self._sync_area_placeholder()
 
-        text_icon = _svg_icon_from_template(_TOOLBAR_SVG_ICONS["field_text"], size=14)
-        numeric_icon = _svg_icon_from_template(_TOOLBAR_SVG_ICONS["field_numeric"], size=14)
+        text_icon = _svg_icon_from_template(
+            _TOOLBAR_SVG_ICONS["field_text"],
+            size=14,
+            color_map={
+                QIcon.Normal: "#60a5fa",
+                QIcon.Active: "#3b82f6",
+                QIcon.Selected: "#1d4ed8",
+                QIcon.Disabled: "#cbd5e1",
+            },
+        )
+        numeric_icon = _svg_icon_from_template(
+            _TOOLBAR_SVG_ICONS["field_numeric"],
+            size=14,
+            color_map={
+                QIcon.Normal: "#c084fc",
+                QIcon.Active: "#a855f7",
+                QIcon.Selected: "#9333ea",
+                QIcon.Disabled: "#e9d5ff",
+            },
+        )
 
         combos = [
             self.filter_field_combo,

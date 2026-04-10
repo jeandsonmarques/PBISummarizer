@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 from pandas.api import types as ptypes
 from qgis.PyQt.QtCore import QByteArray, QEvent, QItemSelection, QItemSelectionModel, QMimeData, QRect, QRegExp, QSettings, QSize, QTimer, Qt, QSortFilterProxyModel, QVariant
-from qgis.PyQt.QtGui import QDrag, QColor, QFont, QIcon, QPainter, QPalette, QPixmap, QStandardItem, QStandardItemModel
+from qgis.PyQt.QtGui import QDrag, QMouseEvent, QColor, QFont, QIcon, QPainter, QPalette, QPixmap, QStandardItem, QStandardItemModel
 from qgis.PyQt.QtWidgets import (
     QAbstractItemView,
     QAbstractScrollArea,
@@ -334,11 +334,8 @@ class _PivotDropListWidget(QListWidget):
 
     def dropEvent(self, event):
         if event.source() is self:
-            super().dropEvent(event)
-            if self._owner is not None:
-                self._owner._set_last_active_area(self._area_name)
-                self._owner._sync_area_placeholder(self._area_name)
-                self._owner._maybe_refresh()
+            event.setDropAction(Qt.MoveAction)
+            event.accept()
             return
 
         if not event.mimeData().hasFormat(_PIVOT_FIELD_MIME):
@@ -442,6 +439,88 @@ class _VerticalPanelLabel(QLabel):
         painter.setPen(self.palette().color(QPalette.WindowText))
         painter.setFont(self.font())
         painter.drawText(rect, Qt.AlignCenter, self.text())
+
+
+class _PivotAreaChipContainer(QWidget):
+    def __init__(self, list_widget: QListWidget, parent=None):
+        super().__init__(parent)
+        self._list_widget = list_widget
+        self._drag_start_pos = None
+
+    def _find_bound_item(self):
+        if self._list_widget is None:
+            return None
+        for index in range(self._list_widget.count()):
+            item = self._list_widget.item(index)
+            if self._list_widget.itemWidget(item) is self:
+                return item
+        return None
+
+    def _select_bound_item(self):
+        item = self._find_bound_item()
+        if item is None:
+            return None
+        self._list_widget.setCurrentItem(item)
+        self._list_widget.setFocus(Qt.MouseFocusReason)
+        return item
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._drag_start_pos = event.pos()
+            self._select_bound_item()
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if not (event.buttons() & Qt.LeftButton) or self._drag_start_pos is None:
+            super().mouseMoveEvent(event)
+            return
+        if (event.pos() - self._drag_start_pos).manhattanLength() < QApplication.startDragDistance():
+            event.accept()
+            return
+        item = self._select_bound_item()
+        if item is None:
+            self._drag_start_pos = None
+            super().mouseMoveEvent(event)
+            return
+        spec_key = item.data(Qt.UserRole)
+        if not spec_key or spec_key == "__placeholder__":
+            self._drag_start_pos = None
+            event.ignore()
+            return
+        drag = QDrag(self._list_widget)
+        drag.setMimeData(self._list_widget.mimeData([item]))
+        drag.exec_(Qt.MoveAction)
+        self._drag_start_pos = None
+        event.accept()
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._select_bound_item()
+            self._drag_start_pos = None
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    def eventFilter(self, watched, event):
+        if event.type() in (QEvent.MouseButtonPress, QEvent.MouseMove, QEvent.MouseButtonRelease):
+            mapped = QMouseEvent(
+                event.type(),
+                self.mapFromGlobal(watched.mapToGlobal(event.pos())),
+                event.globalPos(),
+                event.button(),
+                event.buttons(),
+                event.modifiers(),
+            )
+            if event.type() == QEvent.MouseButtonPress:
+                self.mousePressEvent(mapped)
+            elif event.type() == QEvent.MouseMove:
+                self.mouseMoveEvent(mapped)
+            else:
+                self.mouseReleaseEvent(mapped)
+            return True
+        return super().eventFilter(watched, event)
 
 
 class _PivotFieldListDelegate(QStyledItemDelegate):
@@ -1195,7 +1274,7 @@ class PivotTableWidget(QWidget):
             self.side_panel.style().polish(self.side_panel)
 
     def _create_area_chip_widget(self, area: str, field_spec: PivotFieldSpec) -> QWidget:
-        row_widget = QWidget()
+        row_widget = _PivotAreaChipContainer(self._area_list(area))
         row_widget.setObjectName("summaryAreaChipRow")
         row_widget.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Fixed)
         row_layout = QHBoxLayout(row_widget)
@@ -1237,8 +1316,28 @@ class PivotTableWidget(QWidget):
         label.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Preferred)
         layout.addWidget(label, 0, Qt.AlignVCenter)
 
+        chip.installEventFilter(row_widget)
+        label.installEventFilter(row_widget)
+
         row_layout.addWidget(chip, 0, Qt.AlignLeft | Qt.AlignVCenter)
-        label.adjustSize()
+        row_widget.ensurePolished()
+        chip.ensurePolished()
+        label.ensurePolished()
+        text_width = label.fontMetrics().horizontalAdvance(field_spec.display_name) + 10
+        label.setMinimumWidth(text_width)
+        label.setMaximumWidth(text_width)
+        chip_width = (
+            layout.contentsMargins().left()
+            + remove_btn.width()
+            + layout.spacing()
+            + text_width
+            + layout.contentsMargins().right()
+            + 6
+        )
+        chip.setMinimumWidth(chip_width)
+        row_widget.setMinimumWidth(chip_width)
+        layout.activate()
+        row_layout.activate()
         chip.adjustSize()
         row_widget.adjustSize()
         return row_widget
@@ -1256,7 +1355,8 @@ class PivotTableWidget(QWidget):
             if spec is None:
                 continue
             widget = self._create_area_chip_widget(area, spec)
-            item.setSizeHint(widget.sizeHint())
+            hint = widget.sizeHint()
+            item.setSizeHint(QSize(hint.width() + 6, hint.height()))
             list_widget.setItemWidget(item, widget)
         list_widget.doItemsLayout()
         list_widget.updateGeometry()

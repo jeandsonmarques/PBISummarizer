@@ -1,14 +1,9 @@
 import os
 from typing import Dict, Optional
 
-from qgis.PyQt.QtCore import Qt, QSize
+from qgis.PyQt.QtCore import QSize, Qt
 from qgis.PyQt.QtGui import QIcon
-from qgis.PyQt.QtWidgets import (
-    QPushButton,
-    QVBoxLayout,
-    QWidget,
-    QToolTip,
-)
+from qgis.PyQt.QtWidgets import QPushButton, QToolTip, QVBoxLayout, QWidget
 
 from .cloud_session import cloud_session
 from .utils.resources import svg_icon
@@ -19,13 +14,15 @@ class SidebarController:
 
     ICON_MAP = {
         "resumo": ("Resumo", "Table.svg"),
-        "relatorios": ("Relatórios", "Report-Builder.svg"),
-        "integracao": ("Integração", "Linked-Entity.svg"),
+        "relatorios": ("Relatorios", "Report-Builder.svg"),
+        "model": ("Model", "Model.svg"),
+        "integracao": ("Integracao", "Linked-Entity.svg"),
     }
 
     PAGE_MAP = {
         "resumo": "pageResultados",
         "relatorios": "pageRelatorios",
+        "model": "pageModel",
         "integracao": "pageIntegracao",
     }
 
@@ -181,6 +178,8 @@ class SidebarController:
                     host.show_summary_prompt()
             elif mode == "relatorios":
                 host.show_reports_page()
+            elif mode == "model":
+                host.show_model_page()
             elif mode == "integracao":
                 host.show_integration_page()
         except Exception:
@@ -193,7 +192,6 @@ class SidebarController:
         except Exception:
             pass
 
-    # Public helpers ---------------------------------------------------
     def show_integration_page(self):
         self._set_mode("integracao")
 
@@ -202,6 +200,9 @@ class SidebarController:
 
     def show_reports_page(self):
         self._set_mode("relatorios")
+
+    def show_model_page(self):
+        self._set_mode("model")
 
     def refresh_styles(self):
         self._refresh_nav_styles()

@@ -244,6 +244,13 @@ class Ui_PowerBISummarizerDialog(object):
 
         self.stackedWidget.addWidget(self.pageRelatorios)
 
+        self.pageModel = QWidget()
+        model_layout = QVBoxLayout(self.pageModel)
+        model_layout.setContentsMargins(0, 0, 0, 0)
+        model_layout.setSpacing(0)
+
+        self.stackedWidget.addWidget(self.pageModel)
+
         self.pageIntegracao = QWidget()
         integracao_layout = QVBoxLayout(self.pageIntegracao)
         integracao_layout.setContentsMargins(0, 0, 0, 0)

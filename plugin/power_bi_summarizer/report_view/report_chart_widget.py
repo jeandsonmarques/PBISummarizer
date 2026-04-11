@@ -65,7 +65,7 @@ class ReportPivotChartWidget(ReportChartWidget):
             category_field = " / ".join(column_fields) if column_fields else "Grupo"
         else:
             category_field = " / ".join(row_fields) if row_fields else "Grupo"
-        return ChartPayload(
+        return ChartPayload.build(
             chart_type="bar",
             title="Tabela dinamica",
             categories=categories,

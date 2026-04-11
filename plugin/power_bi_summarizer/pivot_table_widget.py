@@ -7,14 +7,16 @@ import numpy as np
 import pandas as pd
 from pandas.api import types as ptypes
 from qgis.PyQt.QtCore import QByteArray, QEvent, QItemSelection, QItemSelectionModel, QMimeData, QRect, QRegExp, QSettings, QSize, QTimer, Qt, QSortFilterProxyModel, QVariant
-from qgis.PyQt.QtGui import QDrag, QMouseEvent, QColor, QFont, QIcon, QPainter, QPalette, QPixmap, QStandardItem, QStandardItemModel
+from qgis.PyQt.QtGui import QCursor, QDrag, QMouseEvent, QColor, QFont, QFontMetrics, QIcon, QPainter, QPalette, QPen, QPixmap, QStandardItem, QStandardItemModel
 from qgis.PyQt.QtWidgets import (
     QAbstractItemView,
     QAbstractScrollArea,
     QApplication,
+    QButtonGroup,
     QCheckBox,
     QComboBox,
     QFrame,
+    QGraphicsDropShadowEffect,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
@@ -36,6 +38,7 @@ from qgis.PyQt.QtWidgets import (
     QStyledItemDelegate,
     QTableView,
     QToolButton,
+    QToolTip,
     QVBoxLayout,
     QWidget,
     QFileDialog,
@@ -155,6 +158,36 @@ _TOOLBAR_SVG_ICONS = {
 </svg>""",
     "filter_panel": """<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
 <path d="M4.5 6H19.5L13.5 13.0312V18.75L10.5 17.25V13.0312L4.5 6Z" stroke="__COLOR__" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>""",
+    "source_map": """<svg width="56" height="56" viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M14 18.5L22 14.5L32.5 17.8L42 13.8V37.5L32.5 41.5L22 38.2L14 42.2V18.5Z" stroke="__COLOR__" stroke-width="2" stroke-linejoin="round"/>
+<path d="M22 14.5V38.2" stroke="__COLOR__" stroke-width="2" stroke-linecap="round"/>
+<path d="M32.5 17.8V41.5" stroke="__COLOR__" stroke-width="2" stroke-linecap="round"/>
+</svg>""",
+    "source_sheet": """<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+<rect x="16" y="12" width="32" height="40" rx="7" fill="__ACCENT__" fill-opacity="0.14"/>
+<path d="M23 12H41L48 19V45C48 48.866 44.866 52 41 52H23C19.134 52 16 48.866 16 45V19C16 15.134 19.134 12 23 12Z" stroke="__COLOR__" stroke-width="2.2" stroke-linejoin="round"/>
+<path d="M24 26H40M24 33H40M24 40H40M32 19V47" stroke="__COLOR__" stroke-width="2.2" stroke-linecap="round"/>
+</svg>""",
+    "source_postgres": """<svg width="72" height="72" viewBox="0 0 72 72" fill="none" xmlns="http://www.w3.org/2000/svg">
+<rect x="6" y="6" width="60" height="60" rx="18" fill="#EEF5FF"/>
+<ellipse cx="36" cy="24" rx="14" ry="6" fill="#2F80D7"/>
+<path d="M22 24V42.5C22 45.8137 28.268 48.5 36 48.5C43.732 48.5 50 45.8137 50 42.5V24" fill="#2F80D7" fill-opacity="0.16"/>
+<path d="M22 24V42.5C22 45.8137 28.268 48.5 36 48.5C43.732 48.5 50 45.8137 50 42.5V24" stroke="#2F80D7" stroke-width="1.8"/>
+<ellipse cx="36" cy="24" rx="14" ry="6" stroke="#2F80D7" stroke-width="1.8"/>
+<path d="M22 33.5C22 36.8137 28.268 39.5 36 39.5C43.732 39.5 50 36.8137 50 33.5" stroke="#2F80D7" stroke-width="1.8"/>
+<path d="M22 42.5C22 45.8137 28.268 48.5 36 48.5C43.732 48.5 50 45.8137 50 42.5" stroke="#2F80D7" stroke-width="1.8"/>
+<circle cx="48.5" cy="21.5" r="4.5" fill="#F4C84E"/>
+<path d="M46.5 21.5H50.5" stroke="#7A5800" stroke-width="1.5" stroke-linecap="round"/>
+<path d="M48.5 19.5V23.5" stroke="#7A5800" stroke-width="1.5" stroke-linecap="round"/>
+</svg>""",
+    "source_cloud": """<svg width="56" height="56" viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M18.8 35.4H34.7C38.438 35.4 41.468 32.37 41.468 28.632C41.468 25.204 38.935 22.367 35.632 21.892C34.602 18.055 31.109 15.283 26.923 15.283C21.946 15.283 17.807 19.199 17.529 24.17C14.25 24.829 11.768 27.723 11.768 31.198C11.768 33.534 13.662 35.4 15.971 35.4H18.8Z" stroke="__COLOR__" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M24.5 28H35.5" stroke="__COLOR__" stroke-width="2" stroke-linecap="round"/>
+<path d="M31.6 24.1L35.5 28L31.6 31.9" stroke="__COLOR__" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>""",
+    "back_arrow": """<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M14.5 6L8.5 12L14.5 18" stroke="__COLOR__" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>""",
 }
 
@@ -523,6 +556,107 @@ class _PivotAreaChipContainer(QWidget):
         return super().eventFilter(watched, event)
 
 
+class _SummarySourceCard(QToolButton):
+    def __init__(
+        self,
+        title: str,
+        icon: QIcon,
+        badge_text: Optional[str] = None,
+        tooltip_text: Optional[str] = None,
+        parent=None,
+    ):
+        super().__init__(parent)
+        self.setObjectName("summarySourceCard")
+        self.setCheckable(True)
+        self.setAutoExclusive(False)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.setIcon(icon)
+        self.setIconSize(QSize(24, 24))
+        self.setText(title)
+        self.setFixedSize(244, 62)
+        self.setAutoRaise(False)
+        self.setMouseTracking(True)
+        if tooltip_text:
+            self.setToolTip(tooltip_text)
+        self._hovered = False
+        self._shadow = QGraphicsDropShadowEffect(self)
+        self._shadow.setOffset(0, 4)
+        self.setGraphicsEffect(self._shadow)
+        self._badge = None
+        self.toggled.connect(self._sync_shadow)
+        if badge_text:
+            self._badge = QLabel(badge_text, self)
+            self._badge.setObjectName("summarySourceCardBadge")
+            self._badge.adjustSize()
+        self._sync_shadow()
+
+    def _sync_shadow(self):
+        active = self._hovered or self.isChecked()
+        self._shadow.setBlurRadius(14 if active else 8)
+        self._shadow.setOffset(0, 4 if active else 2)
+        self._shadow.setColor(QColor(15, 23, 42, 10 if active else 5))
+
+    def enterEvent(self, event):
+        self._hovered = True
+        self._sync_shadow()
+        if self.toolTip():
+            QToolTip.showText(QCursor.pos(), self.toolTip(), self)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._hovered = False
+        self._sync_shadow()
+        QToolTip.hideText()
+        super().leaveEvent(event)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self._badge is not None:
+            self._badge.adjustSize()
+            self._badge.move(max(10, self.width() - self._badge.width() - 14), 12)
+
+    def paintEvent(self, event):
+        del event
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        rect = self.rect().adjusted(1, 1, -1, -1)
+        radius = 8
+
+        if self.isDown():
+            fill_color = QColor("#F8FAFC")
+            border_color = QColor(17, 24, 39, 18)
+        elif self.isChecked():
+            fill_color = QColor("#F9FAFB")
+            border_color = QColor(81, 96, 116, 52)
+        elif self._hovered:
+            fill_color = QColor("#FCFCFD")
+            border_color = QColor(17, 24, 39, 24)
+        else:
+            fill_color = QColor("#FFFFFF")
+            border_color = QColor(17, 24, 39, 14)
+
+        painter.setPen(QPen(border_color, 1))
+        painter.setBrush(fill_color)
+        painter.drawRoundedRect(rect, radius, radius)
+
+        icon_rect = QRect(rect.left() + 14, rect.center().y() - 12, 24, 24)
+        icon_mode = QIcon.Selected if self.isChecked() else (QIcon.Active if self._hovered else QIcon.Normal)
+        self.icon().paint(painter, icon_rect, Qt.AlignCenter, mode=icon_mode, state=QIcon.On if self.isChecked() else QIcon.Off)
+
+        text_rect = QRect(icon_rect.right() + 12, rect.top(), rect.width() - icon_rect.right() - 28, rect.height())
+        title_font = QFont(self.font())
+        title_font.setPixelSize(int(TYPOGRAPHY.get("font_body_px", 13)))
+        title_font.setWeight(int(TYPOGRAPHY.get("font_weight_regular", 400)))
+        title_font.setBold(False)
+        painter.setFont(title_font)
+        painter.setPen(QColor("#0F172A"))
+        metrics = QFontMetrics(title_font)
+        title = metrics.elidedText(self.text(), Qt.ElideRight, text_rect.width())
+        painter.drawText(text_rect, Qt.AlignVCenter | Qt.AlignLeft, title)
+
+
 class _PivotFieldListDelegate(QStyledItemDelegate):
     _TEXT_COLOR = QColor("#111827")
     _TEXT_SELECTED_COLOR = QColor("#1d4ed8")
@@ -575,11 +709,12 @@ class PivotTableWidget(QWidget):
 
     EXPORT_FILTERS = "CSV (*.csv);;Excel (*.xlsx);;GeoPackage (*.gpkg)"
 
-    def __init__(self, iface=None, parent=None):
+    def __init__(self, iface=None, parent=None, host=None):
         super().__init__(parent)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setMinimumSize(0, 0)
         self.iface = iface
+        self._host = host
         self.raw_df: pd.DataFrame = pd.DataFrame()
         self.filtered_df: pd.DataFrame = pd.DataFrame()
         self.pivot_df: pd.DataFrame = pd.DataFrame()
@@ -609,6 +744,9 @@ class PivotTableWidget(QWidget):
         self._fields_panel_collapsed = False
         self._filters_panel_collapsed = False
         self._context_in_fields_panel = False
+        self._entry_layer_selection_active = False
+        self._welcome_selected_source: Optional[str] = None
+        self._layer_combo_widget = None
         self._field_specs_by_key: Dict[str, PivotFieldSpec] = {}
         self._saved_configurations: Dict[str, Dict[str, Any]] = {}
         self.pivot_engine = PivotEngine(iface=iface, logger=QgsMessageLog)
@@ -661,6 +799,30 @@ class PivotTableWidget(QWidget):
         self.layer_combo_placeholder.setObjectName("summaryLayerPlaceholder")
         layer_host_layout.addWidget(self.layer_combo_placeholder)
         self.context_layer_row.addWidget(self.layer_combo_host, 1)
+
+        self.back_to_start_btn = QPushButton("Voltar")
+        self.back_to_start_btn.setObjectName("summaryBackButton")
+        self.back_to_start_btn.setCursor(Qt.PointingHandCursor)
+        self.back_to_start_btn.setVisible(False)
+        self.back_to_start_btn.setFixedHeight(30)
+        self.back_to_start_btn.setMinimumWidth(92)
+        self.back_to_start_btn.setFlat(True)
+        self.back_to_start_btn.setIcon(
+            _svg_icon_from_template(
+                _TOOLBAR_SVG_ICONS["back_arrow"],
+                size=14,
+                color_map={
+                    QIcon.Normal: "#64748b",
+                    QIcon.Active: "#111827",
+                    QIcon.Selected: "#111827",
+                    QIcon.Disabled: "#cbd5e1",
+                },
+            )
+        )
+        self.back_to_start_btn.setIconSize(QSize(14, 14))
+        self.back_to_start_btn.setToolTip("Voltar para a tela inicial")
+        self.back_to_start_btn.clicked.connect(self.show_welcome_prompt)
+        self.context_layer_row.addWidget(self.back_to_start_btn, 0, Qt.AlignVCenter)
         self.context_layout.addLayout(self.context_layer_row)
 
         self.meta_label = QLabel("")
@@ -671,15 +833,86 @@ class PivotTableWidget(QWidget):
         self.initial_state_frame = QFrame()
         self.initial_state_frame.setObjectName("summaryInitialState")
         initial_layout = QVBoxLayout(self.initial_state_frame)
-        initial_layout.setContentsMargins(18, 16, 18, 16)
-        initial_layout.setSpacing(6)
-        self.initial_state_title = QLabel("Selecione uma camada para montar o resumo.")
-        self.initial_state_title.setObjectName("summaryEmptyTitle")
-        initial_layout.addWidget(self.initial_state_title)
-        self.initial_state_text = QLabel("A análise aparece depois que uma camada é escolhida.")
-        self.initial_state_text.setObjectName("summaryEmptyText")
+        initial_layout.setContentsMargins(36, 24, 36, 20)
+        initial_layout.setSpacing(0)
+
+        self.initial_welcome_wrap = QWidget(self.initial_state_frame)
+        self.initial_welcome_wrap.setObjectName("summaryWelcomeWrap")
+        self.initial_welcome_wrap.setMinimumWidth(600)
+        self.initial_welcome_wrap.setMaximumWidth(720)
+        self.initial_welcome_wrap.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+        welcome_layout = QVBoxLayout(self.initial_welcome_wrap)
+        welcome_layout.setContentsMargins(0, 0, 0, 0)
+        welcome_layout.setSpacing(12)
+
+        self.initial_state_title = QLabel("Adicionar dados ao seu relatório")
+        self.initial_state_title.setObjectName("summaryWelcomeTitle")
+        self.initial_state_title.setMinimumWidth(600)
+        self.initial_state_title.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.initial_state_title.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        welcome_title_font = QFont(str(TYPOGRAPHY.get("font_family", "Segoe UI")))
+        welcome_title_font.setPixelSize(26)
+        welcome_title_font.setWeight(QFont.DemiBold)
+        self.initial_state_title.setFont(welcome_title_font)
+        welcome_layout.addWidget(self.initial_state_title, 0, Qt.AlignLeft)
+
+        self.initial_state_text = QLabel(
+            "Escolha uma fonte para começar. Os dados carregados serão exibidos no painel Resumo."
+        )
+        self.initial_state_text.setObjectName("summaryWelcomeText")
+        self.initial_state_text.setMinimumWidth(600)
+        self.initial_state_text.setMaximumWidth(720)
+        self.initial_state_text.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.initial_state_text.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.initial_state_text.setWordWrap(True)
-        initial_layout.addWidget(self.initial_state_text)
+        welcome_text_font = QFont(str(TYPOGRAPHY.get("font_family", "Segoe UI")))
+        welcome_text_font.setPixelSize(14)
+        welcome_text_font.setWeight(QFont.Normal)
+        self.initial_state_text.setFont(welcome_text_font)
+        welcome_layout.addWidget(self.initial_state_text, 0, Qt.AlignLeft)
+
+        self.source_cards_host = QWidget(self.initial_welcome_wrap)
+        self.source_cards_host.setObjectName("summarySourceCardsHost")
+        self.source_cards_host.setMinimumWidth(520)
+        self.source_cards_host.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+        source_cards_layout = QHBoxLayout(self.source_cards_host)
+        source_cards_layout.setContentsMargins(0, 12, 0, 0)
+        source_cards_layout.setSpacing(14)
+        source_cards_layout.setAlignment(Qt.AlignLeft)
+
+        self.source_card_group = QButtonGroup(self)
+        self.source_card_group.setExclusive(True)
+        self.source_cards: Dict[str, _SummarySourceCard] = {}
+        source_specs = (
+            ("map", "Camada do mapa", "source_map", "Abrir a camada do mapa e iniciar a edição do Resumo."),
+            ("cloud", "Cloud Beta", "source_cloud", "Acessar a integração cloud em fase beta."),
+        )
+        for key, title, icon_key, tooltip_text in source_specs:
+            icon = _svg_icon_from_template(
+                _TOOLBAR_SVG_ICONS[icon_key],
+                size=36,
+                color_map={
+                    QIcon.Normal: "#64748b",
+                    QIcon.Active: "#2B7DE9" if key == "map" else "#4F8FF0",
+                    QIcon.Selected: "#2B7DE9" if key == "map" else "#4F8FF0",
+                    QIcon.Disabled: "#cbd5e1",
+                },
+            )
+            card = _SummarySourceCard(
+                title,
+                icon,
+                badge_text=None,
+                tooltip_text=tooltip_text,
+                parent=self.source_cards_host,
+            )
+            card.clicked.connect(partial(self._handle_source_card_clicked, key))
+            self.source_card_group.addButton(card)
+            self.source_cards[key] = card
+            source_cards_layout.addWidget(card, 0)
+
+        welcome_layout.addWidget(self.source_cards_host, 0, Qt.AlignLeft)
+
+        initial_layout.addWidget(self.initial_welcome_wrap, 0, Qt.AlignTop | Qt.AlignHCenter)
         initial_layout.addStretch(1)
 
         self.toolbar_frame = QWidget()
@@ -1486,9 +1719,17 @@ class PivotTableWidget(QWidget):
 
     def _place_context_bar(self, in_fields_panel: bool):
         target_in_fields = bool(in_fields_panel)
-        if getattr(self, "_context_in_fields_panel", False) == target_in_fields:
-            return
         if not hasattr(self, "context_bar"):
+            return
+
+        desired_parent = None
+        if target_in_fields and hasattr(self, "fields_context_layout"):
+            desired_parent = self.fields_context_layout.parentWidget()
+        elif hasattr(self, "controls_layout"):
+            desired_parent = self.controls_layout.parentWidget()
+
+        if desired_parent is not None and self.context_bar.parent() is desired_parent:
+            self._context_in_fields_panel = target_in_fields
             return
 
         self.context_bar.setParent(None)
@@ -1634,7 +1875,11 @@ class PivotTableWidget(QWidget):
     def _set_content_mode(self, has_data: bool):
         self._place_context_bar(has_data)
         self.initial_state_frame.setVisible(not has_data)
-        self.context_bar.setVisible(True)
+        show_context = bool(has_data or self._entry_layer_selection_active)
+        self.controls_zone.setVisible(has_data)
+        self.context_bar.setVisible(has_data or self._entry_layer_selection_active)
+        if hasattr(self, "back_to_start_btn"):
+            self.back_to_start_btn.setVisible(has_data or self._entry_layer_selection_active)
         if hasattr(self, "fields_context_card"):
             self.fields_context_card.setVisible(has_data)
         self.toolbar_frame.setVisible(has_data)
@@ -1650,6 +1895,103 @@ class PivotTableWidget(QWidget):
         if has_data:
             self._apply_tools_panels_visibility(not self._tools_panels_hidden)
 
+    def _plugin_host(self):
+        if self._host is not None:
+            return self._host
+        parent = self.parent()
+        while parent is not None:
+            if hasattr(parent, "register_integration_dataframe") or hasattr(parent, "integration_panel"):
+                return parent
+            parent = parent.parent()
+        return None
+
+    def _clear_source_card_selection(self):
+        group = getattr(self, "source_card_group", None)
+        cards = getattr(self, "source_cards", None) or {}
+        if group is not None:
+            group.setExclusive(False)
+        for card in cards.values():
+            card.setChecked(False)
+        if group is not None:
+            group.setExclusive(True)
+        self._welcome_selected_source = None
+
+    def _select_source_card(self, key: Optional[str]):
+        cards = getattr(self, "source_cards", None) or {}
+        if not key or key not in cards:
+            self._clear_source_card_selection()
+            return
+        self._clear_source_card_selection()
+        cards[key].setChecked(True)
+        self._welcome_selected_source = key
+
+    def _handle_source_card_clicked(self, key: str):
+        self._select_source_card(key)
+        self._entry_layer_selection_active = key == "map"
+        if key != "map":
+            self._set_content_mode(False)
+        if key == "map":
+            self._open_map_layer_source()
+        elif key == "sheet":
+            self._open_spreadsheet_source_menu()
+        elif key == "postgres":
+            self._open_postgres_source()
+        elif key == "cloud":
+            self._open_cloud_source()
+
+    def _open_map_layer_source(self):
+        self._entry_layer_selection_active = True
+        self._set_content_mode(False)
+        combo = getattr(self, "_layer_combo_widget", None)
+        if combo is not None:
+            combo.setFocus(Qt.MouseFocusReason)
+            try:
+                QTimer.singleShot(0, combo.showPopup)
+            except Exception:
+                pass
+
+    def _integration_panel(self):
+        host = self._plugin_host()
+        return getattr(host, "integration_panel", None) if host is not None else None
+
+    def _open_spreadsheet_source_menu(self):
+        panel = self._integration_panel()
+        if panel is None:
+            QMessageBox.information(self, "Resumo", "O painel de integração ainda não está disponível.")
+            return
+        menu = QMenu(self)
+        excel_action = menu.addAction("Importar Excel (.xlsx / .xls)")
+        csv_action = menu.addAction("Importar CSV (.csv)")
+        chosen = menu.exec_(self.source_cards["sheet"].mapToGlobal(self.source_cards["sheet"].rect().bottomLeft()))
+        if chosen == excel_action and hasattr(panel, "_handle_excel"):
+            panel._handle_excel()
+        elif chosen == csv_action and hasattr(panel, "_handle_delimited_file"):
+            panel._handle_delimited_file()
+
+    def _open_postgres_source(self):
+        panel = self._integration_panel()
+        if panel is None or not hasattr(panel, "_handle_sql_database"):
+            QMessageBox.information(self, "Resumo", "O fluxo de PostgreSQL não está disponível no momento.")
+            return
+        panel._handle_sql_database()
+
+    def _open_cloud_source(self):
+        host = self._plugin_host()
+        try:
+            from .cloud_dialogs import open_cloud_dialog
+
+            open_cloud_dialog(host or self)
+        except Exception as exc:
+            QMessageBox.information(self, "Cloud Beta", f"Não foi possível abrir a integração cloud.\n{exc}")
+
+    def show_welcome_prompt(self):
+        self._entry_layer_selection_active = False
+        self._clear_source_card_selection()
+        self.show_empty_prompt(
+            "Adicionar dados ao seu relatório",
+            "Escolha uma fonte para começar. Os dados carregados serão exibidos no painel Resumo.",
+        )
+
     def _apply_styles(self):
         tokens = {
             "__FONT_UI_STACK__": str(
@@ -1658,6 +2000,8 @@ class PivotTableWidget(QWidget):
                     '"Segoe UI Variable Text", "Segoe UI", Arial, sans-serif',
                 )
             ),
+            "__FONT_PAGE_TITLE_PX__": str(int(TYPOGRAPHY.get("font_page_title_px", 24))),
+            "__FONT_SECTION_TITLE_PX__": str(int(TYPOGRAPHY.get("font_section_title_px", 16))),
             "__FONT_BODY_PX__": str(int(TYPOGRAPHY.get("font_body_px", 13))),
             "__FONT_SECONDARY_PX__": str(int(TYPOGRAPHY.get("font_secondary_px", 12))),
             "__FONT_CAPTION_PX__": str(int(TYPOGRAPHY.get("font_caption_px", 11))),
@@ -1669,6 +2013,8 @@ class PivotTableWidget(QWidget):
         tokens["__TITLE_PX__"] = str(
             max(int(tokens["__FONT_BODY_PX__"]) + 2, int(tokens["__FONT_SECONDARY_PX__"]) + 3)
         )
+        tokens["__WELCOME_TITLE_PX__"] = str(max(int(tokens["__FONT_PAGE_TITLE_PX__"]) + 8, 30))
+        tokens["__WELCOME_SUBTITLE_PX__"] = str(max(int(tokens["__FONT_BODY_PX__"]) + 4, 16))
         qss = """
             QWidget#summaryPivotRoot {
                 background: #f5f5f7;
@@ -1683,9 +2029,62 @@ class PivotTableWidget(QWidget):
                 border: none;
             }
             #summaryPivotRoot QFrame#summaryInitialState {
-                background: #ffffff;
-                border: 1px solid rgba(17, 24, 39, 0.07);
-                border-radius: 5px;
+                background: transparent;
+                border: none;
+            }
+            #summaryPivotRoot QWidget#summaryWelcomeWrap {
+                background: transparent;
+                border: none;
+                min-width: 780px;
+                max-width: 860px;
+            }
+            #summaryPivotRoot QLabel#summaryWelcomeTitle {
+                color: #111827;
+                font-size: __WELCOME_TITLE_PX__px;
+                font-weight: __FONT_WEIGHT_SEMIBOLD__;
+                letter-spacing: -0.42px;
+            }
+            #summaryPivotRoot QLabel#summaryWelcomeText {
+                color: #475569;
+                font-size: __WELCOME_SUBTITLE_PX__px;
+                font-weight: __FONT_WEIGHT_REGULAR__;
+            }
+            #summaryPivotRoot QFrame#summaryEntrySelectionHost {
+                background: transparent;
+                border: none;
+            }
+            #summaryPivotRoot QWidget#summarySourceCardsHost {
+                background: transparent;
+                border: none;
+            }
+            #summaryPivotRoot QToolButton#summarySourceCard {
+                background: transparent;
+                border: none;
+                padding: 0;
+                color: #111827;
+                font-size: __FONT_BODY_PX__px;
+                font-weight: __FONT_WEIGHT_MEDIUM__;
+                min-height: 92px;
+            }
+            #summaryPivotRoot QToolButton#summarySourceCard:hover {
+                background: transparent;
+                border: none;
+            }
+            #summaryPivotRoot QToolButton#summarySourceCard:checked {
+                background: transparent;
+                border: none;
+            }
+            #summaryPivotRoot QToolButton#summarySourceCard:pressed {
+                background: transparent;
+            }
+            #summaryPivotRoot QLabel#summarySourceCardBadge {
+                background: #F2EEFF;
+                color: #6E56CF;
+                border: 1px solid rgba(139, 124, 246, 0.24);
+                border-radius: 10px;
+                padding: 2px 8px;
+                font-size: __FONT_CAPTION_PX__px;
+                font-weight: __FONT_WEIGHT_SEMIBOLD__;
             }
             #summaryPivotRoot QFrame#summaryTableCard {
                 background: #ffffff;
@@ -1952,6 +2351,20 @@ class PivotTableWidget(QWidget):
                 font-size: __FONT_BUTTON_PX__px;
                 font-weight: __FONT_WEIGHT_REGULAR__;
                 text-align: left;
+            }
+            #summaryPivotRoot QPushButton#summaryBackButton {
+                background: transparent;
+                color: #111827;
+                border: 1px solid transparent;
+                border-radius: 10px;
+                padding: 0 10px;
+                font-size: __FONT_BUTTON_PX__px;
+                font-weight: __FONT_WEIGHT_REGULAR__;
+                text-align: left;
+            }
+            #summaryPivotRoot QPushButton#summaryBackButton:hover {
+                background: rgba(17, 24, 39, 0.045);
+                border-color: rgba(17, 24, 39, 0.08);
             }
             #summaryPivotRoot QPushButton#summarySecondaryButton[iconOnly="true"] {
                 padding: 0px;
@@ -2402,6 +2815,7 @@ class PivotTableWidget(QWidget):
     def set_layer_combo(self, combo: QComboBox):
         if combo is None or not hasattr(self, "layer_combo_host"):
             return
+        self._layer_combo_widget = combo
         layout = self.layer_combo_host.layout()
         while layout.count():
             item = layout.takeAt(0)

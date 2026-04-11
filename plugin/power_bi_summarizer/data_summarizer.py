@@ -54,6 +54,7 @@ from qgis.core import (
 )
 
 from .dashboard_widget import DashboardWidget
+from .model_tab import ModelTab
 from .export_manager import ExportManager
 from .result_style import apply_result_style
 from .ui_main_dialog import Ui_PowerBISummarizerDialog
@@ -252,6 +253,11 @@ class PowerBISummarizerDialog(QDialog):
 
         self.export_manager = ExportManager()
         self.dashboard_widget = DashboardWidget()
+        try:
+            self.dashboard_widget.primary_chart.addToModelRequested.connect(self.handle_add_chart_to_model_request)
+            self.dashboard_widget.secondary_chart.addToModelRequested.connect(self.handle_add_chart_to_model_request)
+        except Exception:
+            pass
         # Inject QuickOSM-like sidebar navigation without altering the ui file
         try:
             self.sidebar = SidebarController(self)
@@ -284,7 +290,7 @@ class PowerBISummarizerDialog(QDialog):
         # Prepare widgets for the Results view
         try:
             layout = self.ui.results_body_layout
-            self.pivot_widget = PivotTableWidget(iface=self.iface, parent=self.ui.results_body)
+            self.pivot_widget = PivotTableWidget(iface=self.iface, parent=self.ui.results_body, host=self)
             self.pivot_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
             layout.addWidget(self.pivot_widget)
             try:
@@ -375,6 +381,26 @@ class PowerBISummarizerDialog(QDialog):
             self.reports_widget = widget
         except Exception:
             self.reports_widget = None
+
+        self.model_tab = None
+        try:
+            layout = self.ui.pageModel.layout()
+            if layout is None:
+                layout = QVBoxLayout(self.ui.pageModel)
+                layout.setContentsMargins(0, 0, 0, 0)
+                layout.setSpacing(0)
+
+            while layout.count():
+                item = layout.takeAt(0)
+                widget = item.widget()
+                if widget is not None:
+                    widget.deleteLater()
+
+            widget = ModelTab(parent=self.ui.pageModel)
+            layout.addWidget(widget)
+            self.model_tab = widget
+        except Exception:
+            self.model_tab = None
 
         self.integration_panel = None
         self.integration_scroll = None
@@ -562,10 +588,7 @@ class PowerBISummarizerDialog(QDialog):
         pivot = getattr(self, "pivot_widget", None)
         if pivot is not None:
             try:
-                pivot.show_empty_prompt(
-                    "Selecione uma camada para começar",
-                    "Escolha a camada principal e monte a tabela dinâmica no construtor à direita.",
-                )
+                pivot.show_welcome_prompt()
                 self._set_results_view("pivot")
                 return
             except Exception:
@@ -626,6 +649,33 @@ class PowerBISummarizerDialog(QDialog):
             self.ui.stackedWidget.setCurrentWidget(self.ui.pageRelatorios)
         except Exception:
             pass
+
+    def show_model_page(self):
+        self._set_ribbon_visible(False)
+        try:
+            self.ui.stackedWidget.setCurrentWidget(self.ui.pageModel)
+        except Exception:
+            pass
+
+    def handle_add_chart_to_model_request(self, snapshot):
+        model_tab = getattr(self, "model_tab", None)
+        if model_tab is None or not snapshot:
+            return
+        added = False
+        try:
+            added = bool(model_tab.prompt_add_chart(dict(snapshot or {})))
+        except Exception as exc:
+            QMessageBox.warning(self, "Model", f"Nao foi possivel adicionar o grafico ao Model: {exc}")
+            return
+        if not added:
+            return
+        try:
+            if getattr(self, "sidebar", None) is not None:
+                self.sidebar.show_model_page()
+            else:
+                self.show_model_page()
+        except Exception:
+            self.show_model_page()
 
     def open_get_data_dialog(self):
         dialog = GetDataDialog(self, self)
@@ -2136,6 +2186,7 @@ class PowerBISummarizerDialog(QDialog):
             if hasattr(pivot_widget, "get_current_pivot_result"):
                 pivot_result = pivot_widget.get_current_pivot_result()
             pivot_df = pivot_widget.get_visible_pivot_dataframe()
+            raw_df = getattr(pivot_widget, "raw_df", None)
             metadata = pivot_widget.get_summary_metadata()
             config = pivot_widget.get_current_configuration()
         except Exception as exc:
@@ -2146,7 +2197,9 @@ class PowerBISummarizerDialog(QDialog):
             )
             return
 
-        if pivot_result is not None and hasattr(self.dashboard_widget, "set_pivot_result"):
+        if raw_df is not None and not getattr(raw_df, "empty", True):
+            self.dashboard_widget.set_pivot_data(raw_df, metadata, config)
+        elif pivot_result is not None and hasattr(self.dashboard_widget, "set_pivot_result"):
             self.dashboard_widget.set_pivot_result(pivot_result)
         else:
             self.dashboard_widget.set_pivot_data(pivot_df, metadata, config)

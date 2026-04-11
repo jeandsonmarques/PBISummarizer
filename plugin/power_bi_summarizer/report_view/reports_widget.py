@@ -626,6 +626,7 @@ class AssistantMessageWidget(QWidget):
         visual_result_callback=None,
         filter_choice_callback=None,
         select_map_callback=None,
+        model_add_callback=None,
         parent=None,
     ):
         super().__init__(parent)
@@ -636,6 +637,7 @@ class AssistantMessageWidget(QWidget):
         self.visual_result_callback = visual_result_callback
         self.filter_choice_callback = filter_choice_callback
         self.select_map_callback = select_map_callback
+        self.model_add_callback = model_add_callback
         self.current_question = ""
         self.current_result: Optional[QueryResult] = None
         self.current_plan: Optional[QueryPlan] = None
@@ -855,6 +857,21 @@ class AssistantMessageWidget(QWidget):
             chart_widget.setMinimumHeight(240)
             chart_widget.setMaximumHeight(340)
             chart_widget.set_payload(result.chart_payload)
+            chart_widget.set_chart_context(
+                {
+                    "origin": "reports",
+                    "title": result.chart_payload.title,
+                    "subtitle": helper_text,
+                    "filters": [item.to_dict() for item in list((result.plan.filters if result.plan is not None else []) or [])],
+                    "source_meta": {
+                        "summary": result.summary.text,
+                        "value_label": result.value_label,
+                        "plan": result.plan.to_dict() if result.plan is not None else {},
+                    },
+                }
+            )
+            if self.model_add_callback is not None:
+                chart_widget.addToModelRequested.connect(self.model_add_callback)
             chart_layout.addWidget(chart_widget)
             self.content_layout.addWidget(chart_shell)
 
@@ -1856,6 +1873,7 @@ class ReportsWidget(QWidget):
             self._show_visual_result,
             self._apply_filter_choice,
             self._select_result_on_map,
+            self.plugin.handle_add_chart_to_model_request if self.plugin is not None and hasattr(self.plugin, "handle_add_chart_to_model_request") else None,
             self.history_viewport,
         )
         self._append_history_widget(response_widget)

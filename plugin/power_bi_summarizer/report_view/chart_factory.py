@@ -3,7 +3,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from qgis.PyQt.QtCore import QPointF, QRectF, Qt
+from qgis.PyQt.QtCore import QPointF, QRectF, Qt, pyqtSignal
 from qgis.PyQt.QtGui import QColor, QFont, QFontMetrics, QIcon, QPainter, QPainterPath, QPen
 from qgis.PyQt.QtWidgets import (
     QAction,
@@ -79,7 +79,7 @@ class ChartFactory:
             elif plan.boundary_layer_id:
                 selection_layer_id = plan.boundary_layer_id
                 selection_layer_name = plan.boundary_layer_name or ""
-        return ChartPayload(
+        return ChartPayload.build(
             chart_type=self._choose_chart_type(result),
             title=result.plan.chart.title if result.plan is not None else "Relatório",
             categories=[row.category for row in rows],
@@ -105,6 +105,9 @@ class ChartFactory:
 
 
 class ReportChartWidget(QWidget):
+    selectionChanged = pyqtSignal(object)
+    addToModelRequested = pyqtSignal(object)
+
     TYPE_LABELS: Dict[str, str] = {
         "bar": "Barras",
         "barh": "Barras horizontais",
@@ -138,7 +141,9 @@ class ReportChartWidget(QWidget):
         self.chart_state = ChartVisualState()
         self._interactive_regions: List[Dict[str, object]] = []
         self._active_category_keys: List[str] = []
+        self._selected_category_key: str = ""
         self._filtered_category_key: str = ""
+        self._chart_context: Dict[str, Any] = {}
         self.setMinimumHeight(280)
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -151,8 +156,76 @@ class ReportChartWidget(QWidget):
             self._empty_text = empty_text
         self.chart_state = self._default_visual_state(payload)
         self._active_category_keys = []
+        self._selected_category_key = ""
         self._filtered_category_key = ""
         self._rerender_chart()
+
+    def set_selected_category(self, category_key: Optional[str], *, emit_signal: bool = False):
+        normalized_key = str(category_key or "").strip()
+        self._selected_category_key = normalized_key
+        self._active_category_keys = [normalized_key] if normalized_key else []
+        if not normalized_key:
+            self._filtered_category_key = ""
+        if emit_signal:
+            if normalized_key:
+                payload = self._selection_payload_from_key(normalized_key)
+                self.selectionChanged.emit(payload or {"key": normalized_key})
+            else:
+                self.selectionChanged.emit(None)
+        self._rerender_chart()
+
+    def clear_selection(self, *, emit_signal: bool = False):
+        self._selected_category_key = ""
+        self._active_category_keys = []
+        self._filtered_category_key = ""
+        if emit_signal:
+            self.selectionChanged.emit(None)
+        self._rerender_chart()
+
+    def set_chart_context(self, context: Optional[Dict[str, Any]] = None):
+        self._chart_context = dict(context or {})
+
+    def build_model_snapshot(self) -> Dict[str, Any]:
+        payload = self._payload
+        if payload is None:
+            return {}
+        return {
+            "origin": str(self._chart_context.get("origin") or "unknown"),
+            "payload": {
+                "chart_type": str(payload.chart_type or "bar"),
+                "title": str(payload.title or ""),
+                "categories": [str(item) for item in list(payload.categories or [])],
+                "values": [float(item) for item in list(payload.values or [])],
+                "value_label": str(payload.value_label or "Valor"),
+                "truncated": bool(payload.truncated),
+                "selection_layer_id": payload.selection_layer_id,
+                "selection_layer_name": str(payload.selection_layer_name or ""),
+                "category_field": str(payload.category_field or ""),
+                "raw_categories": list(payload.raw_categories or []),
+                "category_feature_ids": list(payload.category_feature_ids or []),
+            },
+            "visual_state": {
+                "chart_type": str(self.chart_state.chart_type or "bar"),
+                "palette": str(self.chart_state.palette or "purple"),
+                "show_legend": bool(self.chart_state.show_legend),
+                "show_values": bool(self.chart_state.show_values),
+                "show_percent": bool(self.chart_state.show_percent),
+                "show_grid": bool(self.chart_state.show_grid),
+                "sort_mode": str(self.chart_state.sort_mode or "default"),
+                "title_override": str(self.chart_state.title_override or ""),
+                "legend_label_override": str(self.chart_state.legend_label_override or ""),
+                "legend_item_overrides": dict(self.chart_state.legend_item_overrides or {}),
+            },
+            "title": str(
+                self._chart_context.get("title")
+                or self.chart_state.title_override
+                or payload.title
+                or "Grafico"
+            ),
+            "subtitle": str(self._chart_context.get("subtitle") or ""),
+            "filters": list(self._chart_context.get("filters") or []),
+            "source_meta": dict(self._chart_context.get("source_meta") or {}),
+        }
 
     def _default_visual_state(self, payload: Optional[ChartPayload]) -> ChartVisualState:
         chart_type = self._normalize_chart_type(getattr(payload, "chart_type", "bar"))
@@ -276,6 +349,11 @@ class ReportChartWidget(QWidget):
         copy_action.setEnabled(self._payload is not None)
         copy_action.triggered.connect(self._copy_chart_image)
         menu.addAction(copy_action)
+
+        add_to_model_action = QAction("Adicionar ao Model", menu)
+        add_to_model_action.setEnabled(self._payload is not None)
+        add_to_model_action.triggered.connect(self._emit_add_to_model_request)
+        menu.addAction(add_to_model_action)
 
         menu.exec_(global_pos)
 
@@ -462,6 +540,7 @@ class ReportChartWidget(QWidget):
     def _reset_chart_style(self):
         self.chart_state = self._default_visual_state(self._payload)
         self._active_category_keys = []
+        self._selected_category_key = ""
         self._filtered_category_key = ""
         self._ensure_visual_state_compatibility()
         self._rerender_chart()
@@ -490,6 +569,12 @@ class ReportChartWidget(QWidget):
                 clipboard.setPixmap(self.grab())
         except Exception:
             return
+
+    def _emit_add_to_model_request(self):
+        snapshot = self.build_model_snapshot()
+        if not snapshot:
+            return
+        self.addToModelRequested.emit(snapshot)
 
     def _rerender_chart(self):
         self._ensure_visual_state_compatibility()
@@ -573,8 +658,14 @@ class ReportChartWidget(QWidget):
         if getattr(event, "button", lambda: None)() == Qt.LeftButton:
             target = self._interactive_target_at(self._event_point(event))
             if target is not None and str(target.get("target_type") or "") == "data_point":
-                additive = bool(getattr(event, "modifiers", lambda: Qt.NoModifier)() & Qt.ControlModifier)
-                self._activate_category_target(target, additive=additive, zoom=False)
+                self._activate_category_target(target, zoom=False)
+                try:
+                    event.accept()
+                except Exception:
+                    pass
+                return
+            if target is None and (self._selected_category_key or self._active_category_keys or self._filtered_category_key):
+                self._clear_chart_selection_feedback(emit_signal=True)
                 try:
                     event.accept()
                 except Exception:
@@ -586,8 +677,7 @@ class ReportChartWidget(QWidget):
         if getattr(event, "button", lambda: None)() == Qt.LeftButton:
             target = self._interactive_target_at(self._event_point(event))
             if target is not None and str(target.get("target_type") or "") == "data_point":
-                additive = bool(getattr(event, "modifiers", lambda: Qt.NoModifier)() & Qt.ControlModifier)
-                self._activate_category_target(target, additive=additive, zoom=True)
+                self._activate_category_target(target, zoom=True)
                 try:
                     event.accept()
                 except Exception:
@@ -660,6 +750,39 @@ class ReportChartWidget(QWidget):
             return ""
         return str(raw_category)
 
+    def _render_payload_items(self) -> List[Dict[str, object]]:
+        if self._payload is None or not self._payload.categories:
+            return []
+
+        raw_categories = list(getattr(self._payload, "raw_categories", []) or [])
+        feature_ids_matrix = list(getattr(self._payload, "category_feature_ids", []) or [])
+        items: List[Dict[str, object]] = []
+        for index, (category, value) in enumerate(zip(self._payload.categories, self._payload.values)):
+            try:
+                numeric_value = float(value)
+            except Exception:
+                numeric_value = 0.0
+            raw_category = raw_categories[index] if index < len(raw_categories) else category
+            feature_ids = feature_ids_matrix[index] if index < len(feature_ids_matrix) else []
+            items.append(
+                {
+                    "category": str(category),
+                    "value": numeric_value,
+                    "raw_category": raw_category,
+                    "key": self._category_key(raw_category),
+                    "feature_ids": [int(fid) for fid in list(feature_ids or []) if fid is not None],
+                }
+            )
+        return items
+
+    def _selection_payload_from_key(self, category_key: str) -> Optional[Dict[str, object]]:
+        if not category_key:
+            return None
+        for item in self._render_payload_items():
+            if str(item.get("key") or "") == category_key:
+                return dict(item)
+        return None
+
     def _selection_layer(self) -> Optional[QgsVectorLayer]:
         layer_id = getattr(self._payload, "selection_layer_id", None)
         if not layer_id:
@@ -671,7 +794,7 @@ class ReportChartWidget(QWidget):
 
     def _is_category_active(self, raw_category: Any) -> bool:
         key = self._category_key(raw_category)
-        return bool(key) and key in self._active_category_keys
+        return bool(key) and (key == self._selected_category_key or key in self._active_category_keys)
 
     def _supports_map_selection(self, target: Dict[str, object]) -> bool:
         feature_ids = [int(fid) for fid in list(target.get("feature_ids") or []) if fid is not None]
@@ -797,17 +920,19 @@ class ReportChartWidget(QWidget):
             pass
         return True
 
-    def _activate_category_target(self, target: Dict[str, object], additive: bool = False, zoom: bool = False):
+    def _activate_category_target(self, target: Dict[str, object], zoom: bool = False):
         category_key = str(target.get("key") or "")
-        if category_key:
-            if additive:
-                if category_key not in self._active_category_keys:
-                    self._active_category_keys.append(category_key)
-            else:
-                self._active_category_keys = [category_key]
-        selection_ok = self._apply_category_selection(target, additive=additive, zoom=zoom)
-        if not selection_ok and not additive and category_key:
-            self._active_category_keys = [category_key]
+        if not category_key:
+            self._clear_chart_selection_feedback(emit_signal=True)
+            return
+        if category_key == self._selected_category_key:
+            self._clear_chart_selection_feedback(emit_signal=True)
+            return
+        self._selected_category_key = category_key
+        self._active_category_keys = [category_key]
+        self._filtered_category_key = ""
+        self.selectionChanged.emit(self._selection_payload_from_key(category_key) or dict(target))
+        self._apply_category_selection(target, zoom=zoom)
         self._rerender_chart()
 
     def _filter_chart_to_category(self, target: Dict[str, object]):
@@ -815,15 +940,27 @@ class ReportChartWidget(QWidget):
         if not category_key:
             return
         self._filtered_category_key = category_key
+        self._selected_category_key = category_key
         self._active_category_keys = [category_key]
+        self.selectionChanged.emit(self._selection_payload_from_key(category_key) or dict(target))
         self._rerender_chart()
 
     def _clear_chart_filter(self):
         self._filtered_category_key = ""
         self._rerender_chart()
 
-    def _clear_chart_selection_feedback(self):
+    def _clear_chart_selection_feedback(self, emit_signal: bool = False):
+        self._selected_category_key = ""
         self._active_category_keys = []
+        self._filtered_category_key = ""
+        try:
+            layer = self._selection_layer()
+            if layer is not None:
+                layer.removeSelection()
+        except Exception:
+            pass
+        if emit_signal:
+            self.selectionChanged.emit(None)
         self._rerender_chart()
 
     def _copy_category_value(self, target: Dict[str, object]):
@@ -847,12 +984,12 @@ class ReportChartWidget(QWidget):
 
         select_action = QAction("Selecionar no mapa", menu)
         select_action.setEnabled(can_select)
-        select_action.triggered.connect(lambda checked=False: self._activate_category_target(target, additive=False, zoom=False))
+        select_action.triggered.connect(lambda checked=False: self._activate_category_target(target, zoom=False))
         menu.addAction(select_action)
 
         zoom_action = QAction("Zoom na seleção", menu)
         zoom_action.setEnabled(can_select)
-        zoom_action.triggered.connect(lambda checked=False: self._activate_category_target(target, additive=False, zoom=True))
+        zoom_action.triggered.connect(lambda checked=False: self._activate_category_target(target, zoom=True))
         menu.addAction(zoom_action)
 
         filter_action = QAction("Filtrar por esta categoria", menu)
@@ -868,9 +1005,9 @@ class ReportChartWidget(QWidget):
             clear_filter_action.triggered.connect(self._clear_chart_filter)
             menu.addAction(clear_filter_action)
 
-        if self._active_category_keys:
+        if self._active_category_keys or self._selected_category_key:
             clear_selection_action = QAction("Limpar destaque do gráfico", menu)
-            clear_selection_action.triggered.connect(self._clear_chart_selection_feedback)
+            clear_selection_action.triggered.connect(lambda checked=False: self._clear_chart_selection_feedback(emit_signal=True))
             menu.addAction(clear_selection_action)
 
         menu.exec_(global_pos)

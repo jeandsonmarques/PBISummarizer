@@ -292,6 +292,49 @@ class ChartPayload:
     raw_categories: List[Any] = field(default_factory=list)
     category_feature_ids: List[List[int]] = field(default_factory=list)
 
+    @classmethod
+    def build(
+        cls,
+        *,
+        chart_type: str,
+        title: str,
+        categories: List[Any],
+        values: List[Any],
+        value_label: str = "Valor",
+        truncated: bool = False,
+        selection_layer_id: Optional[str] = None,
+        selection_layer_name: str = "",
+        category_field: str = "",
+        raw_categories: Optional[List[Any]] = None,
+        category_feature_ids: Optional[List[List[int]]] = None,
+    ) -> "ChartPayload":
+        normalized_categories = [str(item) for item in (categories or [])]
+        normalized_values: List[float] = []
+        for value in values or []:
+            try:
+                normalized_values.append(float(value))
+            except Exception:
+                normalized_values.append(0.0)
+
+        normalized_raw_categories = list(raw_categories) if raw_categories is not None else list(categories or [])
+        normalized_feature_groups = [list(group or []) for group in (category_feature_ids or [])]
+        while len(normalized_feature_groups) < len(normalized_categories):
+            normalized_feature_groups.append([])
+
+        return cls(
+            chart_type=str(chart_type or "bar"),
+            title=str(title or ""),
+            categories=normalized_categories,
+            values=normalized_values,
+            value_label=str(value_label or "Valor"),
+            truncated=bool(truncated),
+            selection_layer_id=selection_layer_id,
+            selection_layer_name=str(selection_layer_name or ""),
+            category_field=str(category_field or ""),
+            raw_categories=normalized_raw_categories,
+            category_feature_ids=normalized_feature_groups,
+        )
+
 
 @dataclass
 class QueryResult:

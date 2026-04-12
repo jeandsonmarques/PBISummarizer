@@ -91,7 +91,17 @@ class DashboardAddDialog(QDialog):
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, Qt.Horizontal, self)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
+        self.ok_button = buttons.button(QDialogButtonBox.Ok)
+        self.cancel_button = buttons.button(QDialogButtonBox.Cancel)
+        if self.ok_button is not None:
+            self.ok_button.setObjectName("ModelDialogPrimaryButton")
+        if self.cancel_button is not None:
+            self.cancel_button.setObjectName("ModelDialogSecondaryButton")
         layout.addWidget(buttons)
+
+        self.choose_file_btn.setObjectName("ModelDialogSecondaryButton")
+        self.new_name_edit.setObjectName("ModelDialogLineEdit")
+        options_card.setObjectName("ModelDialogOptionsCard")
 
         self.choose_file_btn.clicked.connect(self._select_recent_path)
         self.current_radio.toggled.connect(self._sync_enabled_state)
@@ -104,6 +114,51 @@ class DashboardAddDialog(QDialog):
             self.new_radio.setChecked(True)
             self.new_name_edit.setText("Novo painel")
         self._sync_enabled_state()
+
+        self.setStyleSheet(
+            """
+            QDialog {
+                background: #FFFFFF;
+            }
+            QFrame#ModelDialogOptionsCard {
+                background: #FFFFFF;
+                border: 1px solid #E5E7EB;
+                border-radius: 14px;
+            }
+            QLabel {
+                color: #1F2937;
+                font-weight: 400;
+            }
+            QLineEdit#ModelDialogLineEdit {
+                min-height: 36px;
+                padding: 0 10px;
+                background: #FFFFFF;
+                color: #1F2937;
+                border: 1px solid #D1D5DB;
+                border-radius: 10px;
+            }
+            QPushButton#ModelDialogPrimaryButton,
+            QPushButton#ModelDialogSecondaryButton {
+                min-height: 36px;
+                padding: 0 14px;
+                color: #374151;
+                background: #FFFFFF;
+                border: 1px solid #D1D5DB;
+                border-radius: 10px;
+                font-weight: 400;
+            }
+            QPushButton#ModelDialogPrimaryButton:hover,
+            QPushButton#ModelDialogSecondaryButton:hover {
+                background: #F9FAFB;
+                border-color: #9CA3AF;
+            }
+            QPushButton#ModelDialogPrimaryButton {
+                background: #EEF2FF;
+                border-color: #A5B4FC;
+                color: #3730A3;
+            }
+            """
+        )
 
     def _recent_hint_text(self) -> str:
         if not self._recent_projects:

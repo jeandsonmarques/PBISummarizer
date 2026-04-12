@@ -84,28 +84,74 @@ def deserialize_chart_visual_state(data: Optional[Dict[str, Any]]) -> ChartVisua
 
 @dataclass
 class DashboardItemLayout:
+    x: int = 24
+    y: int = 24
+    width: int = 520
+    height: int = 340
     row: int = 0
     col: int = 0
     col_span: int = 2
     row_span: int = 1
 
+    def normalized(self) -> "DashboardItemLayout":
+        width = max(260, int(self.width or 520))
+        height = max(220, int(self.height or 340))
+        return DashboardItemLayout(
+            x=max(0, int(self.x or 0)),
+            y=max(0, int(self.y or 0)),
+            width=width,
+            height=height,
+            row=max(0, int(self.row or 0)),
+            col=max(0, int(self.col or 0)),
+            col_span=max(1, int(self.col_span or 1)),
+            row_span=max(1, int(self.row_span or 1)),
+        )
+
     def to_dict(self) -> Dict[str, Any]:
+        normalized = self.normalized()
         return {
-            "row": int(self.row),
-            "col": int(self.col),
-            "col_span": int(max(1, self.col_span)),
-            "row_span": int(max(1, self.row_span)),
+            "x": int(normalized.x),
+            "y": int(normalized.y),
+            "width": int(normalized.width),
+            "height": int(normalized.height),
+            "row": int(normalized.row),
+            "col": int(normalized.col),
+            "col_span": int(normalized.col_span),
+            "row_span": int(normalized.row_span),
         }
 
     @classmethod
     def from_dict(cls, data: Optional[Dict[str, Any]]) -> "DashboardItemLayout":
         payload = dict(data or {})
+        row = int(payload.get("row", 0) or 0)
+        col = int(payload.get("col", 0) or 0)
+        col_span = int(payload.get("col_span", 2) or 2)
+        row_span = int(payload.get("row_span", 1) or 1)
+
+        x = payload.get("x")
+        y = payload.get("y")
+        width = payload.get("width")
+        height = payload.get("height")
+
+        if x is None:
+            x = 24 + max(0, col) * 294
+        if y is None:
+            y = 24 + max(0, row) * 336
+        if width is None:
+            width = 278 * max(1, col_span) + 16 * max(0, max(1, col_span) - 1)
+        if height is None:
+            height = 320 * max(1, row_span) + 16 * max(0, max(1, row_span) - 1)
+
         return cls(
-            row=int(payload.get("row", 0) or 0),
-            col=int(payload.get("col", 0) or 0),
-            col_span=int(payload.get("col_span", 2) or 2),
-            row_span=int(payload.get("row_span", 1) or 1),
-        )
+            x=int(x or 24),
+            y=int(y or 24),
+            width=int(width or 520),
+            height=int(height or 340),
+            row=row,
+            col=col,
+            col_span=col_span,
+            row_span=row_span,
+        ).normalized()
 
 
 @dataclass
@@ -123,6 +169,7 @@ class DashboardChartItem:
 
     @classmethod
     def from_chart_snapshot(cls, snapshot: Dict[str, Any]) -> "DashboardChartItem":
+        layout = DashboardItemLayout.from_dict(snapshot.get("layout"))
         return cls(
             item_id=str(snapshot.get("item_id") or uuid.uuid4().hex),
             origin=str(snapshot.get("origin") or "unknown"),
@@ -132,7 +179,7 @@ class DashboardChartItem:
             subtitle=str(snapshot.get("subtitle") or ""),
             filters=[dict(item or {}) for item in list(snapshot.get("filters") or [])],
             source_meta=dict(snapshot.get("source_meta") or {}),
-            layout=DashboardItemLayout.from_dict(snapshot.get("layout")),
+            layout=layout,
         )
 
     def clone(self) -> "DashboardChartItem":
@@ -207,7 +254,7 @@ class DashboardProject:
             edit_mode=bool(payload.get("edit_mode", True)),
             source_meta=dict(payload.get("source_meta") or {}),
         )
-        project.items.sort(key=lambda item: (item.layout.row, item.layout.col, item.created_at))
+        project.items.sort(key=lambda item: (item.layout.y, item.layout.x, item.created_at))
         return project
 
     def copy(self) -> "DashboardProject":

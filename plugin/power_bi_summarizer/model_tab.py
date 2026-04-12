@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from typing import Dict, List, Optional
 
-from qgis.PyQt.QtCore import Qt
+from qgis.PyQt.QtCore import Qt, pyqtSignal
 from qgis.PyQt.QtWidgets import (
     QFileDialog,
     QFrame,
@@ -20,6 +20,72 @@ from .dashboard_add_dialog import DashboardAddDialog
 from .dashboard_canvas import DashboardCanvas
 from .dashboard_models import DashboardChartItem, DashboardProject
 from .dashboard_project_store import DashboardProjectStore, PROJECT_EXTENSION
+
+
+class _ModelCardAction(QFrame):
+    clicked = pyqtSignal()
+
+    def __init__(self, title: str, description: str, parent=None):
+        super().__init__(parent)
+        self.setObjectName("ModelActionCard")
+        self.setCursor(Qt.PointingHandCursor)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(18, 16, 18, 16)
+        layout.setSpacing(8)
+
+        self.title_label = QLabel(title, self)
+        self.title_label.setObjectName("ModelActionCardTitle")
+        self.title_label.setWordWrap(True)
+        layout.addWidget(self.title_label)
+
+        self.description_label = QLabel(description, self)
+        self.description_label.setObjectName("ModelActionCardText")
+        self.description_label.setWordWrap(True)
+        layout.addWidget(self.description_label)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.clicked.emit()
+            try:
+                event.accept()
+            except Exception:
+                pass
+            return
+        super().mouseReleaseEvent(event)
+
+
+class _ModelRecentCard(QFrame):
+    clicked = pyqtSignal()
+
+    def __init__(self, title: str, description: str, parent=None):
+        super().__init__(parent)
+        self.setObjectName("ModelRecentCard")
+        self.setCursor(Qt.PointingHandCursor)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(6)
+
+        title_label = QLabel(title, self)
+        title_label.setObjectName("ModelRecentCardTitle")
+        title_label.setWordWrap(True)
+        layout.addWidget(title_label)
+
+        text_label = QLabel(description, self)
+        text_label.setObjectName("ModelRecentCardText")
+        text_label.setWordWrap(True)
+        layout.addWidget(text_label)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.clicked.emit()
+            try:
+                event.accept()
+            except Exception:
+                pass
+            return
+        super().mouseReleaseEvent(event)
 
 
 class ModelTab(QWidget):
@@ -70,6 +136,7 @@ class ModelTab(QWidget):
             self.export_btn,
             self.edit_mode_btn,
         ):
+            button.setObjectName("ModelToolbarButton")
             top_row.addWidget(button, 0)
         header_layout.addLayout(top_row)
 
@@ -197,9 +264,46 @@ class ModelTab(QWidget):
                 font-size: 15px;
                 font-weight: 600;
             }
-            QPushButton {
+            QPushButton#ModelToolbarButton {
                 min-height: 34px;
                 padding: 0 12px;
+                color: #374151;
+                background: #FFFFFF;
+                border: 1px solid #D1D5DB;
+                border-radius: 10px;
+                font-weight: 400;
+            }
+            QPushButton#ModelToolbarButton:hover {
+                background: #F9FAFB;
+                border-color: #9CA3AF;
+            }
+            QPushButton#ModelToolbarButton:checked {
+                background: #EEF2FF;
+                border-color: #818CF8;
+                color: #3730A3;
+            }
+            QFrame#ModelActionCard,
+            QFrame#ModelRecentCard {
+                background: #FFFFFF;
+                border: 1px solid #E5E7EB;
+                border-radius: 14px;
+            }
+            QFrame#ModelActionCard:hover,
+            QFrame#ModelRecentCard:hover {
+                background: #F9FAFB;
+                border-color: #CBD5E1;
+            }
+            QLabel#ModelActionCardTitle,
+            QLabel#ModelRecentCardTitle {
+                color: #111827;
+                font-size: 13px;
+                font-weight: 400;
+            }
+            QLabel#ModelActionCardText,
+            QLabel#ModelRecentCardText {
+                color: #6B7280;
+                font-size: 12px;
+                font-weight: 400;
             }
             """
         )
@@ -207,11 +311,10 @@ class ModelTab(QWidget):
         self._refresh_recents()
         self._refresh_ui_state()
 
-    def _build_action_card(self, title: str, description: str) -> QPushButton:
-        button = QPushButton(f"{title}\n{description}")
-        button.setObjectName("ModelActionCardButton")
-        button.setMinimumHeight(120)
-        return button
+    def _build_action_card(self, title: str, description: str) -> QWidget:
+        card = _ModelCardAction(title, description, self)
+        card.setMinimumHeight(120)
+        return card
 
     def current_project_name(self) -> str:
         if self.current_project is None:
@@ -375,10 +478,10 @@ class ModelTab(QWidget):
         for recent in recents:
             path = str(recent.get("path") or "")
             name = str(recent.get("name") or os.path.splitext(os.path.basename(path))[0])
-            button = QPushButton(f"{name}\n{path}")
-            button.setMinimumHeight(68)
-            button.clicked.connect(lambda checked=False, selected_path=path: self.open_project(selected_path))
-            self.recents_layout.addWidget(button)
+            card = _ModelRecentCard(name, path, self.recents_container)
+            card.setMinimumHeight(68)
+            card.clicked.connect(lambda selected_path=path: self.open_project(selected_path))
+            self.recents_layout.addWidget(card)
         self.recents_layout.addStretch(1)
 
     def _refresh_ui_state(self):
@@ -394,7 +497,7 @@ class ModelTab(QWidget):
             )
         elif has_items:
             self.project_hint_label.setText(
-                "Arraste os cards para reorganizar. Use os controles de largura e altura para ajustar o layout."
+                "Arraste livremente pelo cabecalho para posicionar. Redimensione pelos lados e cantos, como em um canvas."
             )
         else:
             self.project_hint_label.setText(

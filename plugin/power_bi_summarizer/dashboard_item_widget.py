@@ -7,11 +7,13 @@ from qgis.PyQt.QtGui import QColor, QPainter, QPen
 from qgis.PyQt.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from .dashboard_models import DashboardChartBinding, DashboardChartItem
+from .slim_dialogs import slim_get_text
 from .report_view.chart_factory import ReportChartWidget
 
 
 class DashboardItemWidget(QFrame):
     removeRequested = pyqtSignal(str)
+    itemChanged = pyqtSignal()
     selectionChanged = pyqtSignal(object)
     dragStarted = pyqtSignal(str, object)
     dragMoved = pyqtSignal(str, object)
@@ -43,8 +45,8 @@ class DashboardItemWidget(QFrame):
         self.card = QFrame(self)
         self.card.setObjectName("ModelDashboardCard")
         card_layout = QVBoxLayout(self.card)
-        card_layout.setContentsMargins(14, 12, 14, 12)
-        card_layout.setSpacing(10)
+        card_layout.setContentsMargins(4, 4, 4, 4)
+        card_layout.setSpacing(3)
         root.addWidget(self.card, 1)
 
         self.header = QFrame(self.card)
@@ -59,9 +61,11 @@ class DashboardItemWidget(QFrame):
 
         title_column = QVBoxLayout()
         title_column.setContentsMargins(0, 0, 0, 0)
-        title_column.setSpacing(2)
+        title_column.setSpacing(1)
         self.title_label = QLabel("", self.header)
         self.title_label.setObjectName("ModelDashboardItemTitle")
+        self.title_label.setCursor(Qt.PointingHandCursor)
+        self.title_label.setToolTip("Duplo clique para renomear")
         title_column.addWidget(self.title_label)
         self.subtitle_label = QLabel("", self.header)
         self.subtitle_label.setObjectName("ModelDashboardItemSubtitle")
@@ -79,6 +83,7 @@ class DashboardItemWidget(QFrame):
 
         self.chart_widget = ReportChartWidget(self.card)
         self.chart_widget.setMinimumSize(220, 180)
+        self.chart_widget.set_embedded_mode(True)
         self.chart_widget.selectionChanged.connect(self._handle_chart_selection)
         card_layout.addWidget(self.chart_widget, 1)
 
@@ -209,6 +214,7 @@ class DashboardItemWidget(QFrame):
         self.chart_widget.set_payload(self._item.payload)
         self.chart_widget.chart_state = self._item.visual_state
         self.chart_widget.set_external_filters(self._external_filters)
+        self.chart_widget.set_embedded_mode(True)
         self.chart_widget.clear_selection(emit_signal=False)
         self.chart_widget.update()
         self.footer_label.setText(f"{self._item.origin} | {layout.width}x{layout.height}")
@@ -219,9 +225,25 @@ class DashboardItemWidget(QFrame):
         self._edit_mode = bool(enabled)
         self.drag_label.setVisible(self._edit_mode)
         self.remove_btn.setVisible(self._edit_mode)
+        self.subtitle_label.setVisible(self._edit_mode)
         self.footer_label.setVisible(self._edit_mode)
+        self.title_label.setToolTip("Duplo clique para renomear" if self._edit_mode else "")
+        if self._edit_mode:
+            try:
+                self.card.layout().setContentsMargins(4, 4, 4, 4)
+                self.card.layout().setSpacing(3)
+            except Exception:
+                pass
+        else:
+            try:
+                self.card.layout().setContentsMargins(0, 0, 0, 0)
+                self.card.layout().setSpacing(0)
+            except Exception:
+                pass
         if not self._edit_mode:
             self.unsetCursor()
+        self._apply_styles()
+        self.update()
 
     def set_highlight_mode(self, mode: str):
         normalized = str(mode or "idle").strip().lower() or "idle"
@@ -234,10 +256,21 @@ class DashboardItemWidget(QFrame):
     def _apply_styles(self):
         border = "#D6D9E0"
         header_bg = "#F8FAFC"
-        if self._highlight_mode == "drag":
+        header_border = "#E5E7EB"
+        card_bg = "#FFFFFF"
+        card_border = f"1px solid {border}"
+        header_border_rule = f"1px solid {header_border}"
+        if not self._edit_mode:
+            card_bg = "transparent"
+            card_border = "none"
+            header_bg = "transparent"
+            header_border_rule = "none"
+        elif self._highlight_mode == "drag":
             border = "#6D79FF"
+            card_border = f"1px solid {border}"
         elif self._highlight_mode == "resize":
             border = "#4F46E5"
+            card_border = f"1px solid {border}"
 
         self.setStyleSheet(
             f"""
@@ -246,13 +279,13 @@ class DashboardItemWidget(QFrame):
                 border: none;
             }}
             QFrame#ModelDashboardCard {{
-                background: #FFFFFF;
-                border: 1px solid {border};
+                background: {card_bg};
+                border: {card_border};
                 border-radius: 12px;
             }}
             QFrame#ModelDashboardHeader {{
                 background: {header_bg};
-                border: 1px solid #E5E7EB;
+                border: {header_border_rule};
                 border-radius: 10px;
             }}
             QLabel#ModelDashboardItemTitle {{
@@ -447,10 +480,16 @@ class DashboardItemWidget(QFrame):
             if resize_mode:
                 self._start_resize(resize_mode, global_pos)
                 return True
-            if watched is not self.chart_widget and self._header_drag_rect().contains(local_pos):
+            if watched is self.title_label:
+                return False
+            if watched not in {self.chart_widget, self.title_label} and self._header_drag_rect().contains(local_pos):
                 self._start_drag(global_pos)
                 return True
             return False
+
+        if event_type == QEvent.MouseButtonDblClick and watched is self.title_label and self._edit_mode:
+            self._edit_title()
+            return True
 
         if event_type == QEvent.MouseButtonRelease and getattr(event, "button", lambda: None)() == Qt.LeftButton:
             if self._resize_active:
@@ -467,6 +506,26 @@ class DashboardItemWidget(QFrame):
             return False
 
         return super().eventFilter(watched, event)
+
+    def _edit_title(self):
+        current = self._item.display_title()
+        try:
+            new_text, accepted = slim_get_text(
+                parent=self,
+                title="Editar título",
+                label_text="Título do gráfico",
+                text=current,
+                placeholder="Digite o novo título",
+                helper_text="Altere apenas o nome exibido no card.",
+                accept_label="Salvar",
+            )
+        except Exception:
+            return
+        if not accepted:
+            return
+        self._item.title = str(new_text or "").strip()
+        self.title_label.setText(self._item.display_title())
+        self.itemChanged.emit()
 
     def leaveEvent(self, event):
         if not self._drag_active and not self._resize_active:

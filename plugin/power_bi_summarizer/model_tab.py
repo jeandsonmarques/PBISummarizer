@@ -176,6 +176,7 @@ class ModelTab(QWidget):
         )
         self.project_hint_label.setObjectName("ModelHint")
         self.project_hint_label.setWordWrap(True)
+        self.project_hint_label.setVisible(False)
         header_layout.addWidget(self.project_hint_label)
 
         root.addWidget(header, 0)
@@ -529,7 +530,7 @@ class ModelTab(QWidget):
     def _update_filters_bar(self, summary: Optional[Dict[str, object]] = None):
         summary = summary or self.canvas.interaction_manager.active_filters_summary()
         items = list(summary.get("items") or [])
-        if not items:
+        if not self.edit_mode_btn.isChecked() or not items:
             self.filters_label.setText("Filtros ativos: nenhum")
             self.filters_bar.setVisible(False)
             return
@@ -587,15 +588,5 @@ class ModelTab(QWidget):
         has_items = self.canvas.has_items()
         self.body_stack.setCurrentWidget(self.canvas_page if has_items else self.empty_page)
         self._update_filters_bar()
-        if self.current_project is None:
-            self.project_hint_label.setText(
-                "Crie um painel novo ou envie graficos pelo menu contextual 'Adicionar ao Model'."
-            )
-        elif has_items:
-            self.project_hint_label.setText(
-                "Arraste livremente pelo cabecalho para posicionar. Redimensione pelos lados e cantos, como em um canvas."
-            )
-        else:
-            self.project_hint_label.setText(
-                "Painel aberto, mas ainda sem cards. Use o menu contextual dos graficos para adicionar itens."
-            )
+        self.filters_bar.setVisible(bool(self.edit_mode_btn.isChecked()) and self.filters_bar.isVisible())
+        self.project_hint_label.setVisible(False)

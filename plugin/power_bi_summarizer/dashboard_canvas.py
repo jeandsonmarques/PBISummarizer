@@ -23,17 +23,18 @@ class _DashboardCanvasSurface(QWidget):
         painter.setRenderHint(QPainter.Antialiasing)
         painter.fillRect(self.rect(), QColor("#FFFFFF"))
 
-        grid_pen = QPen(QColor("#F3F4F6"))
-        grid_pen.setWidth(1)
-        painter.setPen(grid_pen)
-        grid_size = self._canvas.grid_size
-        for x in range(0, self.width(), grid_size):
-            painter.drawLine(x, 0, x, self.height())
-        for y in range(0, self.height(), grid_size):
-            painter.drawLine(0, y, self.width(), y)
+        if self._canvas._edit_mode:
+            grid_pen = QPen(QColor("#F3F4F6"))
+            grid_pen.setWidth(1)
+            painter.setPen(grid_pen)
+            grid_size = self._canvas.grid_size
+            for x in range(0, self.width(), grid_size):
+                painter.drawLine(x, 0, x, self.height())
+            for y in range(0, self.height(), grid_size):
+                painter.drawLine(0, y, self.width(), y)
 
         preview_rect = self._canvas.preview_rect()
-        if preview_rect is not None:
+        if preview_rect is not None and self._canvas._edit_mode:
             fill = QColor(99, 114, 255, 35)
             border = QColor("#6372FF")
             painter.setPen(QPen(border, 2, Qt.DashLine))
@@ -127,6 +128,7 @@ class DashboardCanvas(QWidget):
         self._edit_mode = bool(enabled)
         for widget in self._widgets.values():
             widget.set_edit_mode(self._edit_mode)
+        self.surface.update()
 
     def export_image(self, path: str) -> bool:
         try:
@@ -168,6 +170,7 @@ class DashboardCanvas(QWidget):
                 widget = DashboardItemWidget(item, self.surface)
                 widget.removeRequested.connect(self._remove_item)
                 widget.selectionChanged.connect(self.interaction_manager.handle_chart_selection)
+                widget.itemChanged.connect(self.itemsChanged.emit)
                 widget.dragStarted.connect(self._start_drag)
                 widget.dragMoved.connect(self._move_drag)
                 widget.dragFinished.connect(self._finish_drag)

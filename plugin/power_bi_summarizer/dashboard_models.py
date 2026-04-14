@@ -24,6 +24,36 @@ def _json_safe(value: Any) -> Any:
     return str(value)
 
 
+def _flatten_text_list(value: Any) -> List[str]:
+    flattened: List[str] = []
+
+    def _walk(item: Any):
+        if item is None:
+            return
+        if isinstance(item, (list, tuple, set)):
+            for nested in item:
+                _walk(nested)
+            return
+        text = str(item).strip()
+        if text:
+            flattened.append(text)
+
+    _walk(value)
+    return flattened
+
+
+def _unique_normalized_texts(values: Any) -> List[str]:
+    seen = set()
+    results: List[str] = []
+    for text in _flatten_text_list(values):
+        key = text.lower().strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        results.append(text)
+    return results
+
+
 def serialize_chart_payload(payload: Optional[ChartPayload]) -> Dict[str, Any]:
     if payload is None:
         return {}
@@ -88,16 +118,24 @@ class DashboardChartBinding:
     chart_id: str = ""
     source_id: str = ""
     dimension_field: str = ""
+    semantic_field_key: str = ""
+    semantic_field_aliases: List[str] = field(default_factory=list)
     measure_field: str = ""
     aggregation: str = ""
     base_filters: List[Dict[str, Any]] = field(default_factory=list)
     source_name: str = ""
 
     def normalized(self) -> "DashboardChartBinding":
+        semantic_key = str(self.semantic_field_key or "").strip()
+        if not semantic_key:
+            semantic_key = str(self.dimension_field or "").strip()
+        aliases = _unique_normalized_texts([semantic_key, self.dimension_field, *list(self.semantic_field_aliases or [])])
         return DashboardChartBinding(
             chart_id=str(self.chart_id or "").strip(),
             source_id=str(self.source_id or "").strip(),
             dimension_field=str(self.dimension_field or "").strip(),
+            semantic_field_key=semantic_key,
+            semantic_field_aliases=aliases,
             measure_field=str(self.measure_field or "").strip(),
             aggregation=str(self.aggregation or "").strip(),
             base_filters=[dict(item or {}) for item in list(self.base_filters or [])],
@@ -110,6 +148,8 @@ class DashboardChartBinding:
             "chart_id": normalized.chart_id,
             "source_id": normalized.source_id,
             "dimension_field": normalized.dimension_field,
+            "semantic_field_key": normalized.semantic_field_key,
+            "semantic_field_aliases": _json_safe(normalized.semantic_field_aliases),
             "measure_field": normalized.measure_field,
             "aggregation": normalized.aggregation,
             "base_filters": _json_safe(normalized.base_filters),
@@ -123,6 +163,8 @@ class DashboardChartBinding:
             chart_id=str(payload.get("chart_id") or "").strip(),
             source_id=str(payload.get("source_id") or "").strip(),
             dimension_field=str(payload.get("dimension_field") or "").strip(),
+            semantic_field_key=str(payload.get("semantic_field_key") or "").strip(),
+            semantic_field_aliases=_unique_normalized_texts(payload.get("semantic_field_aliases") or []),
             measure_field=str(payload.get("measure_field") or "").strip(),
             aggregation=str(payload.get("aggregation") or "").strip(),
             base_filters=[dict(item or {}) for item in list(payload.get("base_filters") or [])],
@@ -146,10 +188,35 @@ class DashboardChartBinding:
         )
         dimension_field = (
             binding.get("dimension_field")
+            or config.get("semantic_field_key")
             or config.get("row_label")
             or config.get("row_field")
+            or (list(config.get("row_fields") or [])[:1] or [""])[0]
             or chart_payload.get("category_field")
             or ""
+        )
+        semantic_field_key = (
+            binding.get("semantic_field_key")
+            or config.get("semantic_field_key")
+            or config.get("row_field")
+            or (list(config.get("row_fields") or [])[:1] or [""])[0]
+            or chart_payload.get("category_field")
+            or dimension_field
+            or ""
+        )
+        semantic_field_aliases = _unique_normalized_texts(
+            [
+                binding.get("semantic_field_aliases") or [],
+                config.get("semantic_field_aliases") or [],
+                config.get("row_fields") or [],
+                config.get("row_labels") or [],
+                config.get("column_fields") or [],
+                config.get("column_labels") or [],
+                config.get("row_label"),
+                config.get("column_label"),
+                chart_payload.get("category_field"),
+                dimension_field,
+            ]
         )
         measure_field = (
             binding.get("measure_field")
@@ -174,11 +241,17 @@ class DashboardChartBinding:
             chart_id=str(chart_id or binding.get("chart_id") or payload.get("chart_id") or payload.get("item_id") or "").strip(),
             source_id=str(source_id).strip(),
             dimension_field=str(dimension_field).strip(),
+            semantic_field_key=str(semantic_field_key).strip(),
+            semantic_field_aliases=semantic_field_aliases,
             measure_field=str(measure_field).strip(),
             aggregation=str(aggregation).strip(),
             base_filters=[dict(item or {}) for item in list(base_filters or [])],
             source_name=str(source_name).strip(),
         ).normalized()
+
+    def match_keys(self) -> List[str]:
+        keys = [self.semantic_field_key, self.dimension_field, *list(self.semantic_field_aliases or [])]
+        return _unique_normalized_texts(keys)
 
 
 @dataclass

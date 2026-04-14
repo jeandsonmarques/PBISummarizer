@@ -92,13 +92,15 @@ class ModelInteractionManager(QObject):
             values = self._flatten_text_values(data.get("values"))
             if not values:
                 continue
-            label = data.get("field") or data.get("source_name") or filter_key
+            label = data.get("semantic_field_key") or data.get("field") or data.get("source_name") or filter_key
             items.append(
                 {
                     "filter_key": filter_key,
                     "source_id": str(data.get("source_id") or ""),
                     "source_name": str(data.get("source_name") or ""),
                     "field": str(data.get("field") or ""),
+                    "semantic_field_key": str(data.get("semantic_field_key") or ""),
+                    "semantic_field_aliases": list(data.get("semantic_field_aliases") or []),
                     "values": values,
                     "chart_id": str(data.get("chart_id") or ""),
                     "label": str(label),
@@ -133,6 +135,22 @@ class ModelInteractionManager(QObject):
             except Exception:
                 continue
         field = str(normalized.get("field") or binding.dimension_field or "").strip()
+        semantic_field_key = self._semantic_key(
+            normalized.get("semantic_field_key")
+            or binding.semantic_field_key
+            or field
+            or binding.dimension_field
+            or binding.source_id
+        )
+        semantic_field_aliases = self._unique_keys(
+            [
+                normalized.get("semantic_field_aliases") or [],
+                binding.semantic_field_aliases or [],
+                field,
+                binding.dimension_field,
+                semantic_field_key,
+            ]
+        )
         normalized.update(
             {
                 "chart_id": chart_id or binding.chart_id,
@@ -141,6 +159,8 @@ class ModelInteractionManager(QObject):
                 "filter_key": filter_key,
                 "field": field,
                 "field_key": self._field_key(field),
+                "semantic_field_key": semantic_field_key,
+                "semantic_field_aliases": semantic_field_aliases,
                 "values": values,
                 "feature_ids": sorted(set(feature_ids)),
                 "source_name": str(normalized.get("source_name") or binding.source_name or ""),
@@ -157,6 +177,7 @@ class ModelInteractionManager(QObject):
             and sorted({int(value) for value in list(left.get("feature_ids") or [])}) == sorted(
                 {int(value) for value in list(right.get("feature_ids") or [])}
             )
+            and str(left.get("semantic_field_key") or "") == str(right.get("semantic_field_key") or "")
         )
 
     def _apply_all_filters(self):
@@ -165,9 +186,11 @@ class ModelInteractionManager(QObject):
             try:
                 binding = self._bindings.get(chart_id)
                 widget_filters = {}
-                widget_filter_key = self._binding_filter_key(binding)
-                if widget_filter_key and widget_filter_key in active_filters:
-                    widget_filters[widget_filter_key] = dict(active_filters[widget_filter_key])
+                widget_keys = self._binding_match_keys(binding)
+                for filter_key, filter_data in active_filters.items():
+                    if not widget_keys.intersection(self._filter_match_keys(filter_data)):
+                        continue
+                    widget_filters[filter_key] = dict(filter_data)
                 widget.set_external_filters(widget_filters)
                 try:
                     widget.clear_local_selection()
@@ -182,11 +205,12 @@ class ModelInteractionManager(QObject):
         binding = self._bindings.get(chart_id)
         if widget is None or binding is None:
             return
-        filter_key = self._binding_filter_key(binding)
+        widget_keys = self._binding_match_keys(binding)
         try:
             widget_filters = {}
-            if filter_key and filter_key in self._active_filters:
-                widget_filters[filter_key] = dict(self._active_filters[filter_key])
+            for filter_key, filter_data in self._active_filters.items():
+                if widget_keys.intersection(self._filter_match_keys(filter_data)):
+                    widget_filters[filter_key] = dict(filter_data)
             widget.set_external_filters(widget_filters)
         except Exception:
             pass
@@ -196,6 +220,29 @@ class ModelInteractionManager(QObject):
 
     def _field_key(self, field_name: Any) -> str:
         return str(field_name or "").strip().lower()
+
+    def _semantic_key(self, value: Any) -> str:
+        return self._field_key(value)
+
+    def _unique_keys(self, values: Any) -> list[str]:
+        seen = set()
+        keys: list[str] = []
+
+        def _walk(item: Any):
+            if item is None:
+                return
+            if isinstance(item, (list, tuple, set)):
+                for nested in item:
+                    _walk(nested)
+                return
+            key = self._field_key(item)
+            if not key or key in seen:
+                return
+            seen.add(key)
+            keys.append(key)
+
+        _walk(values)
+        return keys
 
     def _flatten_text_values(self, values: Any) -> list[str]:
         flattened: list[str] = []
@@ -217,13 +264,40 @@ class ModelInteractionManager(QObject):
     def _binding_filter_key(self, binding: Optional[DashboardChartBinding]) -> str:
         if binding is None:
             return ""
-        field_key = self._field_key(binding.dimension_field)
+        field_key = self._semantic_key(binding.semantic_field_key or binding.dimension_field)
         if field_key:
             return field_key
         return str(binding.source_id or "").strip()
 
+    def _binding_match_keys(self, binding: Optional[DashboardChartBinding]) -> set[str]:
+        if binding is None:
+            return set()
+        keys = self._unique_keys([binding.semantic_field_key, binding.dimension_field, binding.semantic_field_aliases])
+        if not keys and str(binding.source_id or "").strip():
+            keys = self._unique_keys([binding.source_id])
+        return set(keys)
+
+    def _filter_match_keys(self, filter_data: Dict[str, Any]) -> set[str]:
+        keys = self._unique_keys(
+            [
+                filter_data.get("semantic_field_key"),
+                filter_data.get("field_key"),
+                filter_data.get("field"),
+                filter_data.get("semantic_field_aliases"),
+            ]
+        )
+        if not keys and str(filter_data.get("source_id") or "").strip():
+            keys = self._unique_keys([filter_data.get("source_id")])
+        return set(keys)
+
     def _selection_filter_key(self, payload: Dict[str, Any], binding: Optional[DashboardChartBinding]) -> str:
-        field_key = self._field_key(payload.get("field") or payload.get("field_key") or (binding.dimension_field if binding else ""))
+        field_key = self._semantic_key(
+            payload.get("semantic_field_key")
+            or payload.get("field_key")
+            or payload.get("field")
+            or (binding.semantic_field_key if binding else "")
+            or (binding.dimension_field if binding else "")
+        )
         if field_key:
             return field_key
         if binding is not None and str(binding.source_id or "").strip():

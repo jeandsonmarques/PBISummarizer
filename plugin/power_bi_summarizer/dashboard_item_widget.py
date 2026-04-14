@@ -145,11 +145,16 @@ class DashboardItemWidget(QFrame):
 
     def _normalize_selection_payload(self, payload):
         if not payload:
+            semantic_key = self._binding.semantic_field_key or (
+                self._binding.dimension_field.lower().strip() if self._binding.dimension_field else ""
+            )
             return {
                 "chart_id": self._binding.chart_id or self.item_id,
                 "source_id": self._binding.source_id,
                 "field": self._binding.dimension_field,
-                "field_key": self._binding.dimension_field.lower().strip() if self._binding.dimension_field else "",
+                "field_key": semantic_key,
+                "semantic_field_key": semantic_key,
+                "semantic_field_aliases": list(self._binding.semantic_field_aliases or []),
                 "values": [],
                 "feature_ids": [],
                 "cleared": True,
@@ -157,8 +162,13 @@ class DashboardItemWidget(QFrame):
         data = dict(payload or {})
         data.setdefault("chart_id", self._binding.chart_id or self.item_id)
         data.setdefault("source_id", self._binding.source_id)
-        data.setdefault("field", self._binding.dimension_field)
-        data.setdefault("field_key", self._binding.dimension_field.lower().strip() if self._binding.dimension_field else "")
+        semantic_key = self._binding.semantic_field_key or (
+            self._binding.dimension_field.lower().strip() if self._binding.dimension_field else ""
+        )
+        data.setdefault("field", self._binding.semantic_field_key or self._binding.dimension_field)
+        data.setdefault("field_key", semantic_key)
+        data.setdefault("semantic_field_key", semantic_key)
+        data.setdefault("semantic_field_aliases", list(self._binding.semantic_field_aliases or []))
         data.setdefault("measure_field", self._binding.measure_field)
         data.setdefault("aggregation", self._binding.aggregation)
         data.setdefault("source_name", self._binding.source_name)

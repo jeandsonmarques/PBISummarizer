@@ -116,7 +116,29 @@ class ReportChartWidget(QWidget):
         "donut": "Rosca",
         "line": "Linha",
         "area": "Área",
+        "card": "Card",
+        "matrix": "Matrix",
+        "slicer": "Slicer",
+        "column_clustered": "Coluna agrupada",
+        "column_stacked": "Coluna empilhada",
+        "bar100_stacked": "Barra 100% empilhada",
+        "combo": "Combo",
+        "scatter": "Scatter / bolha",
+        "treemap": "Treemap",
+        "gauge": "Gauge",
+        "kpi": "KPI",
+        "waterfall": "Waterfall",
+        "funnel": "Funnel",
     }
+
+    TYPE_GROUPS = [
+        ("Comparação", ["barh", "column_stacked", "bar100_stacked"]),
+        ("Tendência", ["line", "area"]),
+        ("Composição", ["pie", "donut", "treemap", "waterfall"]),
+        ("Indicadores", ["kpi", "gauge"]),
+        ("Análise", ["funnel"]),
+    ]
+    TYPE_PRIORITY = ["card", "matrix", "slicer", "column_clustered", "combo", "scatter"]
 
     PALETTE_LABELS: Dict[str, str] = {
         "default": "Paleta padrão",
@@ -197,6 +219,8 @@ class ReportChartWidget(QWidget):
         chart_id: Optional[str] = None,
         source_id: Optional[str] = None,
         dimension_field: Optional[str] = None,
+        semantic_field_key: Optional[str] = None,
+        semantic_field_aliases: Optional[List[str]] = None,
         measure_field: Optional[str] = None,
         aggregation: Optional[str] = None,
         base_filters: Optional[List[Dict[str, Any]]] = None,
@@ -208,6 +232,10 @@ class ReportChartWidget(QWidget):
             payload["source_id"] = source_id
         if dimension_field is not None:
             payload["dimension_field"] = dimension_field
+        if semantic_field_key is not None:
+            payload["semantic_field_key"] = semantic_field_key
+        if semantic_field_aliases is not None:
+            payload["semantic_field_aliases"] = list(semantic_field_aliases or [])
         if measure_field is not None:
             payload["measure_field"] = measure_field
         if aggregation is not None:
@@ -218,6 +246,8 @@ class ReportChartWidget(QWidget):
             "chart_id": str(payload.get("chart_id") or "").strip(),
             "source_id": str(payload.get("source_id") or "").strip(),
             "dimension_field": str(payload.get("dimension_field") or "").strip(),
+            "semantic_field_key": str(payload.get("semantic_field_key") or "").strip(),
+            "semantic_field_aliases": [str(item).strip() for item in list(payload.get("semantic_field_aliases") or []) if str(item).strip()],
             "measure_field": str(payload.get("measure_field") or "").strip(),
             "aggregation": str(payload.get("aggregation") or "").strip(),
             "base_filters": [dict(item or {}) for item in list(payload.get("base_filters") or [])],
@@ -286,6 +316,8 @@ class ReportChartWidget(QWidget):
                 "chart_id": chart_id,
                 "source_id": source_id,
                 "dimension_field": dimension_field,
+                "semantic_field_key": str(self._chart_identity.get("semantic_field_key") or dimension_field or "").strip(),
+                "semantic_field_aliases": list(self._chart_identity.get("semantic_field_aliases") or []),
                 "measure_field": measure_field,
                 "aggregation": aggregation,
                 "base_filters": base_filters,
@@ -340,7 +372,27 @@ class ReportChartWidget(QWidget):
         normalized = str(chart_type or "bar").strip().lower()
         if normalized == "histogram":
             return "bar"
-        if normalized in {"bar", "barh", "pie", "donut", "line", "area"}:
+        if normalized in {
+            "bar",
+            "barh",
+            "pie",
+            "donut",
+            "line",
+            "area",
+            "card",
+            "matrix",
+            "slicer",
+            "column_clustered",
+            "column_stacked",
+            "bar100_stacked",
+            "combo",
+            "scatter",
+            "treemap",
+            "gauge",
+            "kpi",
+            "waterfall",
+            "funnel",
+        }:
             return normalized
         return "bar"
 
@@ -363,16 +415,27 @@ class ReportChartWidget(QWidget):
         corners_menu = personalize_menu.addMenu("Cantos")
 
         self._ensure_visual_state_compatibility()
-        supported_types = self._supported_chart_types()
         type_group = QActionGroup(menu)
         type_group.setExclusive(True)
-        for chart_type, label in self.TYPE_LABELS.items():
-            action = QAction(label, menu, checkable=True)
+        priority_menu = type_menu.addMenu("Prioridade")
+        for chart_type in self.TYPE_PRIORITY:
+            if chart_type not in self.TYPE_LABELS:
+                continue
+            action = QAction(self.TYPE_LABELS.get(chart_type, chart_type), menu, checkable=True)
             action.setChecked(self.chart_state.chart_type == chart_type)
-            action.setEnabled(supported_types.get(chart_type, False))
             action.triggered.connect(lambda checked=False, value=chart_type: self._set_chart_type(value))
             type_group.addAction(action)
-            type_menu.addAction(action)
+            priority_menu.addAction(action)
+        if priority_menu.actions():
+            type_menu.addSeparator()
+        for group_label, chart_types in self.TYPE_GROUPS:
+            group_menu = type_menu.addMenu(group_label)
+            for chart_type in chart_types:
+                action = QAction(self.TYPE_LABELS.get(chart_type, chart_type), menu, checkable=True)
+                action.setChecked(self.chart_state.chart_type == chart_type)
+                action.triggered.connect(lambda checked=False, value=chart_type: self._set_chart_type(value))
+                type_group.addAction(action)
+                group_menu.addAction(action)
 
         palette_group = QActionGroup(menu)
         palette_group.setExclusive(True)
@@ -428,20 +491,6 @@ class ReportChartWidget(QWidget):
         corner_group.addAction(rounded_action)
         corners_menu.addAction(rounded_action)
 
-        corner_group = QActionGroup(menu)
-        corner_group.setExclusive(True)
-        square_action = QAction("Retos", menu, checkable=True)
-        square_action.setChecked(self._normalized_corner_style() == "square")
-        square_action.triggered.connect(lambda checked=False: self._set_bar_corner_style("square"))
-        corner_group.addAction(square_action)
-        corners_menu.addAction(square_action)
-
-        rounded_action = QAction("Arredondados", menu, checkable=True)
-        rounded_action.setChecked(self._normalized_corner_style() == "rounded")
-        rounded_action.triggered.connect(lambda checked=False: self._set_bar_corner_style("rounded"))
-        corner_group.addAction(rounded_action)
-        corners_menu.addAction(rounded_action)
-
         menu.addSeparator()
 
         if self._filtered_category_key:
@@ -476,18 +525,9 @@ class ReportChartWidget(QWidget):
         menu.exec_(global_pos)
 
     def _supported_chart_types(self) -> Dict[str, bool]:
-        profile = self._chart_data_profile()
         if self._payload is None:
             return {key: False for key in self.TYPE_LABELS}
-
-        return {
-            "bar": profile.count >= 1,
-            "barh": profile.count >= 1,
-            "pie": self._supports_pie_family(profile),
-            "donut": self._supports_pie_family(profile),
-            "line": self._supports_line_family(profile),
-            "area": self._supports_area_family(profile),
-        }
+        return {key: True for key in self.TYPE_LABELS}
 
     def _supports_percentage(self) -> bool:
         profile = self._chart_data_profile()
@@ -602,15 +642,15 @@ class ReportChartWidget(QWidget):
         return has_separator and digits >= 4
 
     def _fallback_chart_type(self) -> str:
-        supported_types = self._supported_chart_types()
-        for candidate in ("bar", "barh", "line", "area", "pie", "donut"):
-            if supported_types.get(candidate, False):
+        if self._payload is None:
+            return "bar"
+        for candidate in ("bar", "barh", "line", "area", "pie", "donut", "card", "matrix"):
+            if candidate in self.TYPE_LABELS:
                 return candidate
         return "bar"
 
     def _ensure_visual_state_compatibility(self):
-        supported_types = self._supported_chart_types()
-        if not supported_types.get(self.chart_state.chart_type, False):
+        if self.chart_state.chart_type not in self.TYPE_LABELS:
             self.chart_state.chart_type = self._fallback_chart_type()
 
         if not self._supports_percentage():
@@ -618,13 +658,13 @@ class ReportChartWidget(QWidget):
 
         if self.chart_state.chart_type in {"pie", "donut"}:
             self.chart_state.show_grid = False
-        if self.chart_state.chart_type not in {"bar", "barh", "line", "area"}:
+        if self.chart_state.chart_type not in {"bar", "barh", "line", "area", "column_clustered", "column_stacked", "bar100_stacked", "combo", "scatter", "waterfall", "funnel"}:
             self.chart_state.show_grid = False
         if self._normalized_corner_style() not in {"square", "rounded"}:
             self.chart_state.bar_corner_style = "square"
 
     def _set_chart_type(self, chart_type: str):
-        if not self._supported_chart_types().get(chart_type, False):
+        if chart_type not in self.TYPE_LABELS:
             return
         self.chart_state.chart_type = chart_type
         self._ensure_visual_state_compatibility()
@@ -745,6 +785,14 @@ class ReportChartWidget(QWidget):
 
     def _current_filter_key(self) -> str:
         field_name = str(
+            self._chart_identity.get("semantic_field_key")
+            or self._chart_identity.get("dimension_field")
+            or getattr(self._payload, "category_field", "")
+            or ""
+        ).strip()
+        if field_name:
+            return field_name.lower()
+        field_name = str(
             self._chart_identity.get("dimension_field")
             or getattr(self._payload, "category_field", "")
             or ""
@@ -755,6 +803,55 @@ class ReportChartWidget(QWidget):
 
     def _current_chart_id(self) -> str:
         return str(self._chart_identity.get("chart_id") or self._chart_context.get("chart_id") or "").strip()
+
+    def _current_chart_keys(self) -> List[str]:
+        keys = [
+            self._chart_identity.get("semantic_field_key"),
+            self._chart_identity.get("dimension_field"),
+            self._payload.category_field if self._payload is not None else "",
+        ]
+        keys.extend(list(self._chart_identity.get("semantic_field_aliases") or []))
+        unique: List[str] = []
+        seen = set()
+        for key in keys:
+            text = str(key or "").strip().lower()
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            unique.append(text)
+        if not unique:
+            source_id = self._current_source_id()
+            if source_id:
+                unique.append(source_id.lower())
+        return unique
+
+    def _resolve_external_filter(self) -> Dict[str, Any]:
+        if not self._external_filters:
+            return {}
+        current_keys = set(self._current_chart_keys())
+        if not current_keys:
+            return {}
+        direct_key = self._current_filter_key()
+        direct = self._external_filters.get(direct_key)
+        if direct:
+            return dict(direct)
+        for filter_data in self._external_filters.values():
+            filter_keys = {
+                str(filter_data.get("semantic_field_key") or "").strip().lower(),
+                str(filter_data.get("field_key") or "").strip().lower(),
+                str(filter_data.get("field") or "").strip().lower(),
+            }
+            for alias in list(filter_data.get("semantic_field_aliases") or []):
+                alias_text = str(alias or "").strip().lower()
+                if alias_text:
+                    filter_keys.add(alias_text)
+            if not filter_keys:
+                source_id = str(filter_data.get("source_id") or "").strip().lower()
+                if source_id:
+                    filter_keys.add(source_id)
+            if current_keys.intersection(filter_keys):
+                return dict(filter_data)
+        return {}
 
     def _selection_context_for_item(self, item: Dict[str, object]) -> Dict[str, object]:
         values = self._flatten_values(item.get("feature_ids"))
@@ -767,6 +864,13 @@ class ReportChartWidget(QWidget):
             "chart_id": self._current_chart_id(),
             "source_id": self._current_source_id(),
             "field_key": self._current_filter_key(),
+            "semantic_field_key": str(
+                self._chart_identity.get("semantic_field_key")
+                or self._chart_identity.get("dimension_field")
+                or getattr(self._payload, "category_field", "")
+                or ""
+            ).strip(),
+            "semantic_field_aliases": list(self._chart_identity.get("semantic_field_aliases") or []),
             "field": str(
                 self._chart_identity.get("dimension_field")
                 or getattr(self._payload, "category_field", "")
@@ -1239,7 +1343,7 @@ class ReportChartWidget(QWidget):
             )
 
         filter_key = self._current_filter_key()
-        external_filter = dict(self._external_filters.get(filter_key) or {}) if filter_key else {}
+        external_filter = self._resolve_external_filter()
         if external_filter:
             selected_feature_ids = {
                 int(fid)
@@ -1306,6 +1410,8 @@ class ReportChartWidget(QWidget):
             "selection_layer_id": getattr(self._payload, "selection_layer_id", None),
             "selection_layer_name": getattr(self._payload, "selection_layer_name", ""),
             "category_field": getattr(self._payload, "category_field", ""),
+            "semantic_field_key": self._current_filter_key(),
+            "semantic_field_aliases": list(self._chart_identity.get("semantic_field_aliases") or []),
         }
 
     def paintEvent(self, event):
@@ -1334,6 +1440,32 @@ class ReportChartWidget(QWidget):
             self._draw_line_chart(painter, chart_rect, render_payload, area_fill=False)
         elif chart_type == "area":
             self._draw_line_chart(painter, chart_rect, render_payload, area_fill=True)
+        elif chart_type == "card":
+            self._draw_card_view(painter, chart_rect, render_payload)
+        elif chart_type == "matrix":
+            self._draw_matrix_view(painter, chart_rect, render_payload)
+        elif chart_type == "slicer":
+            self._draw_slicer_view(painter, chart_rect, render_payload)
+        elif chart_type == "column_clustered":
+            self._draw_clustered_column_chart(painter, chart_rect, render_payload)
+        elif chart_type == "column_stacked":
+            self._draw_stacked_column_chart(painter, chart_rect, render_payload, normalize=False)
+        elif chart_type == "bar100_stacked":
+            self._draw_stacked_column_chart(painter, chart_rect, render_payload, normalize=True, horizontal=True)
+        elif chart_type == "combo":
+            self._draw_combo_chart(painter, chart_rect, render_payload)
+        elif chart_type == "scatter":
+            self._draw_scatter_chart(painter, chart_rect, render_payload)
+        elif chart_type == "treemap":
+            self._draw_treemap_view(painter, chart_rect, render_payload)
+        elif chart_type == "gauge":
+            self._draw_gauge_view(painter, chart_rect, render_payload)
+        elif chart_type == "kpi":
+            self._draw_kpi_view(painter, chart_rect, render_payload)
+        elif chart_type == "waterfall":
+            self._draw_waterfall_chart(painter, chart_rect, render_payload)
+        elif chart_type == "funnel":
+            self._draw_funnel_chart(painter, chart_rect, render_payload)
         elif chart_type == "bar":
             self._draw_vertical_bar_chart(painter, chart_rect, render_payload)
         else:
@@ -1785,6 +1917,756 @@ class ReportChartWidget(QWidget):
             )
             item = self._payload_item(payload, index)
             self._register_data_point_region(label_rect, item)
+        painter.restore()
+
+    def _category_parts(self, item: Dict[str, object]) -> List[str]:
+        raw_category = item.get("raw_category")
+        parts: List[str] = []
+        if isinstance(raw_category, (list, tuple)):
+            for value in raw_category:
+                text = str(value or "").strip()
+                if text:
+                    parts.append(text)
+        else:
+            raw_text = str(raw_category or "").strip()
+            if raw_text and " / " in raw_text:
+                parts = [part.strip() for part in raw_text.split(" / ") if part.strip()]
+            else:
+                display = str(item.get("category") or raw_text).strip()
+                if display:
+                    parts = [display]
+        if not parts:
+            fallback = str(item.get("category") or "").strip()
+            if fallback:
+                parts = [fallback]
+        return parts
+
+    def _series_matrix(self, payload: Dict[str, object]):
+        rows: List[str] = []
+        series: List[str] = []
+        matrix: Dict[str, Dict[str, float]] = {}
+        items = list(payload.get("items") or [])
+        for index, raw_item in enumerate(items):
+            item = self._payload_item(payload, index)
+            parts = self._category_parts(item)
+            row_label = parts[0] if parts else str(item.get("category") or f"Item {index + 1}")
+            series_label = parts[1] if len(parts) > 1 else ""
+            try:
+                value = float(item.get("value") or 0.0)
+            except Exception:
+                value = 0.0
+            if row_label not in matrix:
+                matrix[row_label] = {}
+                rows.append(row_label)
+            if series_label not in series:
+                series.append(series_label)
+            matrix[row_label][series_label] = matrix[row_label].get(series_label, 0.0) + value
+        if not series:
+            series = [""]
+        return rows, series, matrix
+
+    def _draw_series_legend_list(self, painter: QPainter, rect: QRectF, series_labels: List[str], colors: List[QColor]):
+        labels = [label for label in series_labels if str(label or "").strip()]
+        if not labels:
+            return
+        painter.save()
+        x = rect.right() - 196
+        y = rect.top() + 2
+        max_items = min(5, len(labels))
+        for index in range(max_items):
+            label = labels[index]
+            color = colors[index % len(colors)] if colors else QColor("#5A3FE6")
+            item_rect = QRectF(x, y + index * 18, 190, 14)
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(color)
+            painter.drawRoundedRect(QRectF(item_rect.left(), item_rect.top() + 2, 10, 10), 3, 3)
+            painter.setPen(QPen(QColor("#4B5563")))
+            painter.drawText(
+                QRectF(item_rect.left() + 15, item_rect.top(), item_rect.width() - 15, item_rect.height()),
+                Qt.AlignVCenter | Qt.AlignLeft,
+                label or "Série",
+            )
+        painter.restore()
+
+    def _chart_surface(self, rect: QRectF, left: float = 12.0, top: float = 12.0, right: float = 12.0, bottom: float = 12.0) -> QRectF:
+        return rect.adjusted(left, top, -right, -bottom)
+
+    def _draw_surface_card(self, painter: QPainter, rect: QRectF, radius: float = 14.0):
+        painter.save()
+        painter.setPen(QPen(QColor("#E5E7EB")))
+        painter.setBrush(QColor("#FFFFFF"))
+        painter.drawRoundedRect(rect, radius, radius)
+        painter.restore()
+
+    def _draw_axis_label(self, painter: QPainter, rect: QRectF, text: str, align: Qt.AlignmentFlag = Qt.AlignLeft):
+        painter.save()
+        axis_font = QFont(self.font())
+        axis_font.setPointSize(max(8, axis_font.pointSize() - 1))
+        painter.setFont(axis_font)
+        painter.setPen(QPen(QColor("#6B7280")))
+        painter.drawText(rect, align, text)
+        painter.restore()
+
+    def _draw_card_view(self, painter: QPainter, rect: QRectF, payload: Dict[str, object]):
+        values = list(payload.get("values") or [])
+        total = float(payload.get("total") or sum(max(0.0, float(value)) for value in values) or 0.0)
+        current = float(values[0]) if values else total
+        accent = self._palette_colors(1, "single")[0]
+        frame = rect.adjusted(10, 10, -10, -10)
+        painter.save()
+        painter.setPen(QPen(QColor("#D9E1F2")))
+        painter.setBrush(QColor("#F8FAFF"))
+        painter.drawRoundedRect(frame, 18, 18)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(accent)
+        painter.drawRoundedRect(QRectF(frame.left(), frame.top(), 6, frame.height()), 3, 3)
+
+        label_font = QFont(self.font())
+        label_font.setPointSize(max(10, label_font.pointSize()))
+        painter.setFont(label_font)
+        painter.setPen(QPen(QColor("#6B7280")))
+        painter.drawText(
+            QRectF(frame.left() + 22, frame.top() + 18, frame.width() - 44, 20),
+            Qt.AlignLeft | Qt.AlignTop,
+            str(payload.get("value_label") or "Total"),
+        )
+
+        value_font = QFont(self.font())
+        value_font.setPointSize(max(22, value_font.pointSize() + 14))
+        value_font.setBold(True)
+        painter.setFont(value_font)
+        painter.setPen(QPen(QColor("#111827")))
+        painter.drawText(
+            QRectF(frame.left() + 22, frame.top() + 40, frame.width() - 44, frame.height() * 0.42),
+            Qt.AlignLeft | Qt.AlignVCenter,
+            self._format_value(total if values else current),
+        )
+
+        subtitle = ""
+        if len(values) > 1:
+            subtitle = f"Variação: {self._format_value(current - float(values[1]))}"
+        elif values:
+            subtitle = f"{self._format_value(current)} selecionado"
+        painter.setFont(label_font)
+        painter.setPen(QPen(QColor("#4B5563")))
+        painter.drawText(
+            QRectF(frame.left() + 22, frame.bottom() - 54, frame.width() - 44, 20),
+            Qt.AlignLeft | Qt.AlignBottom,
+            subtitle or "Indicador resumido",
+        )
+
+        painter.setPen(QPen(QColor("#E5E7EB")))
+        painter.setBrush(Qt.NoBrush)
+        painter.drawRoundedRect(frame, 18, 18)
+        painter.restore()
+
+    def _draw_kpi_view(self, painter: QPainter, rect: QRectF, payload: Dict[str, object]):
+        values = [float(value or 0.0) for value in list(payload.get("values") or [])]
+        current = values[0] if values else float(payload.get("total") or 0.0)
+        previous = values[1] if len(values) > 1 else None
+        accent = self._palette_colors(1, "single")[0]
+        frame = rect.adjusted(10, 12, -10, -12)
+        painter.save()
+        painter.setPen(QPen(QColor("#D9E1F2")))
+        painter.setBrush(QColor("#FFFFFF"))
+        painter.drawRoundedRect(frame, 18, 18)
+        painter.setPen(QPen(accent, 3))
+        painter.drawLine(QPointF(frame.left() + 18, frame.top() + 16), QPointF(frame.left() + 80, frame.top() + 16))
+        painter.setPen(QPen(QColor("#6B7280")))
+        painter.setFont(QFont(self.font()))
+        painter.drawText(
+            QRectF(frame.left() + 20, frame.top() + 26, frame.width() - 40, 24),
+            Qt.AlignLeft | Qt.AlignTop,
+            str(payload.get("value_label") or "KPI"),
+        )
+
+        value_font = QFont(self.font())
+        value_font.setPointSize(max(20, value_font.pointSize() + 12))
+        value_font.setBold(True)
+        painter.setFont(value_font)
+        painter.setPen(QPen(QColor("#111827")))
+        painter.drawText(
+            QRectF(frame.left() + 20, frame.top() + 52, frame.width() - 40, frame.height() * 0.35),
+            Qt.AlignLeft | Qt.AlignVCenter,
+            self._format_value(current),
+        )
+
+        delta_font = QFont(self.font())
+        delta_font.setPointSize(max(10, delta_font.pointSize()))
+        painter.setFont(delta_font)
+        if previous is not None:
+            delta = current - previous
+            delta_color = QColor("#059669" if delta >= 0 else "#DC2626")
+            delta_prefix = "▲" if delta >= 0 else "▼"
+            delta_text = f"{delta_prefix} {self._format_value(abs(delta))}"
+        else:
+            delta_color = QColor("#6B7280")
+            delta_text = "Sem comparação anterior"
+        painter.setPen(QPen(delta_color))
+        painter.drawText(
+            QRectF(frame.left() + 20, frame.bottom() - 44, frame.width() - 40, 20),
+            Qt.AlignLeft | Qt.AlignBottom,
+            delta_text,
+        )
+        painter.restore()
+
+    def _draw_gauge_view(self, painter: QPainter, rect: QRectF, payload: Dict[str, object]):
+        values = [float(value or 0.0) for value in list(payload.get("values") or [])]
+        current = values[0] if values else float(payload.get("total") or 0.0)
+        max_value = max([1.0, current, float(payload.get("total") or 0.0), *(values or [0.0])])
+        ratio = max(0.0, min(1.0, current / max_value if max_value else 0.0))
+        frame = rect.adjusted(16, 18, -16, -18)
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setPen(QPen(QColor("#D9E1F2"), 14, Qt.SolidLine, Qt.RoundCap))
+        gauge_rect = QRectF(frame.left() + 6, frame.top() + 8, frame.width() - 12, frame.height() * 0.82)
+        painter.drawArc(gauge_rect, 180 * 16, -180 * 16)
+
+        accent = self._palette_colors(1, "single")[0]
+        painter.setPen(QPen(accent, 14, Qt.SolidLine, Qt.RoundCap))
+        painter.drawArc(gauge_rect, 180 * 16, int(-180 * ratio * 16))
+
+        center = gauge_rect.center()
+        radius = gauge_rect.width() / 2
+        needle_angle = math.pi * (1.0 - ratio)
+        needle_length = radius * 0.82
+        needle_end = QPointF(center.x() + math.cos(needle_angle) * needle_length, center.y() - math.sin(needle_angle) * needle_length)
+        painter.setPen(QPen(QColor("#374151"), 2))
+        painter.drawLine(center, needle_end)
+        painter.setBrush(QColor("#374151"))
+        painter.setPen(Qt.NoPen)
+        painter.drawEllipse(center, 5, 5)
+
+        value_font = QFont(self.font())
+        value_font.setPointSize(max(18, value_font.pointSize() + 10))
+        value_font.setBold(True)
+        painter.setFont(value_font)
+        painter.setPen(QPen(QColor("#111827")))
+        painter.drawText(
+            QRectF(frame.left(), frame.top() + frame.height() * 0.45, frame.width(), 42),
+            Qt.AlignHCenter | Qt.AlignTop,
+            self._format_value(current),
+        )
+        painter.setFont(QFont(self.font()))
+        painter.setPen(QPen(QColor("#6B7280")))
+        painter.drawText(
+            QRectF(frame.left(), frame.top() + frame.height() * 0.68, frame.width(), 22),
+            Qt.AlignHCenter | Qt.AlignTop,
+            f"Máximo {self._format_value(max_value)}",
+        )
+        painter.restore()
+
+    def _draw_matrix_view(self, painter: QPainter, rect: QRectF, payload: Dict[str, object]):
+        rows, series, matrix = self._series_matrix(payload)
+        if not rows:
+            self._draw_card_view(painter, rect, payload)
+            return
+
+        composite = any(label for label in series if str(label or "").strip())
+        headers = [str(label or "Valor").strip() for label in series if str(label or "").strip()]
+        if not headers:
+            headers = [str(payload.get("value_label") or "Valor")]
+
+        frame = rect.adjusted(8, 4, -8, -8)
+        painter.save()
+        painter.setPen(QPen(QColor("#E5E7EB")))
+        painter.setBrush(QColor("#FFFFFF"))
+        painter.drawRoundedRect(frame, 12, 12)
+
+        font = QFont(self.font())
+        font.setPointSize(max(9, font.pointSize()))
+        metrics = QFontMetrics(font)
+        row_header_width = min(
+            max(120, max((metrics.horizontalAdvance(str(row)) for row in rows), default=120) + 24),
+            int(frame.width() * 0.38),
+        )
+        header_h = 28
+        row_h = max(26, int((frame.height() - header_h - 8) / max(1, len(rows))))
+        column_count = max(1, len(headers))
+        cell_width = max(64, int((frame.width() - row_header_width - 12) / column_count))
+
+        painter.setFont(font)
+        painter.setPen(QPen(QColor("#6B7280")))
+        painter.drawText(
+            QRectF(frame.left() + 10, frame.top() + 8, row_header_width - 14, header_h - 4),
+            Qt.AlignLeft | Qt.AlignVCenter,
+            str(payload.get("value_label") or "Matrix"),
+        )
+        for col_index, header in enumerate(headers):
+            x = frame.left() + row_header_width + 10 + col_index * cell_width
+            painter.drawText(
+                QRectF(x, frame.top() + 8, cell_width - 8, header_h - 4),
+                Qt.AlignLeft | Qt.AlignVCenter,
+                header,
+            )
+
+        for row_index, row_label in enumerate(rows):
+            y = frame.top() + header_h + row_index * row_h
+            row_rect = QRectF(frame.left() + 10, y, row_header_width - 14, row_h)
+            fill = QColor("#F9FAFB" if row_index % 2 == 0 else "#FFFFFF")
+            painter.setPen(QPen(QColor("#E5E7EB")))
+            painter.setBrush(fill)
+            painter.drawRect(row_rect)
+            painter.setPen(QPen(QColor("#374151")))
+            painter.drawText(row_rect.adjusted(8, 0, -8, 0), Qt.AlignVCenter | Qt.AlignLeft, metrics.elidedText(row_label, Qt.ElideRight, int(row_rect.width()) - 14))
+            row_item = {"category": row_label, "raw_category": row_label, "key": self._category_key(row_label), "value": 0.0, "feature_ids": []}
+            self._register_data_point_region(row_rect, row_item)
+
+            if composite:
+                for col_index, header in enumerate(headers):
+                    value = float(matrix.get(row_label, {}).get(header, 0.0))
+                    cell_rect = QRectF(frame.left() + 10 + row_header_width + col_index * cell_width, y, cell_width, row_h)
+                    painter.setBrush(QColor("#FFFFFF"))
+                    painter.drawRect(cell_rect)
+                    painter.setPen(QPen(QColor("#6D28D9")))
+                    painter.drawText(
+                        cell_rect.adjusted(8, 0, -8, 0),
+                        Qt.AlignVCenter | Qt.AlignRight,
+                        self._format_value(value) if value else "",
+                    )
+                    cell_item = {
+                        "category": f"{row_label} / {header}",
+                        "raw_category": (row_label, header),
+                        "key": self._category_key((row_label, header)),
+                        "value": value,
+                        "feature_ids": [],
+                    }
+                    self._register_data_point_region(cell_rect, cell_item)
+            else:
+                value = float(matrix.get(row_label, {}).get("", 0.0))
+                cell_rect = QRectF(frame.left() + 10 + row_header_width, y, frame.width() - row_header_width - 16, row_h)
+                painter.setBrush(QColor("#FFFFFF"))
+                painter.drawRect(cell_rect)
+                painter.setPen(QPen(QColor("#111827")))
+                painter.drawText(
+                    cell_rect.adjusted(8, 0, -8, 0),
+                    Qt.AlignVCenter | Qt.AlignRight,
+                    self._format_value(value) if value else "",
+                )
+                cell_item = {
+                    "category": row_label,
+                    "raw_category": row_label,
+                    "key": self._category_key(row_label),
+                    "value": value,
+                    "feature_ids": [],
+                }
+                self._register_data_point_region(cell_rect, cell_item)
+
+        painter.restore()
+
+    def _draw_slicer_view(self, painter: QPainter, rect: QRectF, payload: Dict[str, object]):
+        items = list(payload.get("items") or [])
+        if not items:
+            self._draw_card_view(painter, rect, payload)
+            return
+
+        frame = rect.adjusted(8, 6, -8, -8)
+        painter.save()
+        painter.setPen(QPen(QColor("#E5E7EB")))
+        painter.setBrush(QColor("#FFFFFF"))
+        painter.drawRoundedRect(frame, 12, 12)
+        metrics = QFontMetrics(self.font())
+        x = frame.left() + 12
+        y = frame.top() + 12
+        row_height = 30
+        max_x = frame.right() - 12
+        colors = self._palette_colors(len(items), "purple")
+        for index, item in enumerate(items):
+            text = str(item.get("category") or "")
+            if not text:
+                continue
+            chip_width = min(max(72, metrics.horizontalAdvance(text) + 24), int(frame.width() * 0.42))
+            if x + chip_width > max_x:
+                x = frame.left() + 12
+                y += row_height + 8
+            chip_rect = QRectF(x, y, chip_width, row_height)
+            is_active = self._is_category_active(item.get("raw_category"))
+            fill = colors[index % len(colors)]
+            if is_active:
+                painter.setPen(QPen(fill.darker(120), 1.5))
+                painter.setBrush(fill.lighter(130))
+            else:
+                painter.setPen(QPen(QColor("#D1D5DB")))
+                painter.setBrush(QColor("#F8FAFF"))
+            painter.drawRoundedRect(chip_rect, 14, 14)
+            painter.setPen(QPen(QColor("#1F2937")))
+            painter.drawText(
+                chip_rect.adjusted(12, 0, -12, 0),
+                Qt.AlignVCenter | Qt.AlignLeft,
+                metrics.elidedText(text, Qt.ElideRight, int(chip_width) - 24),
+            )
+            self._register_data_point_region(chip_rect, item)
+            x += chip_width + 8
+        painter.restore()
+
+    def _draw_clustered_column_chart(self, painter: QPainter, rect: QRectF, payload: Dict[str, object]):
+        rows, series, matrix = self._series_matrix(payload)
+        if len(series) <= 1:
+            self._draw_vertical_bar_chart(painter, rect, payload)
+            return
+
+        top_offset = 28.0 if self.chart_state.show_legend else 8.0
+        chart_rect = rect.adjusted(18, top_offset, -18, -56)
+        if chart_rect.width() <= 0 or chart_rect.height() <= 0:
+            return
+        colors = self._palette_colors(len(series), "category")
+        self._draw_series_legend_list(painter, rect, series, colors)
+        self._draw_grid_lines(painter, chart_rect, vertical=False)
+
+        max_value = max((max(series_values.values()) for series_values in matrix.values() if series_values), default=1.0)
+        max_value = max(max_value, 1.0)
+        slot_width = chart_rect.width() / max(1, len(rows))
+        bar_gap = max(4.0, min(10.0, slot_width * 0.08))
+        bar_width = max(10.0, min(28.0, (slot_width - bar_gap * (len(series) - 1)) / max(1, len(series))))
+        metrics = QFontMetrics(self.font())
+
+        painter.save()
+        for row_index, row_label in enumerate(rows):
+            base_x = chart_rect.left() + row_index * slot_width
+            group_width = bar_width * len(series) + bar_gap * (len(series) - 1)
+            group_start = base_x + (slot_width - group_width) / 2
+            for series_index, series_label in enumerate(series):
+                value = float(matrix.get(row_label, {}).get(series_label, 0.0))
+                height = chart_rect.height() * max(0.0, value / max_value)
+                x = group_start + series_index * (bar_width + bar_gap)
+                y = chart_rect.bottom() - height
+                bar_rect = QRectF(x, y, bar_width, height)
+                color = QColor(colors[series_index % len(colors)])
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(color)
+                painter.drawRoundedRect(bar_rect, 4, 4)
+                item = {
+                    "category": f"{row_label} / {series_label}" if series_label else row_label,
+                    "raw_category": (row_label, series_label) if series_label else row_label,
+                    "key": self._category_key((row_label, series_label)),
+                    "value": value,
+                    "feature_ids": [],
+                }
+                self._register_data_point_region(bar_rect.adjusted(-2, -2, 2, 2), item)
+                annotation = self._format_value(value) if self.chart_state.show_values and value else ""
+                if annotation:
+                    painter.setPen(QPen(QColor("#1F2937")))
+                    painter.drawText(QRectF(x - 10, y - 20, bar_width + 20, 16), Qt.AlignHCenter | Qt.AlignBottom, annotation)
+            painter.setPen(QPen(QColor("#4B5563")))
+            label_rect = QRectF(base_x, chart_rect.bottom() + 8, slot_width, 28)
+            painter.drawText(label_rect, Qt.AlignHCenter | Qt.AlignTop, metrics.elidedText(row_label, Qt.ElideRight, int(slot_width) - 6))
+            self._register_data_point_region(label_rect, {"category": row_label, "raw_category": row_label, "key": self._category_key(row_label), "value": 0.0, "feature_ids": []})
+        painter.restore()
+
+    def _draw_stacked_column_chart(self, painter: QPainter, rect: QRectF, payload: Dict[str, object], normalize: bool = False, horizontal: bool = False):
+        rows, series, matrix = self._series_matrix(payload)
+        if len(series) <= 1:
+            if horizontal:
+                self._draw_horizontal_bar_chart(painter, rect, payload)
+            else:
+                self._draw_vertical_bar_chart(painter, rect, payload)
+            return
+
+        colors = self._palette_colors(len(series), "purple")
+        legend_needed = len(series) > 1 and self.chart_state.show_legend
+        if legend_needed:
+            self._draw_series_legend_list(painter, rect, series, colors)
+        self._draw_grid_lines(painter, rect.adjusted(18, 28 if legend_needed else 8, -18, -56), vertical=not horizontal)
+
+        painter.save()
+        if horizontal:
+            chart_rect = rect.adjusted(18, 28 if legend_needed else 8, -18, -56)
+            count = max(1, len(rows))
+            row_height = chart_rect.height() / count
+            bar_height = max(14.0, row_height * 0.56)
+            metrics = QFontMetrics(self.font())
+            for row_index, row_label in enumerate(rows):
+                values = [float(matrix.get(row_label, {}).get(series_label, 0.0)) for series_label in series]
+                row_total = sum(max(0.0, value) for value in values) or 1.0
+                x = chart_rect.left()
+                y = chart_rect.top() + row_index * row_height + (row_height - bar_height) / 2
+                painter.setPen(QPen(QColor("#4B5563")))
+                painter.drawText(QRectF(rect.left(), y - 2, 140, bar_height + 4), Qt.AlignVCenter | Qt.AlignLeft, metrics.elidedText(row_label, Qt.ElideRight, 132))
+                available_width = chart_rect.width()
+                cursor = x
+                total_value = row_total if normalize else max(1.0, max_value := max([row_total, *values, 1.0]))
+                for series_index, series_label in enumerate(series):
+                    value = max(0.0, values[series_index])
+                    width = available_width * (value / row_total if normalize else value / total_value)
+                    segment = QRectF(cursor, y, width, bar_height)
+                    painter.setPen(Qt.NoPen)
+                    painter.setBrush(colors[series_index % len(colors)])
+                    painter.drawRoundedRect(segment, 4, 4)
+                    item = {
+                        "category": f"{row_label} / {series_label}" if series_label else row_label,
+                        "raw_category": (row_label, series_label) if series_label else row_label,
+                        "key": self._category_key((row_label, series_label)),
+                        "value": value,
+                        "feature_ids": [],
+                    }
+                    self._register_data_point_region(segment.adjusted(-2, -2, 2, 2), item)
+                    cursor += width
+                label_rect = QRectF(chart_rect.right() + 4, y - 2, 72, bar_height + 4)
+                painter.setPen(QPen(QColor("#1F2937")))
+                painter.drawText(label_rect, Qt.AlignVCenter | Qt.AlignRight, self._format_value(row_total))
+        else:
+            chart_rect = rect.adjusted(18, 28 if legend_needed else 8, -18, -56)
+            count = max(1, len(rows))
+            slot_width = chart_rect.width() / count
+            bar_width = min(max(18.0, slot_width * 0.58), 76.0)
+            max_total = max((sum(max(0.0, float(matrix.get(row, {}).get(series_label, 0.0))) for series_label in series) for row in rows), default=1.0)
+            max_total = max(max_total, 1.0)
+            metrics = QFontMetrics(self.font())
+            for row_index, row_label in enumerate(rows):
+                x = chart_rect.left() + row_index * slot_width + (slot_width - bar_width) / 2
+                bottom = chart_rect.bottom()
+                values = [float(matrix.get(row_label, {}).get(series_label, 0.0)) for series_label in series]
+                row_total = sum(max(0.0, value) for value in values) or 1.0
+                for series_index, series_label in enumerate(series):
+                    value = max(0.0, values[series_index])
+                    height = chart_rect.height() * ((value / row_total) if normalize else (value / max_total))
+                    y = bottom - height
+                    segment = QRectF(x, y, bar_width, height)
+                    painter.setPen(Qt.NoPen)
+                    painter.setBrush(colors[series_index % len(colors)])
+                    painter.drawRoundedRect(segment, 4, 4)
+                    item = {
+                        "category": f"{row_label} / {series_label}" if series_label else row_label,
+                        "raw_category": (row_label, series_label) if series_label else row_label,
+                        "key": self._category_key((row_label, series_label)),
+                        "value": value,
+                        "feature_ids": [],
+                    }
+                    self._register_data_point_region(segment.adjusted(-2, -2, 2, 2), item)
+                    bottom = y
+                painter.setPen(QPen(QColor("#1F2937")))
+                label_rect = QRectF(x - 12, chart_rect.bottom() + 8, bar_width + 24, 28)
+                painter.drawText(label_rect, Qt.AlignHCenter | Qt.AlignTop, metrics.elidedText(row_label, Qt.ElideRight, int(bar_width + 20)))
+        painter.restore()
+
+    def _draw_combo_chart(self, painter: QPainter, rect: QRectF, payload: Dict[str, object]):
+        values = [float(value or 0.0) for value in list(payload.get("values") or [])]
+        categories = [str(item or "") for item in list(payload.get("categories") or [])]
+        if len(values) < 2:
+            self._draw_vertical_bar_chart(painter, rect, payload)
+            return
+
+        top_offset = 28.0 if self.chart_state.show_legend else 8.0
+        chart_rect = rect.adjusted(18, top_offset, -18, -56)
+        if chart_rect.width() <= 0 or chart_rect.height() <= 0:
+            return
+        self._draw_grid_lines(painter, chart_rect, vertical=False)
+        max_value = max(values) if values else 1.0
+        max_value = max(max_value, 1.0)
+        slot_width = chart_rect.width() / max(1, len(values))
+        bar_width = min(max(16.0, slot_width * 0.62), 68.0)
+        bar_color = self._palette_colors(1, "single")[0]
+        line_color = QColor("#0F766E")
+        cumulative = 0.0
+        points: List[QPointF] = []
+        painter.save()
+        for index, value in enumerate(values):
+            x = chart_rect.left() + slot_width * index + (slot_width - bar_width) / 2
+            height = chart_rect.height() * max(0.0, value / max_value)
+            y = chart_rect.bottom() - height
+            bar_rect = QRectF(x, y, bar_width, height)
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(bar_color if index % 2 == 0 else bar_color.lighter(120))
+            painter.drawRoundedRect(bar_rect, 4, 4)
+            item = self._payload_item(payload, index)
+            self._register_data_point_region(bar_rect.adjusted(-2, -2, 2, 2), item)
+            cumulative = cumulative + value
+            line_value = (cumulative / max(1.0, sum(max(0.0, v) for v in values))) * max_value
+            line_y = chart_rect.bottom() - chart_rect.height() * max(0.0, line_value / max_value)
+            points.append(QPointF(x + bar_width / 2, line_y))
+            annotation = self._format_annotation(value, float(payload["total"]))
+            if annotation:
+                painter.setPen(QPen(QColor("#1F2937")))
+                painter.drawText(QRectF(x - 10, y - 22, bar_width + 20, 18), Qt.AlignHCenter | Qt.AlignBottom, annotation)
+
+        if len(points) >= 2:
+            painter.setPen(QPen(line_color, 2.4))
+            for index in range(1, len(points)):
+                painter.drawLine(points[index - 1], points[index])
+        painter.setBrush(line_color)
+        painter.setPen(QPen(QColor("#FFFFFF"), 1))
+        for point in points:
+            painter.drawEllipse(point, 4.5, 4.5)
+        painter.setPen(QPen(QColor("#4B5563")))
+        metrics = QFontMetrics(self.font())
+        for index, category in enumerate(categories):
+            x = chart_rect.left() + slot_width * index
+            label_rect = QRectF(x, chart_rect.bottom() + 8, slot_width, 24)
+            painter.drawText(label_rect, Qt.AlignHCenter | Qt.AlignTop, metrics.elidedText(category, Qt.ElideRight, int(slot_width) - 4))
+        painter.restore()
+
+    def _draw_scatter_chart(self, painter: QPainter, rect: QRectF, payload: Dict[str, object]):
+        values = [float(value or 0.0) for value in list(payload.get("values") or [])]
+        categories = [str(item or "") for item in list(payload.get("categories") or [])]
+        if len(values) < 2:
+            self._draw_card_view(painter, rect, payload)
+            return
+
+        chart_rect = rect.adjusted(28, 24, -24, -40)
+        if chart_rect.width() <= 0 or chart_rect.height() <= 0:
+            return
+        self._draw_grid_lines(painter, chart_rect, vertical=False)
+        self._draw_grid_lines(painter, chart_rect, vertical=True)
+        max_value = max(values) if values else 1.0
+        max_value = max(max_value, 1.0)
+        colors = self._palette_colors(len(values), "blue")
+        step = chart_rect.width() / max(1, len(values) - 1)
+        painter.save()
+        points: List[QPointF] = []
+        for index, value in enumerate(values):
+            x = chart_rect.left() + step * index
+            y = chart_rect.bottom() - chart_rect.height() * max(0.0, value / max_value)
+            points.append(QPointF(x, y))
+            radius = 5 + 8 * (max(0.0, value) / max_value)
+            painter.setPen(QPen(colors[index % len(colors)].darker(120), 1.2))
+            painter.setBrush(colors[index % len(colors)])
+            painter.drawEllipse(QPointF(x, y), radius, radius)
+            item = self._payload_item(payload, index)
+            self._register_data_point_region(QRectF(x - radius - 4, y - radius - 4, (radius + 4) * 2, (radius + 4) * 2), item)
+            annotation = self._format_annotation(value, float(payload["total"]))
+            if annotation:
+                painter.setPen(QPen(QColor("#1F2937")))
+                painter.drawText(QRectF(x - 28, y - 28, 56, 16), Qt.AlignHCenter | Qt.AlignBottom, annotation)
+        painter.setPen(QPen(QColor("#4B5563")))
+        metrics = QFontMetrics(self.font())
+        for index, category in enumerate(categories):
+            x = chart_rect.left() + step * index
+            label_rect = QRectF(x - step / 2, chart_rect.bottom() + 8, step, 24)
+            painter.drawText(label_rect, Qt.AlignHCenter | Qt.AlignTop, metrics.elidedText(category, Qt.ElideRight, int(step) - 4))
+        painter.restore()
+
+    def _draw_treemap_view(self, painter: QPainter, rect: QRectF, payload: Dict[str, object]):
+        items = sorted(list(payload.get("items") or []), key=lambda item: float(item.get("value") or 0.0), reverse=True)
+        if not items:
+            self._draw_card_view(painter, rect, payload)
+            return
+
+        frame = rect.adjusted(8, 8, -8, -8)
+        total = sum(max(0.0, float(item.get("value") or 0.0)) for item in items) or 1.0
+        remaining = QRectF(frame)
+        horizontal = remaining.width() >= remaining.height()
+        colors = self._palette_colors(len(items), "purple")
+        painter.save()
+        painter.setPen(QPen(QColor("#E5E7EB")))
+        painter.setBrush(QColor("#FFFFFF"))
+        painter.drawRoundedRect(frame, 12, 12)
+        for index, item in enumerate(items):
+            value = max(0.0, float(item.get("value") or 0.0))
+            if index == len(items) - 1:
+                tile = QRectF(remaining)
+            else:
+                ratio = value / total if total else 0.0
+                if horizontal:
+                    width = max(0.0, remaining.width() * ratio)
+                    tile = QRectF(remaining.left(), remaining.top(), width, remaining.height())
+                    remaining.setLeft(tile.right())
+                else:
+                    height = max(0.0, remaining.height() * ratio)
+                    tile = QRectF(remaining.left(), remaining.top(), remaining.width(), height)
+                    remaining.setTop(tile.bottom())
+                total -= value
+                horizontal = not horizontal
+            fill = QColor(colors[index % len(colors)])
+            painter.setPen(QPen(fill.darker(130), 1))
+            painter.setBrush(fill)
+            painter.drawRoundedRect(tile.adjusted(2, 2, -2, -2), 8, 8)
+            label = str(item.get("category") or "")
+            if tile.width() > 60 and tile.height() > 28:
+                painter.setPen(QPen(QColor("#FFFFFF")))
+                painter.drawText(tile.adjusted(10, 8, -10, -8), Qt.AlignLeft | Qt.AlignTop, label)
+                painter.drawText(tile.adjusted(10, 8, -10, -8), Qt.AlignRight | Qt.AlignBottom, self._format_value(value))
+            self._register_data_point_region(tile, item)
+        painter.restore()
+
+    def _draw_waterfall_chart(self, painter: QPainter, rect: QRectF, payload: Dict[str, object]):
+        values = [float(value or 0.0) for value in list(payload.get("values") or [])]
+        categories = [str(item or "") for item in list(payload.get("categories") or [])]
+        if not values:
+            self._draw_card_view(painter, rect, payload)
+            return
+
+        chart_rect = rect.adjusted(18, 24, -18, -48)
+        baseline = chart_rect.bottom() * 0 + chart_rect.bottom()
+        cumulative = 0.0
+        max_extent = max(sum(max(0.0, value) for value in values), max(values), 1.0)
+        slot_width = chart_rect.width() / max(1, len(values))
+        bar_width = min(max(18.0, slot_width * 0.62), 74.0)
+        colors = self._palette_colors(len(values), "sunset")
+        painter.save()
+        self._draw_grid_lines(painter, chart_rect, vertical=False)
+        previous_x = None
+        previous_y = None
+        for index, value in enumerate(values):
+            start = cumulative
+            cumulative += value
+            left = chart_rect.left() + slot_width * index + (slot_width - bar_width) / 2
+            top_value = max(start, cumulative)
+            bottom_value = min(start, cumulative)
+            top_y = chart_rect.bottom() - chart_rect.height() * max(0.0, top_value / max_extent)
+            bottom_y = chart_rect.bottom() - chart_rect.height() * max(0.0, bottom_value / max_extent)
+            bar_rect = QRectF(left, top_y, bar_width, max(8.0, bottom_y - top_y))
+            fill = QColor(colors[index % len(colors)])
+            if value >= 0:
+                painter.setBrush(fill)
+            else:
+                painter.setBrush(fill.darker(130))
+            painter.setPen(QPen(fill.darker(140), 1))
+            painter.drawRoundedRect(bar_rect, 4, 4)
+            if previous_x is not None:
+                painter.setPen(QPen(QColor("#6B7280"), 1.2))
+                painter.drawLine(QPointF(previous_x, previous_y), QPointF(left + bar_width / 2, top_y))
+            previous_x = left + bar_width / 2
+            previous_y = top_y
+            item = self._payload_item(payload, index)
+            self._register_data_point_region(bar_rect.adjusted(-2, -2, 2, 2), item)
+            painter.setPen(QPen(QColor("#1F2937")))
+            painter.drawText(QRectF(left - 6, top_y - 20, bar_width + 12, 16), Qt.AlignHCenter | Qt.AlignBottom, self._format_value(value))
+            painter.setPen(QPen(QColor("#4B5563")))
+            painter.drawText(
+                QRectF(left - 12, chart_rect.bottom() + 8, bar_width + 24, 24),
+                Qt.AlignHCenter | Qt.AlignTop,
+                categories[index] if index < len(categories) else f"Item {index + 1}",
+            )
+        painter.restore()
+
+    def _draw_funnel_chart(self, painter: QPainter, rect: QRectF, payload: Dict[str, object]):
+        items = list(payload.get("items") or [])
+        if not items:
+            self._draw_card_view(painter, rect, payload)
+            return
+        items = sorted(items, key=lambda item: float(item.get("value") or 0.0), reverse=True)
+        values = [max(0.0, float(item.get("value") or 0.0)) for item in items]
+        total = max(sum(values), 1.0)
+        frame = rect.adjusted(20, 18, -20, -18)
+        step_h = max(28.0, frame.height() / max(1, len(items)))
+        top_width = frame.width() * 0.94
+        bottom_width = frame.width() * 0.28
+        colors = self._palette_colors(len(items), "sunset")
+        painter.save()
+        for index, item in enumerate(items):
+            ratio = values[index] / total if total else 0.0
+            next_ratio = values[index + 1] / total if index + 1 < len(values) else 0.0
+            width_top = bottom_width + (top_width - bottom_width) * ratio
+            width_bottom = bottom_width + (top_width - bottom_width) * next_ratio
+            y = frame.top() + index * step_h
+            x_top = frame.center().x() - width_top / 2
+            x_bottom = frame.center().x() - width_bottom / 2
+            path = QPainterPath()
+            path.moveTo(QPointF(x_top, y))
+            path.lineTo(QPointF(x_top + width_top, y))
+            path.lineTo(QPointF(x_bottom + width_bottom, y + step_h - 2))
+            path.lineTo(QPointF(x_bottom, y + step_h - 2))
+            path.closeSubpath()
+            color = QColor(colors[index % len(colors)])
+            painter.setPen(QPen(color.darker(135), 1))
+            painter.setBrush(color)
+            painter.drawPath(path)
+            painter.setPen(QPen(QColor("#FFFFFF")))
+            label = str(item.get("category") or "")
+            if width_top > 120:
+                painter.drawText(QRectF(x_top + 16, y + 4, width_top - 32, step_h - 8), Qt.AlignLeft | Qt.AlignVCenter, label)
+                painter.drawText(QRectF(x_top + 16, y + 4, width_top - 32, step_h - 8), Qt.AlignRight | Qt.AlignVCenter, self._format_value(values[index]))
+            self._register_data_point_region(path.boundingRect().adjusted(-2, -2, 2, 2), item)
         painter.restore()
 
     def _format_value(self, value: float) -> str:

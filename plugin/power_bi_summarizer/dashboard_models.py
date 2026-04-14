@@ -54,6 +54,11 @@ def _unique_normalized_texts(values: Any) -> List[str]:
     return results
 
 
+def _first_text(values: Any) -> str:
+    texts = _flatten_text_list(values)
+    return texts[0] if texts else ""
+
+
 def serialize_chart_payload(payload: Optional[ChartPayload]) -> Dict[str, Any]:
     if payload is None:
         return {}
@@ -191,7 +196,7 @@ class DashboardChartBinding:
             or config.get("semantic_field_key")
             or config.get("row_label")
             or config.get("row_field")
-            or (list(config.get("row_fields") or [])[:1] or [""])[0]
+            or _first_text(config.get("row_fields"))
             or chart_payload.get("category_field")
             or ""
         )
@@ -199,7 +204,7 @@ class DashboardChartBinding:
             binding.get("semantic_field_key")
             or config.get("semantic_field_key")
             or config.get("row_field")
-            or (list(config.get("row_fields") or [])[:1] or [""])[0]
+            or _first_text(config.get("row_fields"))
             or chart_payload.get("category_field")
             or dimension_field
             or ""

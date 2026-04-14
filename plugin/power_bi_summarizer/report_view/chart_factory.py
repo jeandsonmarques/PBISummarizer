@@ -37,6 +37,7 @@ class ChartVisualState:
     show_values: bool = True
     show_percent: bool = False
     show_grid: bool = False
+    show_border: bool = False
     sort_mode: str = "default"
     bar_corner_style: str = "square"
     title_override: str = ""
@@ -336,6 +337,7 @@ class ReportChartWidget(QWidget):
                 "show_values": bool(self.chart_state.show_values),
                 "show_percent": bool(self.chart_state.show_percent),
                 "show_grid": bool(self.chart_state.show_grid),
+                "show_border": bool(self.chart_state.show_border),
                 "sort_mode": str(self.chart_state.sort_mode or "default"),
                 "bar_corner_style": str(self.chart_state.bar_corner_style or "square"),
                 "title_override": str(self.chart_state.title_override or ""),
@@ -489,6 +491,11 @@ class ReportChartWidget(QWidget):
         grid_action.setEnabled(self.chart_state.chart_type in {"bar", "barh", "line", "area"})
         grid_action.triggered.connect(self._toggle_show_grid)
         personalize_menu.addAction(grid_action)
+
+        border_action = QAction("Mostrar borda", menu, checkable=True)
+        border_action.setChecked(bool(getattr(self.chart_state, "show_border", False)))
+        border_action.triggered.connect(self._toggle_show_border)
+        personalize_menu.addAction(border_action)
 
         sort_group = QActionGroup(menu)
         sort_group.setExclusive(True)
@@ -678,6 +685,9 @@ class ReportChartWidget(QWidget):
         if not self._supports_percentage():
             self.chart_state.show_percent = False
 
+        if not hasattr(self.chart_state, "show_border"):
+            self.chart_state.show_border = False
+
         if self.chart_state.chart_type in {"pie", "donut"}:
             self.chart_state.show_grid = False
         if self.chart_state.chart_type not in {"bar", "barh", "line", "area", "column_clustered", "column_stacked", "bar100_stacked", "combo", "scatter", "waterfall", "funnel"}:
@@ -713,6 +723,10 @@ class ReportChartWidget(QWidget):
 
     def _toggle_show_grid(self, checked: bool):
         self.chart_state.show_grid = bool(checked and self.chart_state.chart_type in {"bar", "barh", "line", "area"})
+        self._rerender_chart()
+
+    def _toggle_show_border(self, checked: bool):
+        self.chart_state.show_border = bool(checked)
         self._rerender_chart()
 
     def _set_sort_mode(self, sort_mode: str):
@@ -1519,6 +1533,9 @@ class ReportChartWidget(QWidget):
         else:
             self._draw_horizontal_bar_chart(painter, chart_rect, render_payload)
 
+        if bool(getattr(self.chart_state, "show_border", False)):
+            self._draw_chart_border(painter, chart_rect)
+
     def _draw_title(self, painter: QPainter, rect: QRectF, title: str):
         title_font = QFont(self.font())
         title_font.setPointSize(max(10, title_font.pointSize() + 1))
@@ -1668,6 +1685,16 @@ class ReportChartWidget(QWidget):
             for index in range(5):
                 y = chart_rect.bottom() - (chart_rect.height() * index / 4.0)
                 painter.drawLine(QPointF(chart_rect.left(), y), QPointF(chart_rect.right(), y))
+        painter.restore()
+
+    def _draw_chart_border(self, painter: QPainter, rect: QRectF):
+        border_rect = rect.adjusted(1.0, 1.0, -1.0, -1.0)
+        if border_rect.width() <= 0 or border_rect.height() <= 0:
+            return
+        painter.save()
+        painter.setBrush(Qt.NoBrush)
+        painter.setPen(QPen(QColor("#CBD5E1"), 1))
+        painter.drawRoundedRect(border_rect, 8, 8)
         painter.restore()
 
     def _draw_horizontal_bar_chart(self, painter: QPainter, rect: QRectF, payload: Dict[str, object]):

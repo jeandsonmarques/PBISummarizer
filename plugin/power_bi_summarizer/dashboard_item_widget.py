@@ -515,6 +515,11 @@ class DashboardItemWidget(QFrame):
         grid_action.triggered.connect(self.chart_widget._toggle_show_grid)
         menu.addAction(grid_action)
 
+        border_action = QAction("Mostrar borda", menu, checkable=True)
+        border_action.setChecked(bool(getattr(self.chart_widget.chart_state, "show_border", False)))
+        border_action.triggered.connect(self.chart_widget._toggle_show_border)
+        menu.addAction(border_action)
+
         sort_group = QActionGroup(menu)
         sort_group.setExclusive(True)
         for sort_mode, label in dict(self.chart_widget.SORT_LABELS).items():

@@ -24,13 +24,9 @@ The plugin combines local QGIS data exploration, report-style summaries, dashboa
 
 ### Build the ZIP from this repository
 
-From the repository root:
+Package the `plugin/power_bi_summarizer/` folder into a ZIP so that the archive contains only the `power_bi_summarizer/` directory at its root.
 
-```bash
-py -3 scripts/build_plugin_package.py
-```
-
-The generated archive will be written to `dist/`.
+If you prefer an automated build step, restore or create a packaging script before generating the release ZIP.
 
 ## Basic usage
 

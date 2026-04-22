@@ -687,6 +687,33 @@ class ModelTab(QWidget):
         except Exception:
             return None
 
+    def _resolve_layer_field_name(self, layer: QgsVectorLayer, field_name: str) -> str:
+        candidate = str(field_name or "").strip()
+        if layer is None or not candidate:
+            return ""
+        try:
+            fields = layer.fields()
+        except Exception:
+            return candidate
+        try:
+            index = fields.lookupField(candidate)
+        except Exception:
+            index = -1
+        if index is not None and index >= 0:
+            try:
+                return str(fields.field(index).name() or candidate).strip()
+            except Exception:
+                return candidate
+        lowered = candidate.lower()
+        try:
+            for field in fields:
+                name = str(field.name() or "").strip()
+                if name and (name == candidate or name.lower() == lowered):
+                    return name
+        except Exception:
+            pass
+        return ""
+
     def _build_model_chart_item_from_builder(self) -> Optional[DashboardChartItem]:
         layer_id = str(self.builder_layer_combo.currentData() or "")
         layer = self._builder_layers.get(layer_id)
@@ -702,10 +729,20 @@ class ModelTab(QWidget):
         chart_type = str(self.builder_chart_type_combo.currentData() or "bar").strip().lower() or "bar"
         top_n = max(3, int(self.builder_topn_spin.value()))
 
+        dimension_field = self._resolve_layer_field_name(layer, dimension_field)
+        if not dimension_field:
+            QMessageBox.information(self, _rt("Model"), _rt("O campo de categoria nao existe na camada selecionada."))
+            return None
+        if value_field != "__count__":
+            value_field = self._resolve_layer_field_name(layer, value_field)
+            if not value_field:
+                QMessageBox.information(self, _rt("Model"), _rt("O campo de metrica nao existe na camada selecionada."))
+                return None
+
         grouped: Dict[str, Dict[str, object]] = {}
         has_numeric_values = False
         for feature in layer.getFeatures():
-            raw_category = feature[dimension_field]
+            raw_category = feature.attribute(dimension_field)
             category = str(raw_category).strip() if raw_category is not None else ""
             if not category:
                 category = "(vazio)"
@@ -728,7 +765,7 @@ class ModelTab(QWidget):
             if value_field == "__count__":
                 value = 1.0
             else:
-                value = self._safe_float(feature[value_field])
+                value = self._safe_float(feature.attribute(value_field))
                 if value is None:
                     continue
                 has_numeric_values = True

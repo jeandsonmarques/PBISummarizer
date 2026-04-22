@@ -25,6 +25,7 @@ from qgis.PyQt.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMessageBox,
+    QMenu,
     QPushButton,
     QStackedWidget,
     QScrollArea,
@@ -65,6 +66,7 @@ from .pivot_table_widget import PivotTableWidget
 from .palette import palette_context
 from .slim_dialogs import SlimDialogBase, SlimLayerSelectionDialog, slim_get_item
 from .utils.resources import svg_icon
+from .utils.i18n_runtime import tr_text as _rt_runtime, apply_widget_translations as _apply_i18n_widgets
 from .browser_integration import (
     register_browser_provider,
     unregister_browser_provider,
@@ -107,15 +109,9 @@ class PowerBISummarizer:
 
         self.iface = iface
         self.plugin_dir = os.path.dirname(__file__)
-
-        locale = QSettings().value("locale/userLocale")[0:2]
-        locale_path = os.path.join(
-            self.plugin_dir, "i18n", f"PowerBISummarizer_{locale}.qm"
-        )
-        if os.path.exists(locale_path):
-            self.translator = QTranslator()
-            self.translator.load(locale_path)
-            QCoreApplication.installTranslator(self.translator)
+        self.translator = None
+        self._active_locale = ""
+        self._apply_translator()
 
         self.actions = []
         self.menu = self.tr("Summarizer")
@@ -124,6 +120,120 @@ class PowerBISummarizer:
 
     def tr(self, message):
         return QCoreApplication.translate("PowerBISummarizer", message)
+
+    def _translation_dir(self) -> str:
+        return os.path.join(self.plugin_dir, "i18n")
+
+    def _available_translation_locales(self) -> Dict[str, str]:
+        directory = self._translation_dir()
+        locales: Dict[str, str] = {}
+        try:
+            if not os.path.isdir(directory):
+                return locales
+            for filename in os.listdir(directory):
+                if not filename.startswith("PowerBISummarizer_") or not filename.endswith(".qm"):
+                    continue
+                locale = filename[len("PowerBISummarizer_") : -3].strip()
+                if not locale:
+                    continue
+                locales[locale] = os.path.join(directory, filename)
+        except Exception:
+            return {}
+        return locales
+
+    def _preferred_locale(self) -> str:
+        settings = QSettings()
+        forced_locale = str(settings.value("PowerBISummarizer/uiLocale", "") or "").strip()
+        if forced_locale and forced_locale.lower() != "auto":
+            short = forced_locale.split("_", 1)[0].split("-", 1)[0].lower()
+            return forced_locale if short in {"pt", "en", "es"} else "en"
+        user_locale = str(settings.value("locale/userLocale", "") or "").strip()
+        short = user_locale.split("_", 1)[0].split("-", 1)[0].lower() if user_locale else ""
+        if short in {"pt", "en", "es"}:
+            return user_locale or short
+        return "en"
+
+    def _resolve_translation_path(self, locale_code: str, available: Dict[str, str]) -> str:
+        if not locale_code:
+            return ""
+        exact = available.get(locale_code)
+        if exact:
+            return exact
+        lowered = locale_code.lower()
+        for key, path in available.items():
+            if key.lower() == lowered:
+                return path
+        short = locale_code.split("_", 1)[0].lower()
+        for key, path in available.items():
+            key_lower = key.lower()
+            if key_lower == short or key_lower.startswith(f"{short}_"):
+                return path
+        return ""
+
+    def _apply_translator(self):
+        try:
+            if self.translator is not None:
+                QCoreApplication.removeTranslator(self.translator)
+        except Exception:
+            pass
+        self.translator = None
+        self._active_locale = ""
+
+        available = self._available_translation_locales()
+        if not available:
+            return
+
+        preferred = self._preferred_locale()
+        candidates = [preferred]
+        if "_" in preferred:
+            candidates.append(preferred.split("_", 1)[0])
+        for candidate in candidates:
+            path = self._resolve_translation_path(candidate, available)
+            if not path:
+                continue
+            translator = QTranslator()
+            try:
+                loaded = translator.load(path)
+            except Exception:
+                loaded = False
+            if loaded:
+                QCoreApplication.installTranslator(translator)
+                self.translator = translator
+                locale_name = os.path.basename(path)[len("PowerBISummarizer_") : -3]
+                self._active_locale = locale_name
+                break
+
+    def reload_dialog_for_language(self):
+        try:
+            if self.dlg is not None:
+                self.dlg.close()
+                self.dlg.deleteLater()
+        except Exception:
+            pass
+        self.dlg = None
+        QTimer.singleShot(0, self.run)
+
+    def _ensure_dialog(self):
+        self._apply_translator()
+        if self.dlg is not None:
+            dialog_locale = str(getattr(self.dlg, "_active_locale", "") or "")
+            has_translator = bool(self.translator is not None)
+            dialog_has_translator = bool(getattr(self.dlg, "_has_translation", False))
+            if dialog_locale == self._active_locale and dialog_has_translator == has_translator:
+                return
+            try:
+                self.dlg.close()
+                self.dlg.deleteLater()
+            except Exception:
+                pass
+            self.dlg = None
+        if self.dlg is None:
+            self.dlg = PowerBISummarizerDialog(
+                self.iface,
+                plugin_host=self,
+                active_locale=self._active_locale,
+                has_translation=bool(self.translator is not None),
+            )
 
     def initGui(self):
         plugin_icon = svg_icon("PowerPages.svg")
@@ -176,8 +286,7 @@ class PowerBISummarizer:
         except Exception:
             pass
 
-        if not self.dlg:
-            self.dlg = PowerBISummarizerDialog(self.iface)
+        self._ensure_dialog()
         self.dlg.show()
         self.dlg.raise_()
         self.dlg.activateWindow()
@@ -185,8 +294,7 @@ class PowerBISummarizer:
     def open_integration_dialog(self):
         # Open as a full page inside the main plugin dialog, similar to 'Sobre'
         try:
-            if not self.dlg:
-                self.dlg = PowerBISummarizerDialog(self.iface)
+            self._ensure_dialog()
             self.dlg.show()
             self.dlg.raise_()
             self.dlg.activateWindow()
@@ -201,8 +309,7 @@ class PowerBISummarizer:
     # Exposed to SidebarController to open the in-dialog full page
     def open_external_integration_dialog(self):
         try:
-            if not self.dlg:
-                self.dlg = PowerBISummarizerDialog(self.iface)
+            self._ensure_dialog()
             self.dlg.show()
             self.dlg.raise_()
             self.dlg.activateWindow()
@@ -221,9 +328,13 @@ class PowerBISummarizer:
 
 
 class PowerBISummarizerDialog(QDialog):
-    def __init__(self, iface):
+    def __init__(self, iface, plugin_host=None, active_locale: str = "", has_translation: bool = False):
         super().__init__(iface.mainWindow())
         self.iface = iface
+        self._plugin_host = plugin_host
+        self._active_locale = str(active_locale or "")
+        self._has_translation = bool(has_translation)
+        self._language_settings_key = "PowerBISummarizer/uiLocale"
         self.ui = Ui_PowerBISummarizerDialog()
         self.ui.setupUi(self)
         self._square_scopes = []
@@ -234,10 +345,13 @@ class PowerBISummarizerDialog(QDialog):
                 self._square_scopes.append(scope)
         self._square_theme_applied = False
         try:
-            self.ui.minimize_btn.clicked.connect(self.showMinimized)
+            minimize_btn = getattr(self.ui, "minimize_btn", None)
+            if minimize_btn is not None:
+                minimize_btn.clicked.connect(self.showMinimized)
             self.ui.maximize_btn.clicked.connect(self.toggle_window_state)
         except Exception:
             pass
+        self._init_language_button()
 
         # External integration state (not used in main dialog anymore)
         self.external_df = None
@@ -433,21 +547,135 @@ class PowerBISummarizerDialog(QDialog):
                 manage_btn.clicked.connect(panel.open_connections_manager)
         except Exception:
             self.integration_panel = None
+        try:
+            self._apply_runtime_translations()
+        except Exception:
+            pass
     def toggle_window_state(self):
         if self.isMaximized():
             self.showNormal()
             try:
                 self.ui.maximize_btn.setText("Max")
-                self.ui.maximize_btn.setToolTip("Maximizar")
+                self.ui.maximize_btn.setToolTip(_rt_runtime("Maximizar"))
             except Exception:
                 pass
         else:
             self.showMaximized()
             try:
                 self.ui.maximize_btn.setText("Res")
-                self.ui.maximize_btn.setToolTip("Restaurar")
+                self.ui.maximize_btn.setToolTip(_rt_runtime("Restaurar"))
             except Exception:
                 pass
+
+    def _normalize_locale_choice(self, locale_code: str) -> str:
+        code = str(locale_code or "").strip()
+        if not code:
+            return "auto"
+        if code.lower() == "auto":
+            return "auto"
+        if code.startswith("qgis_") or code.startswith("qgis-"):
+            code = code[5:]
+        short = re.split(r"[-_]", code, maxsplit=1)[0].lower()
+        if short in {"pt", "en", "es"}:
+            return short
+        return "auto"
+
+    def _effective_locale_choice(self, locale_code: str) -> str:
+        normalized = self._normalize_locale_choice(locale_code)
+        if normalized != "auto":
+            return normalized
+        try:
+            user_locale = str(QSettings().value("locale/userLocale", "") or "").strip().lower()
+        except Exception:
+            user_locale = ""
+        if user_locale.startswith("qgis_") or user_locale.startswith("qgis-"):
+            user_locale = user_locale[5:]
+        short = re.split(r"[-_]", user_locale, maxsplit=1)[0].lower() if user_locale else ""
+        return short if short in {"pt", "en", "es"} else "en"
+
+    def _current_locale_choice(self) -> str:
+        raw = str(QSettings().value(self._language_settings_key, "auto") or "").strip()
+        return self._normalize_locale_choice(raw)
+
+    def _language_button_text(self, choice: str) -> str:
+        normalized = self._normalize_locale_choice(choice)
+        if normalized == "auto":
+            return "Auto"
+        return normalized.upper()[:4]
+
+    def _language_label(self, choice: str) -> str:
+        normalized = self._normalize_locale_choice(choice)
+        labels = {
+            "auto": _rt_runtime("Automático"),
+            "pt": _rt_runtime("Português"),
+            "en": "English",
+            "es": "Español",
+        }
+        if normalized == "auto":
+            effective = self._effective_locale_choice(choice)
+            return f"{labels['auto']} · {labels.get(effective, effective.upper())}"
+        return labels.get(normalized, normalized.upper())
+
+    def _refresh_language_button(self):
+        btn = getattr(self.ui, "language_btn", None)
+        if btn is None:
+            return
+        choice = self._current_locale_choice()
+        try:
+            btn.setIcon(svg_icon("Globe.svg"))
+            btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        except Exception:
+            pass
+        btn.setText(self._language_button_text(choice))
+        btn.setToolTip(f"{_rt_runtime('Idioma')}: {self._language_label(choice)}")
+
+    def _set_locale_choice(self, locale_code: str):
+        normalized = self._normalize_locale_choice(locale_code)
+        current = self._current_locale_choice()
+        if normalized == current:
+            return
+        settings = QSettings()
+        settings.setValue(self._language_settings_key, normalized)
+        self._refresh_language_button()
+        host = getattr(self, "_plugin_host", None)
+        if host is not None and hasattr(host, "reload_dialog_for_language"):
+            host.reload_dialog_for_language()
+
+    def _build_language_menu(self) -> QMenu:
+        menu = QMenu(self)
+        choice = self._current_locale_choice()
+        options = [
+            ("auto", _rt_runtime("Automático")),
+            ("pt", _rt_runtime("Português")),
+            ("en", "English"),
+            ("es", "Español"),
+        ]
+        for code, label in options:
+            action = menu.addAction(label)
+            action.setCheckable(True)
+            action.setChecked(choice == code)
+            action.triggered.connect(lambda _checked=False, c=code: self._set_locale_choice(c))
+        return menu
+
+    def _show_language_menu(self):
+        btn = getattr(self.ui, "language_btn", None)
+        if btn is None:
+            return
+        menu = self._build_language_menu()
+        menu.exec_(btn.mapToGlobal(btn.rect().bottomLeft()))
+
+    def _init_language_button(self):
+        btn = getattr(self.ui, "language_btn", None)
+        if btn is None:
+            return
+        try:
+            btn.clicked.connect(self._show_language_menu)
+        except Exception:
+            pass
+        self._refresh_language_button()
+
+    def _apply_runtime_translations(self):
+        _apply_i18n_widgets(self)
 
     # ---------------------------------------------------------------- Ribbon
     def _init_ribbon_actions(self):
@@ -594,7 +822,7 @@ class PowerBISummarizerDialog(QDialog):
             except Exception:
                 pass
         self.show_results_message(
-            "<p style='margin:8px 0;'>Selecione uma camada e clique em Gerar Resumo.</p>"
+            f"<p style='margin:8px 0;'>{_rt_runtime('Selecione uma camada e clique em Gerar Resumo.')}</p>"
         )
 
     def _reset_initial_summary_layer_selection(self):
@@ -629,6 +857,10 @@ class PowerBISummarizerDialog(QDialog):
             self.ui.stackedWidget.setCurrentWidget(self.ui.pageIntegracao)
         except Exception:
             pass
+        try:
+            self._apply_runtime_translations()
+        except Exception:
+            pass
         scroll = getattr(self, "integration_scroll", None)
         if scroll is not None:
             try:
@@ -649,11 +881,19 @@ class PowerBISummarizerDialog(QDialog):
             self.ui.stackedWidget.setCurrentWidget(self.ui.pageRelatorios)
         except Exception:
             pass
+        try:
+            self._apply_runtime_translations()
+        except Exception:
+            pass
 
     def show_model_page(self):
         self._set_ribbon_visible(False)
         try:
             self.ui.stackedWidget.setCurrentWidget(self.ui.pageModel)
+        except Exception:
+            pass
+        try:
+            self._apply_runtime_translations()
         except Exception:
             pass
 
@@ -679,6 +919,7 @@ class PowerBISummarizerDialog(QDialog):
 
     def open_get_data_dialog(self):
         dialog = GetDataDialog(self, self)
+        _apply_i18n_widgets(dialog)
         if dialog.exec_() != QDialog.Accepted:
             return
         datasets = dialog.results()
@@ -688,7 +929,11 @@ class PowerBISummarizerDialog(QDialog):
             try:
                 self.register_integration_dataframe(df, metadata)
             except Exception as exc:
-                QMessageBox.warning(self, "Obter Dados", f"Falha ao registrar dados: {exc}")
+                QMessageBox.warning(
+                    self,
+                    _rt_runtime("Obter Dados"),
+                    _rt_runtime("Falha ao registrar dados: {exc}", exc=exc),
+                )
         try:
             self.sidebar.show_reports_page()
         except Exception:
@@ -2208,17 +2453,17 @@ class PowerBISummarizerDialog(QDialog):
 
     def show_about_dialog(self):
         dialog = SlimDialogBase(self, geometry_key="PowerBISummarizer/dialogs/about")
-        dialog.setWindowTitle("Sobre")
+        dialog.setWindowTitle(_rt_runtime("Sobre"))
         layout = QVBoxLayout(dialog)
         layout.setContentsMargins(14, 14, 14, 14)
         layout.setSpacing(8)
 
-        title = QLabel("Summarizer", dialog)
+        title = QLabel(_rt_runtime("Summarizer"), dialog)
         title.setProperty("sublabel", True)
         layout.addWidget(title)
 
         body = QLabel(
-            "Resumo e exportação de camadas do QGIS com visual focado em análise e relatórios.",
+            _rt_runtime("Resumo e exportação de camadas do QGIS com visual focado em análise e relatórios."),
             dialog,
         )
         body.setWordWrap(True)
@@ -2231,6 +2476,7 @@ class PowerBISummarizerDialog(QDialog):
         buttons.accepted.connect(dialog.accept)
         layout.addWidget(buttons)
 
+        _apply_i18n_widgets(dialog)
         dialog.exec_()
 
 
@@ -2251,7 +2497,7 @@ class GetDataDialog(QDialog):
     def __init__(self, host, parent=None):
         super().__init__(parent)
         self.host = host
-        self.setWindowTitle("Obter Dados")
+        self.setWindowTitle(_rt_runtime("Obter Dados"))
         self.resize(680, 420)
         self._datasets: list = []
         self._build_ui()
@@ -2262,15 +2508,15 @@ class GetDataDialog(QDialog):
         layout.setSpacing(10)
 
         info = QLabel(
-            "Escolha a fonte de dados (PostgreSQL ou Summarizer Cloud). "
-            "As tabelas selecionadas serão adicionadas ao modelo sem abrir camadas no mapa."
+            _rt_runtime("Escolha a fonte de dados (PostgreSQL ou Summarizer Cloud). ")
+            + _rt_runtime("As tabelas selecionadas serão adicionadas ao modelo sem abrir camadas no mapa.")
         )
         info.setWordWrap(True)
         layout.addWidget(info)
 
         self.source_combo = QComboBox(self)
-        self.source_combo.addItem("PostgreSQL / SQL", "database")
-        self.source_combo.addItem("Summarizer Cloud", "cloud")
+        self.source_combo.addItem(_rt_runtime("PostgreSQL / SQL"), "database")
+        self.source_combo.addItem(_rt_runtime("Summarizer Cloud"), "cloud")
         self.source_combo.currentIndexChanged.connect(self._on_source_changed)
         layout.addWidget(self.source_combo)
 
@@ -2282,8 +2528,8 @@ class GetDataDialog(QDialog):
         db_layout = QVBoxLayout(db_page)
         db_layout.setContentsMargins(0, 0, 0, 0)
         db_layout.setSpacing(8)
-        db_layout.addWidget(QLabel("Usar conexões salvas ou cadastrar nova."))
-        self.db_import_btn = QPushButton("Abrir importador de banco...")
+        db_layout.addWidget(QLabel(_rt_runtime("Usar conexões salvas ou cadastrar nova.")))
+        self.db_import_btn = QPushButton(_rt_runtime("Abrir importador de banco..."))
         self.db_import_btn.setCursor(Qt.PointingHandCursor)
         db_layout.addWidget(self.db_import_btn, 0, Qt.AlignLeft)
         self.db_status = QLabel("")
@@ -2298,15 +2544,15 @@ class GetDataDialog(QDialog):
         cloud_layout = QVBoxLayout(cloud_page)
         cloud_layout.setContentsMargins(0, 0, 0, 0)
         cloud_layout.setSpacing(8)
-        cloud_layout.addWidget(QLabel("Selecione camadas disponíveis no Summarizer Cloud:"))
+        cloud_layout.addWidget(QLabel(_rt_runtime("Selecione camadas disponíveis no Summarizer Cloud:")))
         self.cloud_list = QListWidget(cloud_page)
         self.cloud_list.setSelectionMode(QListWidget.MultiSelection)
         cloud_layout.addWidget(self.cloud_list, 1)
         cloud_buttons = QHBoxLayout()
         cloud_buttons.setSpacing(6)
-        self.cloud_refresh_btn = QPushButton("Atualizar")
+        self.cloud_refresh_btn = QPushButton(_rt_runtime("Atualizar"))
         self.cloud_refresh_btn.setProperty("variant", "ghost")
-        self.cloud_load_btn = QPushButton("Carregar selecionados")
+        self.cloud_load_btn = QPushButton(_rt_runtime("Carregar selecionados"))
         for btn in (self.cloud_refresh_btn, self.cloud_load_btn):
             btn.setCursor(Qt.PointingHandCursor)
         cloud_buttons.addWidget(self.cloud_refresh_btn)
@@ -2328,6 +2574,7 @@ class GetDataDialog(QDialog):
 
         self._populate_cloud_layers()
         self._on_source_changed(0)
+        _apply_i18n_widgets(self)
 
     # ------------------------------------------------------------------ Actions
     def _on_source_changed(self, index: int):
@@ -2343,10 +2590,12 @@ class GetDataDialog(QDialog):
             return
         df, metadata, connection_meta, session_connection = dialog.result()
         if df is None or df.empty:
-            QMessageBox.information(self, "Banco", "Nenhuma tabela carregada.")
+            QMessageBox.information(self, _rt_runtime("Banco"), _rt_runtime("Nenhuma tabela carregada."))
             return
         self._datasets.append((df, metadata or {"connector": "PostgreSQL"}))
-        self.db_status.setText(f"Tabela carregada: {metadata.get('display_name')}")
+        self.db_status.setText(
+            _rt_runtime("Tabela carregada: {display_name}", display_name=metadata.get("display_name"))
+        )
         # Replica conexão no Navegador, se houver
         if connection_meta:
             try:
@@ -2366,17 +2615,19 @@ class GetDataDialog(QDialog):
         for conn in connections:
             conn_name = conn.get("name") or conn.get("id") or "Conexão"
             for layer_payload in conn.get("layers", []):
-                label = f"{conn_name} - {layer_payload.get('name', layer_payload.get('id', 'Camada'))}"
+                label = f"{conn_name} - {layer_payload.get('name', layer_payload.get('id', _rt_runtime('Camada')))}"
                 item = QListWidgetItem(label)
                 item.setData(Qt.UserRole, layer_payload)
                 self.cloud_list.addItem(item)
                 total_layers += 1
-        self.cloud_status.setText(f"{total_layers} camada(s) disponíveis.")
+        self.cloud_status.setText(
+            _rt_runtime("{total_layers} camada(s) disponíveis.", total_layers=total_layers)
+        )
 
     def _load_selected_cloud_layers(self):
         selected = self.cloud_list.selectedItems()
         if not selected:
-            QMessageBox.information(self, "Cloud", "Selecione ao menos uma camada.")
+            QMessageBox.information(self, _rt_runtime("Cloud"), _rt_runtime("Selecione ao menos uma camada."))
             return
         loaded = 0
         for item in selected:
@@ -2385,7 +2636,7 @@ class GetDataDialog(QDialog):
             provider = payload.get("provider") or "ogr"
             if not source:
                 continue
-            layer_name = payload.get("name") or payload.get("id") or "Camada"
+            layer_name = payload.get("name") or payload.get("id") or _rt_runtime("Camada")
             layer = QgsVectorLayer(source, layer_name, provider)
             if not layer.isValid():
                 continue
@@ -2393,14 +2644,14 @@ class GetDataDialog(QDialog):
             if df is None:
                 continue
             metadata = {
-                "connector": "Summarizer Cloud",
+                "connector": _rt_runtime("Summarizer Cloud"),
                 "display_name": layer_name,
                 "source_path": source,
                 "record_count": len(df),
             }
             self._datasets.append((df, metadata))
             loaded += 1
-        self.cloud_status.setText(f"{loaded} camada(s) carregadas.")
+        self.cloud_status.setText(_rt_runtime("{loaded} camada(s) carregadas.", loaded=loaded))
 
     # ------------------------------------------------------------------ API
     def results(self) -> List:

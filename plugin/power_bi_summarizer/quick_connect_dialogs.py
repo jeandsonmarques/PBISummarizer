@@ -15,6 +15,7 @@ from qgis.PyQt.QtWidgets import (
 )
 
 from .slim_dialogs import SlimDialogBase
+from .utils.i18n_runtime import apply_widget_translations as _apply_i18n_widgets, tr_text as _rt
 
 
 class PostgresQuickConnectDialog(SlimDialogBase):
@@ -22,7 +23,7 @@ class PostgresQuickConnectDialog(SlimDialogBase):
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent, geometry_key="PowerBISummarizer/integration/quickPostgres")
-        self.setWindowTitle("Nova conexão PostgreSQL")
+        self.setWindowTitle(_rt("Nova conexão PostgreSQL"))
         self.resize(420, 320)
         self._payload: Dict = {}
         self._build_ui()
@@ -33,9 +34,11 @@ class PostgresQuickConnectDialog(SlimDialogBase):
         layout.setSpacing(12)
 
         info = QLabel(
-            "Informe os parâmetros da instância PostgreSQL. A conexão será salva localmente "
-            "no registro do plugin e exibida imediatamente no Navegador. "
-            "Salve a senha apenas se confiar nesta estação de trabalho.",
+            _rt(
+                "Informe os parâmetros da instância PostgreSQL. A conexão será salva localmente "
+                "no registro do plugin e exibida imediatamente no Navegador. "
+                "Salve a senha apenas se confiar nesta estação de trabalho."
+            ),
             self,
         )
         info.setWordWrap(True)
@@ -46,36 +49,36 @@ class PostgresQuickConnectDialog(SlimDialogBase):
         form.setVerticalSpacing(8)
 
         self.name_edit = QLineEdit(self)
-        self.name_edit.setPlaceholderText("BI_Corporativo")
+        self.name_edit.setPlaceholderText(_rt("BI_Corporativo"))
         self.host_edit = QLineEdit(self)
-        self.host_edit.setPlaceholderText("db.empresa.com")
+        self.host_edit.setPlaceholderText(_rt("db.empresa.com"))
         self.port_spin = QSpinBox(self)
         self.port_spin.setRange(1, 65535)
         self.port_spin.setValue(5432)
         self.database_edit = QLineEdit(self)
-        self.database_edit.setPlaceholderText("powerbi")
+        self.database_edit.setPlaceholderText(_rt("powerbi"))
         self.user_edit = QLineEdit(self)
-        self.user_edit.setPlaceholderText("usuário")
+        self.user_edit.setPlaceholderText(_rt("usuário"))
         self.password_edit = QLineEdit(self)
         self.password_edit.setEchoMode(QLineEdit.Password)
-        self.password_edit.setPlaceholderText("********")
+        self.password_edit.setPlaceholderText(_rt("********"))
 
-        form.addWidget(QLabel("Nome da conexão"), 0, 0)
+        form.addWidget(QLabel(_rt("Nome da conexão")), 0, 0)
         form.addWidget(self.name_edit, 0, 1)
-        form.addWidget(QLabel("Host ou IP"), 1, 0)
+        form.addWidget(QLabel(_rt("Host ou IP")), 1, 0)
         form.addWidget(self.host_edit, 1, 1)
-        form.addWidget(QLabel("Porta"), 2, 0)
+        form.addWidget(QLabel(_rt("Porta")), 2, 0)
         form.addWidget(self.port_spin, 2, 1)
-        form.addWidget(QLabel("Banco"), 3, 0)
+        form.addWidget(QLabel(_rt("Banco")), 3, 0)
         form.addWidget(self.database_edit, 3, 1)
-        form.addWidget(QLabel("Usuário"), 4, 0)
+        form.addWidget(QLabel(_rt("Usuário")), 4, 0)
         form.addWidget(self.user_edit, 4, 1)
-        form.addWidget(QLabel("Senha"), 5, 0)
+        form.addWidget(QLabel(_rt("Senha")), 5, 0)
         form.addWidget(self.password_edit, 5, 1)
 
         layout.addLayout(form)
 
-        self.save_password_cb = QCheckBox("Salvar senha junto com a conexão", self)
+        self.save_password_cb = QCheckBox(_rt("Salvar senha junto com a conexão"), self)
         self.save_password_cb.setChecked(False)
         layout.addWidget(self.save_password_cb)
 
@@ -90,7 +93,7 @@ class PostgresQuickConnectDialog(SlimDialogBase):
         database = self.database_edit.text().strip()
         user = self.user_edit.text().strip()
         if not all([name, host, database, user]):
-            QMessageBox.warning(self, "Conexão PostgreSQL", "Nome, host, banco e usuário são obrigatórios.")
+            QMessageBox.warning(self, _rt("Conexão PostgreSQL"), _rt("Nome, host, banco e usuário são obrigatórios."))
             return
         payload = {
             "name": name,
@@ -107,6 +110,13 @@ class PostgresQuickConnectDialog(SlimDialogBase):
 
     def connection_payload(self) -> Dict:
         return dict(self._payload)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        try:
+            _apply_i18n_widgets(self)
+        except Exception:
+            pass
 
 
 __all__ = ["PostgresQuickConnectDialog"]

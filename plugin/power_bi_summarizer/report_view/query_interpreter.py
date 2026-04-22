@@ -12,6 +12,7 @@ from .result_models import (
     QueryPlan,
 )
 from .text_utils import normalize_text
+from ..utils.i18n_runtime import tr_text as _rt
 
 STOP_WORDS = {
     "a",
@@ -98,9 +99,9 @@ class QueryInterpreter:
     ) -> InterpretationResult:
         normalized = normalize_text(question)
         if not normalized:
-            return InterpretationResult("error", "Digite uma pergunta para gerar o relatório.")
+            return InterpretationResult("error", _rt("Digite uma pergunta para gerar o relatório."))
         if not schema.has_layers:
-            return InterpretationResult("error", "Abra pelo menos uma camada vetorial para usar os relatórios.")
+            return InterpretationResult("error", _rt("Abra pelo menos uma camada vetorial para usar os relatórios."))
 
         request = self._parse_request(question)
         overrides = dict(overrides or {})
@@ -118,7 +119,7 @@ class QueryInterpreter:
         if not combined or combined[0].score < 4:
             return InterpretationResult(
                 "unsupported",
-                "Não encontrei dados compatíveis com essa pergunta.",
+                _rt("Não encontrei dados compatíveis com essa pergunta."),
             )
 
         best = combined[0]
@@ -136,7 +137,7 @@ class QueryInterpreter:
                 )
             return InterpretationResult(
                 "ambiguous",
-                "Encontrei mais de uma camada compatível com essa pergunta.",
+                _rt("Encontrei mais de uma camada compatível com essa pergunta."),
                 options=options,
             )
 
@@ -159,29 +160,29 @@ class QueryInterpreter:
         group_concept = self._detect_group_concept(group_terms)
 
         metric_operation = "count"
-        metric_label = "Quantidade"
+        metric_label = _rt("Quantidade")
         use_geometry = False
         source_geometry_hint = None
 
         if self._contains_any(normalized, ("media", "média")):
             metric_operation = "avg"
-            metric_label = "Média"
+            metric_label = _rt("Média")
         elif self._contains_any(
             normalized,
             ("extensao", "extensão", "comprimento", "tamanho", "metro", "metros", "metragem", "km", "quilometro", "quilometros"),
         ):
             metric_operation = "length"
-            metric_label = "Extensão"
+            metric_label = _rt("Extensão")
             use_geometry = True
             source_geometry_hint = "line"
         elif self._contains_any(normalized, ("area", "área")):
             metric_operation = "area"
-            metric_label = "Área"
+            metric_label = _rt("Área")
             use_geometry = True
             source_geometry_hint = "polygon"
         elif self._contains_any(normalized, ("soma", "somatorio", "somatório", "total")):
             metric_operation = "sum"
-            metric_label = "Total"
+            metric_label = _rt("Total")
 
         measure_terms = self._extract_measure_terms(left_part, top_n)
         if not group_terms and any(term in GROUP_SYNONYMS["categoria"] for term in measure_terms):

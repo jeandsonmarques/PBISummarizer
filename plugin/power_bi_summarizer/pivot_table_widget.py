@@ -1,6 +1,7 @@
 ﻿from functools import partial
 import json
 import re
+import unicodedata
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -45,6 +46,7 @@ from qgis.PyQt.QtWidgets import (
 )
 from qgis.PyQt.QtSvg import QSvgRenderer
 from qgis.core import (
+    QgsFeatureRequest,
     QgsFields,
     QgsField,
     QgsFeature,
@@ -56,6 +58,7 @@ from qgis.core import (
 )
 
 from .palette import TYPOGRAPHY
+from .utils.i18n_runtime import apply_widget_translations as _apply_i18n_widgets, tr_text as _rt
 from .report_view.pivot import (
     PivotEngine,
     PivotExportService,
@@ -264,10 +267,12 @@ class _PivotFieldSourceListWidget(QListWidget):
         if spec is None:
             return
         menu = QMenu(self)
-        add_last = menu.addAction(f"Adicionar em {self._owner._area_label(self._owner._last_active_area)}")
-        add_rows = menu.addAction("Adicionar em Linhas")
-        add_columns = menu.addAction("Adicionar em Colunas")
-        add_values = menu.addAction("Adicionar em Valores")
+        add_last = menu.addAction(
+            f"{_rt('Adicionar em')} {self._owner._area_label(self._owner._last_active_area)}"
+        )
+        add_rows = menu.addAction(_rt("Adicionar em Linhas"))
+        add_columns = menu.addAction(_rt("Adicionar em Colunas"))
+        add_values = menu.addAction(_rt("Adicionar em Valores"))
         action = menu.exec_(event.globalPos())
         if action is None:
             return
@@ -433,11 +438,11 @@ class _PivotDropListWidget(QListWidget):
         if self._owner is not None:
             self._owner._set_last_active_area(self._area_name)
         menu = QMenu(self)
-        remove_action = menu.addAction("Remover")
-        up_action = menu.addAction("Mover para cima")
-        down_action = menu.addAction("Mover para baixo")
+        remove_action = menu.addAction(_rt("Remover"))
+        up_action = menu.addAction(_rt("Mover para cima"))
+        down_action = menu.addAction(_rt("Mover para baixo"))
         menu.addSeparator()
-        clear_action = menu.addAction("Limpar área")
+        clear_action = menu.addAction(_rt("Limpar área"))
         action = menu.exec_(event.globalPos())
         if action == remove_action and self._owner is not None:
             self._owner._remove_selected_area_field(self._area_name)
@@ -753,6 +758,17 @@ class PivotTableWidget(QWidget):
         self._load_sidebar_state()
         self._apply_sidebar_visibility(not self._sidebar_collapsed, persist=False)
         self._set_content_mode(True)
+        self._apply_runtime_i18n()
+
+    def _apply_runtime_i18n(self):
+        try:
+            _apply_i18n_widgets(self)
+        except Exception:
+            pass
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._apply_runtime_i18n()
 
     def minimumSizeHint(self):
         return QSize(640, 300)
@@ -882,14 +898,14 @@ class PivotTableWidget(QWidget):
 
         self.search_input = QLineEdit()
         self.search_input.setObjectName("summarySearch")
-        self.search_input.setPlaceholderText("Pesquisar...")
+        self.search_input.setPlaceholderText(_rt("Pesquisar..."))
         self.search_input.setFixedHeight(30)
         self.search_input.setMinimumWidth(134)
         self.search_input.setMaximumWidth(178)
         self.search_input.textChanged.connect(self._on_search_text_changed)
         toolbar.addWidget(self.search_input, 0)
 
-        self.clear_filters_btn = QPushButton("Limpar busca")
+        self.clear_filters_btn = QPushButton(_rt("Limpar busca"))
         self.clear_filters_btn.setObjectName("summarySecondaryButton")
         self.clear_filters_btn.setProperty("iconOnly", False)
         self.clear_filters_btn.setFixedHeight(32)
@@ -898,7 +914,7 @@ class PivotTableWidget(QWidget):
         self.clear_filters_btn.clicked.connect(self._clear_filters)
         toolbar.addWidget(self.clear_filters_btn, 0)
 
-        self.export_btn = QPushButton("Exportar")
+        self.export_btn = QPushButton(_rt("Exportar"))
         self.export_btn.setObjectName("summarySecondaryButton")
         self.export_btn.setProperty("iconOnly", False)
         self.export_btn.setFixedHeight(32)
@@ -907,7 +923,7 @@ class PivotTableWidget(QWidget):
         self.export_btn.clicked.connect(self._export_pivot_table)
         toolbar.addWidget(self.export_btn, 0)
 
-        self.sidebar_toggle_btn = QPushButton("Ocultar campos")
+        self.sidebar_toggle_btn = QPushButton(_rt("Ocultar campos"))
         self.sidebar_toggle_btn.setObjectName("summaryGhostButton")
         self.sidebar_toggle_btn.setProperty("iconOnly", False)
         self.sidebar_toggle_btn.setFixedHeight(32)
@@ -974,7 +990,7 @@ class PivotTableWidget(QWidget):
         self.fields_panel_icon = QLabel(self.fields_panel_header)
         self.fields_panel_icon.setObjectName("summaryPanelIcon")
         self.fields_panel_header_layout.addWidget(self.fields_panel_icon, 0, Qt.AlignVCenter)
-        self.fields_panel_title = QLabel("Field List")
+        self.fields_panel_title = QLabel(_rt("Field List"))
         self.fields_panel_title.setObjectName("summaryPanelTitle")
         self.fields_panel_header_layout.addWidget(self.fields_panel_title, 1, Qt.AlignVCenter)
         self.fields_panel_toggle_btn = QToolButton(self.fields_panel_header)
@@ -1012,7 +1028,7 @@ class PivotTableWidget(QWidget):
         self.fields_panel_collapsed_btn.setFixedSize(22, 22)
         self.fields_panel_collapsed_btn.clicked.connect(self._toggle_fields_panel)
         fields_rail_layout.addWidget(self.fields_panel_collapsed_btn, 0, Qt.AlignHCenter | Qt.AlignTop)
-        self.fields_panel_collapsed_title = _VerticalPanelLabel("Field List", self.fields_panel_collapsed_rail)
+        self.fields_panel_collapsed_title = _VerticalPanelLabel(_rt("Field List"), self.fields_panel_collapsed_rail)
         self.fields_panel_collapsed_title.setObjectName("summaryPanelCollapsedTitle")
         fields_rail_layout.addWidget(self.fields_panel_collapsed_title, 0, Qt.AlignHCenter | Qt.AlignTop)
         fields_rail_layout.addStretch(1)
@@ -1035,7 +1051,7 @@ class PivotTableWidget(QWidget):
         self.filters_panel_icon = QLabel(self.filters_panel_header)
         self.filters_panel_icon.setObjectName("summaryPanelIcon")
         self.filters_panel_header_layout.addWidget(self.filters_panel_icon, 0, Qt.AlignVCenter)
-        self.filter_area_title = QLabel("Filters")
+        self.filter_area_title = QLabel(_rt("Filters"))
         self.filter_area_title.setObjectName("summaryPanelTitle")
         self.filters_panel_header_layout.addWidget(self.filter_area_title, 1, Qt.AlignVCenter)
         self.filters_panel_toggle_btn = QToolButton(self.filters_panel_header)
@@ -1085,7 +1101,7 @@ class PivotTableWidget(QWidget):
         self.filters_panel_collapsed_btn.setFixedSize(22, 22)
         self.filters_panel_collapsed_btn.clicked.connect(self._toggle_filters_panel)
         filters_rail_layout.addWidget(self.filters_panel_collapsed_btn, 0, Qt.AlignHCenter | Qt.AlignTop)
-        self.filters_panel_collapsed_title = _VerticalPanelLabel("Filters", self.filters_panel_collapsed_rail)
+        self.filters_panel_collapsed_title = _VerticalPanelLabel(_rt("Filters"), self.filters_panel_collapsed_rail)
         self.filters_panel_collapsed_title.setObjectName("summaryPanelCollapsedTitle")
         filters_rail_layout.addWidget(self.filters_panel_collapsed_title, 0, Qt.AlignHCenter | Qt.AlignTop)
         filters_rail_layout.addStretch(1)
@@ -1119,10 +1135,10 @@ class PivotTableWidget(QWidget):
         empty_layout = QVBoxLayout(self.empty_state_frame)
         empty_layout.setContentsMargins(24, 20, 24, 20)
         empty_layout.setSpacing(6)
-        self.empty_state_title = QLabel("Adicione campos em Linhas ou Colunas para começar")
+        self.empty_state_title = QLabel(_rt("Adicione campos em Linhas ou Colunas para começar"))
         self.empty_state_title.setObjectName("summaryEmptyTitle")
         empty_layout.addWidget(self.empty_state_title)
-        self.empty_state_text = QLabel("Nenhum resultado para a configuração atual.")
+        self.empty_state_text = QLabel(_rt("Nenhum resultado para a configuração atual."))
         self.empty_state_text.setObjectName("summaryEmptyText")
         self.empty_state_text.setWordWrap(True)
         empty_layout.addWidget(self.empty_state_text)
@@ -1283,7 +1299,7 @@ class PivotTableWidget(QWidget):
         row_layout = QVBoxLayout(self.row_area_card)
         row_layout.setContentsMargins(6, 6, 6, 6)
         row_layout.setSpacing(4)
-        self.row_area_title = QLabel("Linhas")
+        self.row_area_title = QLabel(_rt("Linhas"))
         self.row_area_title.setObjectName("summaryAxisTitle")
         row_layout.addWidget(self.row_area_title)
         row_layout.addWidget(self.row_fields_list)
@@ -1296,7 +1312,7 @@ class PivotTableWidget(QWidget):
         col_layout = QVBoxLayout(self.column_area_card)
         col_layout.setContentsMargins(6, 6, 6, 6)
         col_layout.setSpacing(4)
-        self.column_area_title = QLabel("Colunas")
+        self.column_area_title = QLabel(_rt("Colunas"))
         self.column_area_title.setObjectName("summaryAxisTitle")
         col_layout.addWidget(self.column_area_title)
         col_layout.addWidget(self.column_fields_list)
@@ -1309,10 +1325,10 @@ class PivotTableWidget(QWidget):
         value_layout = QVBoxLayout(self.value_area_card)
         value_layout.setContentsMargins(6, 6, 6, 6)
         value_layout.setSpacing(4)
-        self.value_area_title = QLabel("Valores")
+        self.value_area_title = QLabel(_rt("Valores"))
         self.value_area_title.setObjectName("summaryAxisTitle")
         value_layout.addWidget(self.value_area_title)
-        operation_label = QLabel("Operação")
+        operation_label = QLabel(_rt("Operação"))
         operation_label.setObjectName("summaryFieldLabel")
         value_layout.addWidget(operation_label)
 
@@ -1580,7 +1596,7 @@ class PivotTableWidget(QWidget):
                 getattr(self, "_fields_panel_collapsed", False),
                 _TOOLS_FIELDS_MIN_WIDTH,
                 _TOOLS_FIELDS_MAX_WIDTH,
-                "Field List",
+                _rt("Field List"),
             ),
             (
                 getattr(self, "filters_panel", None),
@@ -1592,7 +1608,7 @@ class PivotTableWidget(QWidget):
                 getattr(self, "_filters_panel_collapsed", False),
                 _TOOLS_FILTERS_MIN_WIDTH,
                 _TOOLS_FILTERS_MAX_WIDTH,
-                "Filters",
+                _rt("Filters"),
             ),
         )
 
@@ -1732,21 +1748,21 @@ class PivotTableWidget(QWidget):
                 )
             else:
                 self._search_icon_action.setIcon(search_icon)
-            self.search_input.setPlaceholderText("Buscar")
-            self.search_input.setToolTip("Pesquisar na tabela")
+            self.search_input.setPlaceholderText(_rt("Buscar"))
+            self.search_input.setToolTip(_rt("Pesquisar na tabela"))
 
         if hasattr(self, "clear_filters_btn") and self.clear_filters_btn is not None:
             self._configure_toolbar_button(self.clear_filters_btn)
-            self.clear_filters_btn.setText("Limpar")
-            self.clear_filters_btn.setToolTip("Limpar busca")
+            self.clear_filters_btn.setText(_rt("Limpar"))
+            self.clear_filters_btn.setToolTip(_rt("Limpar busca"))
             self.clear_filters_btn.setIcon(clear_icon)
             self.clear_filters_btn.setIconSize(icon_size)
             self._polish_toolbar_button(self.clear_filters_btn)
 
         if hasattr(self, "export_btn") and self.export_btn is not None:
             self._configure_toolbar_button(self.export_btn)
-            self.export_btn.setText("Exportar")
-            self.export_btn.setToolTip("Exportar")
+            self.export_btn.setText(_rt("Exportar"))
+            self.export_btn.setToolTip(_rt("Exportar"))
             self.export_btn.setIcon(export_icon)
             self.export_btn.setIconSize(icon_size)
             self._polish_toolbar_button(self.export_btn)
@@ -1754,9 +1770,9 @@ class PivotTableWidget(QWidget):
         if hasattr(self, "sidebar_toggle_btn") and self.sidebar_toggle_btn is not None:
             collapsed = bool(getattr(self, "_tools_panels_hidden", False))
             self._configure_toolbar_button(self.sidebar_toggle_btn)
-            self.sidebar_toggle_btn.setText("Paineis")
+            self.sidebar_toggle_btn.setText(_rt("Painéis"))
             self.sidebar_toggle_btn.setToolTip(
-                "Mostrar campos e filtros" if collapsed else "Ocultar campos e filtros"
+                _rt("Mostrar campos e filtros") if collapsed else _rt("Ocultar campos e filtros")
             )
             self.sidebar_toggle_btn.setIcon(fields_icon)
             self.sidebar_toggle_btn.setIconSize(icon_size)
@@ -1769,20 +1785,21 @@ class PivotTableWidget(QWidget):
             self._external_dashboard_button.setMinimumHeight(32)
             self._external_dashboard_button.setMinimumWidth(116)
             self._external_dashboard_button.setMaximumWidth(136)
-            self._external_dashboard_button.setText("Dashboard")
-            self._external_dashboard_button.setToolTip("Dashboard interativo")
+            self._external_dashboard_button.setText(_rt("Dashboard"))
+            self._external_dashboard_button.setToolTip(_rt("Dashboard interativo"))
             self._external_dashboard_button.setIcon(dashboard_icon)
             self._external_dashboard_button.setIconSize(icon_size)
             self._polish_toolbar_button(self._external_dashboard_button)
 
         if self._external_auto_checkbox is not None:
-            self._external_auto_checkbox.setText("Auto")
-            self._external_auto_checkbox.setToolTip("Atualizacao automatica")
+            self._external_auto_checkbox.setText(_rt("Auto"))
+            self._external_auto_checkbox.setToolTip(_rt("Atualização automática"))
 
         if hasattr(self, "fields_panel_icon"):
             self.fields_panel_icon.setPixmap(panel_field_icon.pixmap(14, 14))
         if hasattr(self, "filters_panel_icon"):
             self.filters_panel_icon.setPixmap(panel_filter_icon.pixmap(14, 14))
+        self._apply_runtime_i18n()
 
     def _handle_splitter_moved(self, pos: int, index: int):
         if self._sidebar_collapsed or self.main_splitter is None:
@@ -1913,11 +1930,15 @@ class PivotTableWidget(QWidget):
     def _open_spreadsheet_source_menu(self):
         panel = self._integration_panel()
         if panel is None:
-            QMessageBox.information(self, "Resumo", "O painel de integração ainda não está disponível.")
+            QMessageBox.information(
+                self,
+                _rt("Resumo"),
+                _rt("O painel de integração ainda não está disponível."),
+            )
             return
         menu = QMenu(self)
-        excel_action = menu.addAction("Importar Excel (.xlsx / .xls)")
-        csv_action = menu.addAction("Importar CSV (.csv)")
+        excel_action = menu.addAction(_rt("Importar Excel (.xlsx / .xls)"))
+        csv_action = menu.addAction(_rt("Importar CSV (.csv)"))
         chosen = menu.exec_(self.source_cards["sheet"].mapToGlobal(self.source_cards["sheet"].rect().bottomLeft()))
         if chosen == excel_action and hasattr(panel, "_handle_excel"):
             panel._handle_excel()
@@ -1927,7 +1948,11 @@ class PivotTableWidget(QWidget):
     def _open_postgres_source(self):
         panel = self._integration_panel()
         if panel is None or not hasattr(panel, "_handle_sql_database"):
-            QMessageBox.information(self, "Resumo", "O fluxo de PostgreSQL não está disponível no momento.")
+            QMessageBox.information(
+                self,
+                _rt("Resumo"),
+                _rt("O fluxo de PostgreSQL não está disponível no momento."),
+            )
             return
         panel._handle_sql_database()
 
@@ -1938,17 +1963,23 @@ class PivotTableWidget(QWidget):
 
             open_cloud_dialog(host or self)
         except Exception as exc:
-            QMessageBox.information(self, "Cloud Beta", f"Não foi possível abrir a integração cloud.\n{exc}")
+            QMessageBox.information(
+                self,
+                _rt("Cloud Beta"),
+                _rt("Não foi possível abrir a integração cloud.\n{exc}", exc=exc),
+            )
+        self._apply_runtime_i18n()
 
     def show_welcome_prompt(self):
         self._entry_layer_selection_active = False
         self._clear_source_card_selection()
         self.show_empty_prompt(
-            "Adicionar dados ao seu relatório",
-            "Escolha uma fonte para começar. Os dados carregados serão exibidos no painel Resumo.",
+            _rt("Adicionar dados ao seu relatório"),
+            _rt("Escolha uma fonte para começar. Os dados carregados serão exibidos no painel Resumo."),
         )
         self._set_content_mode(True)
         self.table_stack.setCurrentWidget(self.empty_state_frame)
+        self._apply_runtime_i18n()
 
     def _apply_styles(self):
         tokens = {
@@ -2799,23 +2830,25 @@ class PivotTableWidget(QWidget):
     def _current_filter_description(self) -> str:
         summary_filter = str(self._current_summary_data.get("filter_description") or "").strip()
         metadata_filter = str(self._current_metadata.get("filter_expression") or "").strip()
-        return summary_filter or metadata_filter or "Nenhum"
+        return summary_filter or metadata_filter or _rt("Nenhum")
 
     def _current_metric_label(self) -> str:
         aggregation = str(self.agg_combo.currentData() or "count")
         if aggregation == "count":
-            return "Contagem de registros"
+            return _rt("Contagem de registros")
         current_text = str(self.value_field_combo.currentText() or "").strip()
         if current_text and current_text != "(Nenhum)":
             return current_text
         metadata_field = str(self._current_metadata.get("field_name") or "").strip()
-        return metadata_field or "Contagem de registros"
+        return metadata_field or _rt("Contagem de registros")
 
     def _update_context_summary(self):
         if hasattr(self, "value_area_title"):
             metric_label = self._current_metric_label()
             self.value_area_title.setText(
-                "Valores" if metric_label == "Contagem de registros" else f"Valores · {metric_label}"
+                _rt("Valores")
+                if metric_label == _rt("Contagem de registros")
+                else _rt("Valores · {metric_label}", metric_label=metric_label)
             )
 
     def _populate_field_panel(self, df: pd.DataFrame):
@@ -3119,7 +3152,7 @@ class PivotTableWidget(QWidget):
         except Exception as exc:
             self._current_pivot_result = None
             self.pivot_df = pd.DataFrame()
-            self.status_label.setText(f"Falha ao calcular a pivot: {exc}")
+            self.status_label.setText(_rt("Falha ao calcular a pivot: {exc}", exc=exc))
 
     def _populate_table(self):
         QgsMessageLog.logMessage(
@@ -3133,18 +3166,18 @@ class PivotTableWidget(QWidget):
         self._row_header_depth = 1
 
         if self.pivot_df is None or self.pivot_df.empty:
-            new_model.setHorizontalHeaderLabels(["Nenhum resultado"])
+            new_model.setHorizontalHeaderLabels([_rt("Nenhum resultado")])
             self.table_model = new_model
             self.proxy_model.setSourceModel(self.table_model)
             self.table_view.setModel(self.proxy_model)
             has_structure = bool(self._selected_area_specs("row") or self._selected_area_specs("column"))
             if has_structure:
-                self.empty_state_title.setText("Nenhum resultado para a configuração atual")
-                self.empty_state_text.setText("Ajuste os agrupamentos ou a operacao para continuar a analise.")
+                self.empty_state_title.setText(_rt("Nenhum resultado para a configuração atual"))
+                self.empty_state_text.setText(_rt("Ajuste os agrupamentos ou a operação para continuar a análise."))
             else:
-                self.empty_state_title.setText("Adicione campos em Linhas ou Colunas para começar")
+                self.empty_state_title.setText(_rt("Adicione campos em Linhas ou Colunas para começar"))
                 self.empty_state_text.setText(
-                    "Escolha os agrupamentos no painel Campos da Tabela Dinamica para montar a tabela dinamica."
+                    _rt("Escolha os agrupamentos no painel Campos da Tabela Dinamica para montar a tabela dinamica.")
                 )
             self.table_stack.setCurrentWidget(self.empty_state_frame)
             self._connect_selection_summary()
@@ -3387,9 +3420,9 @@ class PivotTableWidget(QWidget):
         column_labels = [self._area_list("column").item(i).text() for i in range(self._area_list("column").count())]
         parts = [f"Mostrando {visible}/{total} linha(s)"]
         if row_labels:
-            parts.append(f"Linhas: {' / '.join(row_labels)}")
+            parts.append(f"{_rt('Linhas')}: {' / '.join(row_labels)}")
         if column_labels:
-            parts.append(f"Colunas: {' / '.join(column_labels)}")
+            parts.append(f"{_rt('Colunas')}: {' / '.join(column_labels)}")
         self.status_label.setText(" | ".join(parts))
         self._update_context_summary()
 
@@ -3475,12 +3508,12 @@ class PivotTableWidget(QWidget):
             return
         selection_model = self.table_view.selectionModel()
         if selection_model is None:
-            self.selection_summary_label.setText("Selecione celulas para ver soma e contagem.")
+            self.selection_summary_label.setText(_rt("Selecione células para ver soma e contagem."))
             return
 
         indexes = list(selection_model.selectedIndexes() or [])
         if not indexes:
-            self.selection_summary_label.setText("Selecione celulas para ver soma e contagem.")
+            self.selection_summary_label.setText(_rt("Selecione células para ver soma e contagem."))
             return
 
         numeric_values: List[float] = []
@@ -3501,16 +3534,21 @@ class PivotTableWidget(QWidget):
                 continue
 
         if selected_count == 0:
-            self.selection_summary_label.setText("Selecione celulas para ver soma e contagem.")
+            self.selection_summary_label.setText(_rt("Selecione células para ver soma e contagem."))
             return
 
         if numeric_values:
             total_sum = float(sum(numeric_values))
-            sum_text = f"Soma: {self._format_selection_number(total_sum)}"
+            sum_text = _rt("Soma: {value}", value=self._format_selection_number(total_sum))
         else:
-            sum_text = "Soma: -"
+            sum_text = _rt("Soma: -")
         self.selection_summary_label.setText(
-            f"Selecionadas: {selected_count} celula(s) | {sum_text} | Numericas: {numeric_count}"
+            _rt(
+                "Selecionadas: {selected_count} celula(s) | {sum_text} | Numericas: {numeric_count}",
+                selected_count=selected_count,
+                sum_text=sum_text,
+                numeric_count=numeric_count,
+            )
         )
 
     def _format_selection_number(self, value: float) -> str:
@@ -3634,7 +3672,7 @@ class PivotTableWidget(QWidget):
             title.style().polish(title)
 
     def _placeholder_item(self) -> QListWidgetItem:
-        item = QListWidgetItem("Nenhum campo")
+        item = QListWidgetItem(_rt("Nenhum campo"))
         item.setData(Qt.UserRole, "__placeholder__")
         item.setFlags(Qt.NoItemFlags)
         return item
@@ -3766,11 +3804,11 @@ class PivotTableWidget(QWidget):
 
     def _area_label(self, area: str) -> str:
         if area == "row":
-            return "Linhas"
+            return _rt("Linhas")
         if area == "column":
-            return "Colunas"
+            return _rt("Colunas")
         if area == "value":
-            return "Valores"
+            return _rt("Valores")
         return "Filtros"
 
     def _selected_area_specs(self, area: str) -> List[PivotFieldSpec]:
@@ -4168,7 +4206,7 @@ class PivotTableWidget(QWidget):
         self._current_pivot_result = None
         self.meta_label.setText("")
         self.status_label.setText("")
-        self.selection_summary_label.setText("Selecione células para ver soma e contagem.")
+        self.selection_summary_label.setText(_rt("Selecione células para ver soma e contagem."))
         self.empty_state_title.setText(title)
         self.empty_state_text.setText(text)
         self.fields_list.clear()
@@ -4185,7 +4223,7 @@ class PivotTableWidget(QWidget):
         ):
             combo.blockSignals(True)
             combo.clear()
-            combo.addItem("(Nenhum)", None)
+            combo.addItem(_rt("(Nenhum)"), None)
             combo.blockSignals(False)
         self.agg_combo.blockSignals(True)
         count_index = self.agg_combo.findData("count")
@@ -4204,6 +4242,7 @@ class PivotTableWidget(QWidget):
         self._sync_value_area_from_combo()
         self._update_context_summary()
         self._set_content_mode(False)
+        self._apply_runtime_i18n()
 
     # ------------------------------------------------------------------ Helpers
     def _detect_numeric_candidates(self, df: pd.DataFrame) -> List[str]:
@@ -4250,7 +4289,392 @@ class PivotTableWidget(QWidget):
             rows.append(row_values)
         return pd.DataFrame(rows, columns=headers)
 
-    def _build_export_layer_dataframe(self) -> pd.DataFrame:
+    def _normalize_field_token(self, value: Any) -> str:
+        text = str(value or "").strip()
+        if not text:
+            return ""
+        text = unicodedata.normalize("NFKD", text)
+        text = "".join(ch for ch in text if not unicodedata.combining(ch))
+        text = re.sub(r"\s+", " ", text).strip().lower()
+        return text
+
+    def _resolve_available_field_name(
+        self,
+        field_name: Any,
+        available_fields: List[str],
+        fallback_candidates: Optional[List[Any]] = None,
+    ) -> str:
+        candidate = str(field_name or "").strip()
+        if candidate and candidate in available_fields:
+            return candidate
+
+        available_lower = {name.lower(): name for name in available_fields}
+        if candidate:
+            by_lower = available_lower.get(candidate.lower())
+            if by_lower:
+                return by_lower
+
+        normalized_map: Dict[str, str] = {}
+        for name in available_fields:
+            token = self._normalize_field_token(name)
+            if token and token not in normalized_map:
+                normalized_map[token] = name
+
+        lookup_values: List[Any] = []
+        if candidate:
+            lookup_values.append(candidate)
+        lookup_values.extend(list(fallback_candidates or []))
+
+        for lookup in lookup_values:
+            token = self._normalize_field_token(lookup)
+            if token and token in normalized_map:
+                return normalized_map[token]
+        return ""
+
+    def _resolve_layer_field_name(
+        self,
+        layer,
+        field_name: Any,
+        fallback_candidates: Optional[List[Any]] = None,
+    ) -> str:
+        if layer is None:
+            return ""
+        fields = list(layer.fields())
+        layer_field_names = [str(field.name()) for field in fields]
+        resolved = self._resolve_available_field_name(
+            field_name,
+            layer_field_names,
+            fallback_candidates=fallback_candidates,
+        )
+        if resolved:
+            return resolved
+
+        alias_map: Dict[str, str] = {}
+        for field in fields:
+            canonical_name = str(field.name())
+            alias = str(field.alias() or "").strip()
+            for candidate in (alias, canonical_name):
+                token = self._normalize_field_token(candidate)
+                if token and token not in alias_map:
+                    alias_map[token] = canonical_name
+
+        lookup_values: List[Any] = [field_name]
+        lookup_values.extend(list(fallback_candidates or []))
+        for lookup in lookup_values:
+            token = self._normalize_field_token(lookup)
+            if token and token in alias_map:
+                return alias_map[token]
+        return ""
+
+    def _qvariant_to_python(self, value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, QVariant):
+            try:
+                value = value.value()
+            except Exception:
+                value = str(value)
+        if hasattr(value, "isNull"):
+            try:
+                if value.isNull():
+                    return None
+            except Exception:
+                pass
+        if hasattr(value, "toPyDateTime"):
+            try:
+                return value.toPyDateTime()
+            except Exception:
+                return str(value)
+        if isinstance(value, str):
+            value = value.strip()
+            return value or None
+        return value
+
+    def _build_layer_dataframe_from_request(
+        self,
+        layer,
+        request: PivotRequest,
+        extra_attribute_fields: Optional[List[str]] = None,
+    ) -> pd.DataFrame:
+        if layer is None or request is None:
+            return pd.DataFrame()
+
+        attribute_fields: List[str] = []
+
+        def _add_attribute_field(name: Any):
+            field_name = str(name or "").strip()
+            if field_name and field_name not in attribute_fields:
+                attribute_fields.append(field_name)
+
+        for spec in list(request.row_fields or []) + list(request.column_fields or []):
+            if spec is not None and spec.source_type == "attribute":
+                _add_attribute_field(spec.field_name)
+        if request.value_field is not None and request.value_field.source_type == "attribute":
+            _add_attribute_field(request.value_field.field_name)
+        for extra in extra_attribute_fields or []:
+            _add_attribute_field(extra)
+
+        layer_field_names = [field.name() for field in list(layer.fields())]
+        valid_layer_fields = set(layer_field_names)
+        attribute_fields = [name for name in attribute_fields if name in valid_layer_fields]
+
+        geometry_value_name = ""
+        geometry_op = ""
+        if request.value_field is not None and request.value_field.source_type == "geometry":
+            geometry_value_name = str(request.value_field.field_name or "").strip()
+            geometry_op = str(request.value_field.geometry_op or "").strip().lower()
+
+        feature_request = QgsFeatureRequest()
+        if request.filter_expression:
+            feature_request.setFilterExpression(request.filter_expression)
+        if attribute_fields:
+            try:
+                feature_request.setSubsetOfAttributes(attribute_fields, layer.fields())
+            except Exception:
+                pass
+        if not geometry_value_name:
+            try:
+                feature_request.setFlags(QgsFeatureRequest.NoGeometry)
+            except Exception:
+                pass
+
+        selected_ids = set()
+        if request.only_selected:
+            try:
+                selected_ids = set(layer.selectedFeatureIds())
+            except Exception:
+                selected_ids = set()
+
+        row_col_attribute_fields: List[str] = []
+        for spec in list(request.row_fields or []) + list(request.column_fields or []):
+            if spec is None or spec.source_type != "attribute":
+                continue
+            name = str(spec.field_name or "").strip()
+            if name and name not in row_col_attribute_fields:
+                row_col_attribute_fields.append(name)
+
+        records: List[Dict[str, Any]] = []
+        for feature in layer.getFeatures(feature_request):
+            if selected_ids and int(feature.id()) not in selected_ids:
+                continue
+
+            if not request.include_nulls and row_col_attribute_fields:
+                has_null_axis_value = False
+                for field_name in row_col_attribute_fields:
+                    try:
+                        raw_value = feature[field_name]
+                    except Exception:
+                        raw_value = None
+                    if self._qvariant_to_python(raw_value) is None:
+                        has_null_axis_value = True
+                        break
+                if has_null_axis_value:
+                    continue
+
+            record: Dict[str, Any] = {}
+            for field_name in attribute_fields:
+                try:
+                    raw_value = feature[field_name]
+                except Exception:
+                    raw_value = None
+                record[field_name] = self._qvariant_to_python(raw_value)
+
+            if geometry_value_name:
+                geometry_value = None
+                try:
+                    geometry = feature.geometry()
+                    if geometry is not None and not geometry.isEmpty():
+                        if geometry_op == "area":
+                            geometry_value = float(geometry.area())
+                        else:
+                            geometry_value = float(geometry.length())
+                except Exception:
+                    geometry_value = None
+                record[geometry_value_name] = geometry_value
+
+            records.append(record)
+
+        ordered_columns = list(attribute_fields)
+        if geometry_value_name and geometry_value_name not in ordered_columns:
+            ordered_columns.append(geometry_value_name)
+        if not ordered_columns:
+            return pd.DataFrame(records)
+        return pd.DataFrame(records, columns=ordered_columns)
+
+    def _build_layer_dataframe_from_pivot_config(
+        self,
+        layer,
+        pivot_config: Dict[str, Any],
+    ) -> pd.DataFrame:
+        if layer is None or not isinstance(pivot_config, dict):
+            return pd.DataFrame()
+
+        row_requested = [str(value or "").strip() for value in (pivot_config.get("row_fields") or []) if str(value or "").strip()]
+        row_labels = [str(value or "").strip() for value in (pivot_config.get("row_labels") or [])]
+        row_fields: List[str] = []
+        for index, value in enumerate(row_requested):
+            fallback = row_labels[index] if index < len(row_labels) else ""
+            resolved = self._resolve_layer_field_name(layer, value, fallback_candidates=[fallback])
+            if resolved and resolved not in row_fields:
+                row_fields.append(resolved)
+
+        col_requested = [str(value or "").strip() for value in (pivot_config.get("column_fields") or []) if str(value or "").strip()]
+        col_labels = [str(value or "").strip() for value in (pivot_config.get("column_labels") or [])]
+        column_fields: List[str] = []
+        for index, value in enumerate(col_requested):
+            fallback = col_labels[index] if index < len(col_labels) else ""
+            resolved = self._resolve_layer_field_name(layer, value, fallback_candidates=[fallback])
+            if resolved and resolved not in column_fields:
+                column_fields.append(resolved)
+
+        filter_requested = [str(value or "").strip() for value in (pivot_config.get("filter_fields") or []) if str(value or "").strip()]
+        filter_labels = [str(value or "").strip() for value in (pivot_config.get("filter_labels") or [])]
+        filter_fields: List[str] = []
+        for index, value in enumerate(filter_requested):
+            fallback = filter_labels[index] if index < len(filter_labels) else ""
+            resolved = self._resolve_layer_field_name(layer, value, fallback_candidates=[fallback])
+            if resolved and resolved not in filter_fields:
+                filter_fields.append(resolved)
+
+        value_field_requested = str(pivot_config.get("value_field") or "").strip()
+        value_field_label = str(pivot_config.get("value_label") or "").strip()
+        resolved_value_field = self._resolve_layer_field_name(
+            layer,
+            value_field_requested,
+            fallback_candidates=[value_field_label],
+        )
+        geometry_value_name = ""
+        geometry_token = self._normalize_field_token(value_field_requested or value_field_label)
+        if not resolved_value_field and geometry_token:
+            if "geometry_length" in geometry_token or "comprimento geometrico" in geometry_token:
+                geometry_value_name = "__geometry_length__"
+            elif "geometry_area" in geometry_token or "area geometrica" in geometry_token:
+                geometry_value_name = "__geometry_area__"
+
+        attribute_fields: List[str] = []
+        for name in row_fields + column_fields + filter_fields:
+            if name and name not in attribute_fields:
+                attribute_fields.append(name)
+        if resolved_value_field and resolved_value_field not in attribute_fields:
+            attribute_fields.append(resolved_value_field)
+
+        feature_request = QgsFeatureRequest()
+        filter_expression = str((self._current_metadata or {}).get("filter_expression") or "").strip()
+        if filter_expression:
+            feature_request.setFilterExpression(filter_expression)
+        if attribute_fields:
+            try:
+                feature_request.setSubsetOfAttributes(attribute_fields, layer.fields())
+            except Exception:
+                pass
+        if not geometry_value_name:
+            try:
+                feature_request.setFlags(QgsFeatureRequest.NoGeometry)
+            except Exception:
+                pass
+
+        selected_ids = set()
+        if bool(pivot_config.get("only_selected")):
+            try:
+                selected_ids = set(layer.selectedFeatureIds())
+            except Exception:
+                selected_ids = set()
+
+        include_nulls = bool(pivot_config.get("include_nulls"))
+        null_gate_fields = row_fields + column_fields
+
+        records: List[Dict[str, Any]] = []
+        for feature in layer.getFeatures(feature_request):
+            if selected_ids and int(feature.id()) not in selected_ids:
+                continue
+
+            if not include_nulls and null_gate_fields:
+                has_null_axis_value = False
+                for field_name in null_gate_fields:
+                    try:
+                        raw_value = feature[field_name]
+                    except Exception:
+                        raw_value = None
+                    if self._qvariant_to_python(raw_value) is None:
+                        has_null_axis_value = True
+                        break
+                if has_null_axis_value:
+                    continue
+
+            record: Dict[str, Any] = {}
+            for field_name in attribute_fields:
+                try:
+                    raw_value = feature[field_name]
+                except Exception:
+                    raw_value = None
+                record[field_name] = self._qvariant_to_python(raw_value)
+
+            if geometry_value_name:
+                geometry_value = None
+                try:
+                    geometry = feature.geometry()
+                    if geometry is not None and not geometry.isEmpty():
+                        if geometry_value_name == "__geometry_area__":
+                            geometry_value = float(geometry.area())
+                        else:
+                            geometry_value = float(geometry.length())
+                except Exception:
+                    geometry_value = None
+                record[geometry_value_name] = geometry_value
+
+            records.append(record)
+
+        if not records:
+            return pd.DataFrame(columns=attribute_fields + ([geometry_value_name] if geometry_value_name else []))
+
+        ordered_columns = list(attribute_fields)
+        if geometry_value_name and geometry_value_name not in ordered_columns:
+            ordered_columns.append(geometry_value_name)
+        if not ordered_columns:
+            return pd.DataFrame(records)
+        return pd.DataFrame(records, columns=ordered_columns)
+
+    def _build_export_layer_dataframe(self, pivot_config: Optional[Dict[str, Any]] = None) -> pd.DataFrame:
+        extra_fields: List[str] = []
+        if isinstance(pivot_config, dict):
+            for key in ("row_fields", "column_fields", "filter_fields"):
+                for value in pivot_config.get(key) or []:
+                    field_name = str(value or "").strip()
+                    if field_name and field_name not in extra_fields:
+                        extra_fields.append(field_name)
+            value_field = str(pivot_config.get("value_field") or "").strip()
+            if value_field and value_field not in extra_fields:
+                extra_fields.append(value_field)
+            layer = self._resolve_current_layer()
+            if layer is not None:
+                layer_df_from_config = self._build_layer_dataframe_from_pivot_config(layer, pivot_config)
+                if not layer_df_from_config.empty:
+                    return layer_df_from_config
+
+        layer = self._resolve_current_layer()
+        request = self._current_pivot_request
+        if layer is not None and request is not None:
+            layer_df = self._build_layer_dataframe_from_request(
+                layer,
+                request,
+                extra_attribute_fields=extra_fields,
+            )
+            if not layer_df.empty:
+                return layer_df
+
+        if layer is not None:
+            try:
+                request = self._build_pivot_request(layer)
+                layer_df = self._build_layer_dataframe_from_request(
+                    layer,
+                    request,
+                    extra_attribute_fields=extra_fields,
+                )
+                if not layer_df.empty:
+                    return layer_df
+            except Exception:
+                pass
+
         for candidate in (self.filtered_df, self.raw_df):
             if isinstance(candidate, pd.DataFrame) and not candidate.empty:
                 return candidate.copy()
@@ -4282,35 +4706,55 @@ class PivotTableWidget(QWidget):
         pivot_config: Dict[str, Any],
     ) -> Tuple[bool, str]:
         if layer_df is None or layer_df.empty:
-            return False, "Sem dados da camada para gerar tabela dinamica nativa."
+            return False, _rt("Sem dados da camada para gerar tabela dinâmica nativa.")
 
         try:
             import win32com.client as win32  # type: ignore
         except Exception:
             return (
                 False,
-                "Tabela dinamica nativa do Excel nao criada (pywin32/Excel nao disponivel).",
+                _rt("Tabela dinâmica nativa do Excel não criada (pywin32/Excel não disponível)."),
             )
 
         available_fields = [str(column) for column in list(layer_df.columns)]
-        available_set = set(available_fields)
         if not available_fields:
-            return False, "Sem colunas validas para montar tabela dinamica nativa."
+            return False, _rt("Sem colunas válidas para montar tabela dinâmica nativa.")
 
-        def _valid_fields(values: Optional[List[str]]) -> List[str]:
+        def _valid_fields(values: Optional[List[str]], labels: Optional[List[str]] = None) -> List[str]:
             valid: List[str] = []
-            for value in values or []:
-                field_name = str(value or "").strip()
-                if field_name and field_name in available_set and field_name not in valid:
-                    valid.append(field_name)
+            label_values = list(labels or [])
+            for index, value in enumerate(values or []):
+                fallback = label_values[index] if index < len(label_values) else ""
+                resolved = self._resolve_available_field_name(
+                    value,
+                    available_fields,
+                    fallback_candidates=[fallback],
+                )
+                if resolved and resolved not in valid:
+                    valid.append(resolved)
             return valid
 
-        row_fields = _valid_fields(pivot_config.get("row_fields"))
-        column_fields = _valid_fields(pivot_config.get("column_fields"))
-        filter_fields = _valid_fields(pivot_config.get("filter_fields"))
+        requested_row_fields = [str(value or "").strip() for value in (pivot_config.get("row_fields") or []) if str(value or "").strip()]
+        requested_column_fields = [str(value or "").strip() for value in (pivot_config.get("column_fields") or []) if str(value or "").strip()]
+        requested_filter_fields = [str(value or "").strip() for value in (pivot_config.get("filter_fields") or []) if str(value or "").strip()]
 
-        value_field = str(pivot_config.get("value_field") or "").strip()
-        if not value_field or value_field not in available_set:
+        row_fields = _valid_fields(requested_row_fields, pivot_config.get("row_labels"))
+        column_fields = _valid_fields(requested_column_fields, pivot_config.get("column_labels"))
+        filter_fields = _valid_fields(requested_filter_fields, pivot_config.get("filter_labels"))
+
+        if requested_row_fields and not row_fields:
+            return False, _rt("Tabela dinâmica nativa não criada: campos de Linhas não foram mapeados na base exportada.")
+        if requested_column_fields and not column_fields:
+            return False, _rt("Tabela dinâmica nativa não criada: campos de Colunas não foram mapeados na base exportada.")
+        if requested_filter_fields and not filter_fields:
+            return False, _rt("Tabela dinâmica nativa não criada: campos de Filtros não foram mapeados na base exportada.")
+
+        value_field = self._resolve_available_field_name(
+            pivot_config.get("value_field"),
+            available_fields,
+            fallback_candidates=[pivot_config.get("value_label")],
+        )
+        if not value_field:
             excluded = set(row_fields + column_fields + filter_fields)
             candidates = [field for field in available_fields if field not in excluded]
             if candidates:
@@ -4322,8 +4766,13 @@ class PivotTableWidget(QWidget):
             else:
                 value_field = available_fields[0]
 
+        if requested_row_fields and len(row_fields) < len(set(value.lower() for value in requested_row_fields)):
+            return False, _rt("Tabela dinâmica nativa não criada: parte dos campos de Linhas não foi reconhecida.")
+        if requested_column_fields and len(column_fields) < len(set(value.lower() for value in requested_column_fields)):
+            return False, _rt("Tabela dinâmica nativa não criada: parte dos campos de Colunas não foi reconhecida.")
+
         if not value_field:
-            return False, "Nao foi possivel determinar um campo de valor para a tabela dinamica."
+            return False, _rt("Não foi possível determinar um campo de valor para a tabela dinâmica.")
 
         aggregation = str(pivot_config.get("aggregation") or "count").lower()
         agg_map = {
@@ -4358,7 +4807,7 @@ class PivotTableWidget(QWidget):
             last_row = int(used.Rows.Count)
             last_col = int(used.Columns.Count)
             if last_row < 2 or last_col < 1:
-                return False, "Dados insuficientes para montar a tabela dinamica nativa."
+                return False, _rt("Dados insuficientes para montar a tabela dinâmica nativa.")
 
             try:
                 ws_snapshot = workbook.Worksheets("Tabela_Dinamica")
@@ -4409,9 +4858,9 @@ class PivotTableWidget(QWidget):
             ws_pivot.Columns.AutoFit()
 
             workbook.Save()
-            return True, "Tabela dinamica nativa do Excel criada com campos interativos."
+            return True, _rt("Tabela dinâmica nativa do Excel criada com campos interativos.")
         except Exception as exc:
-            return False, f"Tabela dinamica nativa do Excel nao criada: {exc}"
+            return False, _rt("Tabela dinâmica nativa do Excel não criada: {exc}", exc=exc)
         finally:
             if workbook is not None:
                 try:
@@ -4427,13 +4876,13 @@ class PivotTableWidget(QWidget):
     def _export_pivot_table(self):
         if self.pivot_df is None or self.pivot_df.empty:
             QMessageBox.information(
-                self, "Exportar tabela dinamica", "Nao ha dados para exportar."
+                self, _rt("Exportar tabela dinâmica"), _rt("Não há dados para exportar.")
             )
             return
 
         path, selected_filter = QFileDialog.getSaveFileName(
             self,
-            "Exportar tabela dinamica",
+            _rt("Exportar tabela dinâmica"),
             "",
             self.EXPORT_FILTERS,
         )
@@ -4457,15 +4906,15 @@ class PivotTableWidget(QWidget):
             elif "xlsx" in selected_filter.lower():
                 if not path.lower().endswith(".xlsx"):
                     path += ".xlsx"
-                layer_export_df = self._build_export_layer_dataframe()
                 pivot_config = self.get_current_configuration()
+                layer_export_df = self._build_export_layer_dataframe(pivot_config=pivot_config)
                 native_note = self._export_to_excel_with_layer_data(
                     path,
                     pivot_export_df,
                     layer_export_df,
                     pivot_config=pivot_config,
                 )
-                success_note = "\nAbas geradas: Tabela_Dinamica e Dados_Camada."
+                success_note = "\n" + _rt("Abas geradas: Tabela_Dinamica e Dados_Camada.")
                 if native_note:
                     success_note += f"\n{native_note}"
             else:
@@ -4475,15 +4924,15 @@ class PivotTableWidget(QWidget):
         except Exception as exc:
             QMessageBox.critical(
                 self,
-                "Exportar tabela dinamica",
-                f"Falha ao exportar a tabela dinamica: {exc}",
+                _rt("Exportar tabela dinâmica"),
+                _rt("Falha ao exportar a tabela dinâmica: {exc}", exc=exc),
             )
             return
 
         QMessageBox.information(
             self,
-            "Exportar tabela dinamica",
-            f"Tabela dinamica exportada para:\n{path}{success_note}",
+            _rt("Exportar tabela dinâmica"),
+            _rt("Tabela dinâmica exportada para:\n{path}{success_note}", path=path, success_note=success_note),
         )
 
     def _export_to_gpkg(self, path: str):

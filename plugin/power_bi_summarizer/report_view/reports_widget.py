@@ -1,4 +1,4 @@
-from copy import deepcopy
+﻿from copy import deepcopy
 import inspect
 import os
 import uuid
@@ -33,6 +33,7 @@ from qgis.core import QgsProject
 from qgis.utils import iface
 
 from ..palette import COLORS, TYPOGRAPHY
+from ..utils.i18n_runtime import tr_text as _rt
 from .chart_factory import ChartFactory, ReportChartWidget
 from .dictionary_service import build_dictionary_service
 from .hybrid_query_interpreter import HybridQueryInterpreter
@@ -525,14 +526,20 @@ class EmptyConversationWidget(QFrame):
         self.icon_label.setAlignment(Qt.AlignCenter)
         icon_added = False
 
-        logo_path = _reports_icon_path("report_home_logo.gif")
-        if os.path.exists(logo_path):
-            self.icon_movie = QMovie(logo_path)
-            if self.icon_movie.isValid():
-                self.icon_movie.setScaledSize(QSize(90, 90))
-                self.icon_label.setMovie(self.icon_movie)
-                self.icon_movie.start()
-                icon_added = True
+        sidebar_icon_path = _reports_icon_path("icone_chat_exato_cropped.png")
+        if os.path.exists(sidebar_icon_path):
+            self.icon_label.setPixmap(QIcon(sidebar_icon_path).pixmap(QSize(84, 84)))
+            icon_added = True
+
+        if not icon_added:
+            logo_path = _reports_icon_path("report_home_logo.gif")
+            if os.path.exists(logo_path):
+                self.icon_movie = QMovie(logo_path)
+                if self.icon_movie.isValid():
+                    self.icon_movie.setScaledSize(QSize(90, 90))
+                    self.icon_label.setMovie(self.icon_movie)
+                    self.icon_movie.start()
+                    icon_added = True
 
         if not icon_added:
             icon = _reports_icon("report_chat.svg")
@@ -543,7 +550,7 @@ class EmptyConversationWidget(QFrame):
         if icon_added:
             content_layout.addWidget(self.icon_label, 0, Qt.AlignHCenter)
 
-        self.title_label = QLabel("Converse com os dados do projeto", self.content)
+        self.title_label = QLabel(_rt("Converse com os dados do projeto"), self.content)
         self.title_label.setObjectName("emptyTitle")
         self.title_label.setAlignment(Qt.AlignCenter)
         self.title_label.setWordWrap(True)
@@ -551,13 +558,13 @@ class EmptyConversationWidget(QFrame):
         content_layout.addWidget(self.title_label)
 
         self.subtitle_label = QLabel(
-            "Faça perguntas sobre suas camadas e gere gráficos automaticamente",
+            _rt("Faça perguntas sobre suas camadas e gere gráficos automaticamente"),
             self.content,
         )
         self.subtitle_label.setObjectName("emptySubtitle")
         self.subtitle_label.setAlignment(Qt.AlignCenter)
         self.subtitle_label.setWordWrap(True)
-        self.subtitle_label.setText("Faça perguntas sobre suas camadas e gere gráficos automaticamente")
+        self.subtitle_label.setText(_rt("Faça perguntas sobre suas camadas e gere gráficos automaticamente"))
         self.subtitle_label.setStyleSheet("font-size: 14px; font-weight: 400; color: #64748B;")
         self.subtitle_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         content_layout.addWidget(self.subtitle_label, 0, Qt.AlignHCenter)
@@ -585,6 +592,10 @@ class EmptyConversationWidget(QFrame):
             self.subtitle_label.text(),
         )
         self.subtitle_label.setFixedHeight(max(24, subtitle_rect.height() + 6))
+
+    def stabilize_layout(self):
+        self._sync_text_widths()
+        self.updateGeometry()
 
 
 class UserMessageWidget(QWidget):
@@ -693,7 +704,7 @@ class AssistantMessageWidget(QWidget):
         self.preview_limit = PREVIEW_ROWS
         self._reset_content()
 
-        self.status_label = QLabel("Pensando na sua pergunta...", self.content_widget)
+        self.status_label = QLabel(_rt("Pensando na sua pergunta..."), self.content_widget)
         self.status_label.setObjectName("assistantStatus")
         self.status_label.setWordWrap(True)
         self.content_layout.addWidget(self.status_label)
@@ -802,7 +813,7 @@ class AssistantMessageWidget(QWidget):
         buttons_row.setContentsMargins(0, 0, 0, 0)
         buttons_row.setSpacing(8)
 
-        confirm_button = QPushButton("Confirmar", self.content_widget)
+        confirm_button = QPushButton(_rt("Confirmar"), self.content_widget)
         confirm_button.setProperty("optionButton", True)
         confirm_button.clicked.connect(
             lambda checked=False, q=question, confirmed_plan=plan: self.execute_plan_callback(
@@ -813,7 +824,7 @@ class AssistantMessageWidget(QWidget):
         )
         buttons_row.addWidget(confirm_button, 0)
 
-        cancel_button = QPushButton("Cancelar", self.content_widget)
+        cancel_button = QPushButton(_rt("Cancelar"), self.content_widget)
         cancel_button.setProperty("actionButton", True)
         cancel_button.clicked.connect(
             lambda checked=False: self.show_message("Tudo bem. Ajuste a pergunta e tente novamente.")
@@ -883,29 +894,29 @@ class AssistantMessageWidget(QWidget):
         actions_row.setContentsMargins(0, 0, 0, 0)
         actions_row.setSpacing(10)
 
-        self.copy_button = QPushButton("Copiar resumo", self.content_widget)
+        self.copy_button = QPushButton(_rt("Copiar resumo"), self.content_widget)
         self.copy_button.setProperty("actionButton", True)
         self.copy_button.clicked.connect(self._copy_summary)
         actions_row.addWidget(self.copy_button, 0)
 
         if self.select_map_callback is not None:
-            self.select_map_button = QPushButton("Selecionar no mapa", self.content_widget)
+            self.select_map_button = QPushButton(_rt("Selecionar no mapa"), self.content_widget)
             self.select_map_button.setProperty("actionButton", True)
             self.select_map_button.clicked.connect(self._select_on_map)
             actions_row.addWidget(self.select_map_button, 0)
 
-        self.correct_button = QPushButton("Correto", self.content_widget)
+        self.correct_button = QPushButton(_rt("Correto"), self.content_widget)
         self.correct_button.setProperty("actionButton", True)
         self.correct_button.clicked.connect(lambda checked=False: self._emit_feedback("correct"))
         actions_row.addWidget(self.correct_button, 0)
 
-        self.incorrect_button = QPushButton("Não era isso", self.content_widget)
+        self.incorrect_button = QPushButton(_rt("Não era isso"), self.content_widget)
         self.incorrect_button.setProperty("actionButton", True)
         self.incorrect_button.clicked.connect(lambda checked=False: self._emit_feedback("incorrect"))
         actions_row.addWidget(self.incorrect_button, 0)
 
         if self._has_alternative_candidates():
-            self.choose_button = QPushButton("Escolher interpretação", self.content_widget)
+            self.choose_button = QPushButton(_rt("Escolher interpretação"), self.content_widget)
             self.choose_button.setProperty("actionButton", True)
             self.choose_button.clicked.connect(self._choose_interpretation)
             actions_row.addWidget(self.choose_button, 0)
@@ -913,7 +924,7 @@ class AssistantMessageWidget(QWidget):
             self.choose_button = None
 
         if len(result.rows) > PREVIEW_ROWS:
-            self.details_button = QPushButton("Ver detalhes", self.content_widget)
+            self.details_button = QPushButton(_rt("Ver detalhes"), self.content_widget)
             self.details_button.setProperty("actionButton", True)
             self.details_button.clicked.connect(self._toggle_details)
             actions_row.addWidget(self.details_button, 0)
@@ -950,7 +961,7 @@ class AssistantMessageWidget(QWidget):
         if not available_filters:
             return
 
-        label = QLabel("Selecionar filtro", self.content_widget)
+        label = QLabel(_rt("Selecionar filtro"), self.content_widget)
         label.setObjectName("assistantHelper")
         self.content_layout.addWidget(label)
 
@@ -1045,8 +1056,8 @@ class AssistantMessageWidget(QWidget):
             return
         QApplication.clipboard().setText(self.current_result.summary.text or "")
         if self.copy_button is not None:
-            self.copy_button.setText("Copiado")
-            QTimer.singleShot(1200, lambda: self.copy_button and self.copy_button.setText("Copiar resumo"))
+            self.copy_button.setText(_rt("Copiado"))
+            QTimer.singleShot(1200, lambda: self.copy_button and self.copy_button.setText(_rt("Copiar resumo")))
 
     def _select_on_map(self):
         if self.select_map_callback is None:
@@ -1103,9 +1114,9 @@ class AssistantMessageWidget(QWidget):
 
     def set_feedback_state(self, action: str):
         if action == "correct" and self.correct_button is not None:
-            self.correct_button.setText("Registrado")
+            self.correct_button.setText(_rt("Registrado"))
         if action == "incorrect" and self.incorrect_button is not None:
-            self.incorrect_button.setText("Registrado")
+            self.incorrect_button.setText(_rt("Registrado"))
         if self.correct_button is not None:
             self.correct_button.setEnabled(False)
         if self.incorrect_button is not None:
@@ -1117,11 +1128,11 @@ class AssistantMessageWidget(QWidget):
         if self.preview_limit >= min(MAX_TABLE_ROWS, len(self.current_result.rows)):
             self.preview_limit = PREVIEW_ROWS
             if self.details_button is not None:
-                self.details_button.setText("Ver detalhes")
+                self.details_button.setText(_rt("Ver detalhes"))
         else:
             self.preview_limit = min(MAX_TABLE_ROWS, len(self.current_result.rows))
             if self.details_button is not None:
-                self.details_button.setText("Ocultar detalhes")
+                self.details_button.setText(_rt("Ocultar detalhes"))
         self._render_table_rows()
 
     def _update_details_label(self):
@@ -1129,7 +1140,7 @@ class AssistantMessageWidget(QWidget):
             return
         visible = min(self.preview_limit, len(self.current_result.rows))
         total = len(self.current_result.rows)
-        self.details_label.setText(f"Mostrando {visible} de {total} linhas")
+        self.details_label.setText(_rt("Mostrando {visible} de {total} linhas", visible=visible, total=total))
 
     def _build_helper_text(self, result: QueryResult) -> str:
         parts = []
@@ -1179,7 +1190,7 @@ class ActiveResultPanel(QFrame):
         top_layout.setContentsMargins(0, 0, 0, 0)
         top_layout.setSpacing(8)
 
-        badge = QLabel("Analise ativa", top)
+        badge = QLabel(_rt("Analise ativa"), top)
         badge.setObjectName("visualPanelBadge")
         top_layout.addWidget(badge, 0)
         top_layout.addStretch(1)
@@ -1203,7 +1214,7 @@ class ActiveResultPanel(QFrame):
         self._reset_content()
         self.meta_label.setText("")
 
-        title = QLabel("Painel visual", self.content)
+        title = QLabel(_rt("Painel visual"), self.content)
         title.setObjectName("visualPanelTitle")
         self.content_layout.addWidget(title)
 
@@ -1220,13 +1231,13 @@ class ActiveResultPanel(QFrame):
         self.current_result = result
         self.preview_limit = PREVIEW_ROWS
         self._reset_content()
-        self.meta_label.setText("Resultado mais recente")
+        self.meta_label.setText(_rt("Resultado mais recente"))
 
-        title = QLabel("Resultado atual", self.content)
+        title = QLabel(_rt("Resultado atual"), self.content)
         title.setObjectName("visualPanelTitle")
         self.content_layout.addWidget(title)
 
-        summary = QLabel(result.summary.text or "Visualizacao gerada.", self.content)
+        summary = QLabel(result.summary.text or _rt("Visualizacao gerada."), self.content)
         summary.setObjectName("visualPanelSummary")
         summary.setWordWrap(True)
         self.content_layout.addWidget(summary)
@@ -1259,7 +1270,7 @@ class ActiveResultPanel(QFrame):
         footer.setSpacing(8)
 
         if len(result.rows) > PREVIEW_ROWS:
-            self.details_button = QPushButton("Ver detalhes", self.content)
+            self.details_button = QPushButton(_rt("Ver detalhes"), self.content)
             self.details_button.setObjectName("visualPanelButton")
             self.details_button.clicked.connect(self._toggle_details)
             footer.addWidget(self.details_button, 0)
@@ -1330,11 +1341,11 @@ class ActiveResultPanel(QFrame):
         if self.preview_limit >= min(MAX_TABLE_ROWS, len(self.current_result.rows)):
             self.preview_limit = PREVIEW_ROWS
             if self.details_button is not None:
-                self.details_button.setText("Ver detalhes")
+                self.details_button.setText(_rt("Ver detalhes"))
         else:
             self.preview_limit = min(MAX_TABLE_ROWS, len(self.current_result.rows))
             if self.details_button is not None:
-                self.details_button.setText("Ocultar detalhes")
+                self.details_button.setText(_rt("Ocultar detalhes"))
         self._render_table_rows()
         self._update_details_label()
 
@@ -1343,7 +1354,7 @@ class ActiveResultPanel(QFrame):
             return
         visible = min(self.preview_limit, len(self.current_result.rows))
         total = len(self.current_result.rows)
-        self.details_label.setText(f"Mostrando {visible} de {total} linhas")
+        self.details_label.setText(_rt("Mostrando {visible} de {total} linhas", visible=visible, total=total))
 
     def _helper_text(self, result: QueryResult) -> str:
         parts = []
@@ -1392,6 +1403,7 @@ class ReportsWidget(QWidget):
         self.context_layer_id = ""
         self.context_layer_name = ""
         self.project_context_enabled = False
+        self._initial_layout_stable = False
 
         self._build_ui()
         self._apply_local_icons()
@@ -1446,7 +1458,7 @@ class ReportsWidget(QWidget):
         self.status_label.setObjectName("reportsStatusLabel")
         header_layout.addWidget(self.status_label, 0, Qt.AlignRight)
 
-        self.clear_chat_btn = QPushButton("Limpar", header)
+        self.clear_chat_btn = QPushButton(_rt("Limpar"), header)
         self.clear_chat_btn.setObjectName("clearChatButton")
         self.clear_chat_btn.clicked.connect(self._clear_chat_history)
         self.clear_chat_btn.setEnabled(False)
@@ -1473,6 +1485,8 @@ class ReportsWidget(QWidget):
         self.history_scroll.setFrameShape(QScrollArea.NoFrame)
         self.history_scroll.setAutoFillBackground(False)
         self.history_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        # Keep first paint stable (no width jump while empty state is shown).
+        self.history_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.history_scroll.viewport().setObjectName("conversationViewportHost")
         self.history_scroll.viewport().setAttribute(Qt.WA_StyledBackground, True)
         self.history_scroll.viewport().setAutoFillBackground(False)
@@ -1487,6 +1501,7 @@ class ReportsWidget(QWidget):
         self.history_layout.setSpacing(18)
 
         self.empty_state = EmptyConversationWidget(self.history_viewport)
+        self.empty_state.setVisible(False)
         self.history_layout.addWidget(self.empty_state)
         self.history_layout.addStretch(1)
 
@@ -1510,7 +1525,7 @@ class ReportsWidget(QWidget):
         for example in EXAMPLE_QUERIES:
             footer_suggestions_layout.addWidget(
                 SuggestionChipButton(
-                    example["label"],
+                    _rt(example["label"]),
                     example["query"],
                     self._use_example,
                     self.footer_suggestions,
@@ -1561,7 +1576,7 @@ class ReportsWidget(QWidget):
         self.question_edit.sendRequested.connect(self.generate_report)
         input_row.addWidget(self.question_edit, 1)
 
-        self.generate_btn = QPushButton("Gerar", prompt_shell)
+        self.generate_btn = QPushButton(_rt("Gerar"), prompt_shell)
         self.generate_btn.setObjectName("sendButton")
         self.generate_btn.clicked.connect(self.generate_report)
         self.generate_btn.setMinimumWidth(86)
@@ -1573,12 +1588,36 @@ class ReportsWidget(QWidget):
         chat_column_layout.addWidget(self.prompt_dock, 0)
         workspace_layout.addWidget(self.chat_column, 1)
         QTimer.singleShot(0, self._update_responsive_layout)
+        QTimer.singleShot(0, self._stabilize_initial_layout)
+        QTimer.singleShot(80, self._stabilize_initial_layout)
+
+    def _stabilize_initial_layout(self):
+        try:
+            if self._initial_layout_stable:
+                return
+            viewport_width = 0
+            try:
+                viewport_width = int(self.history_scroll.viewport().width())
+            except Exception:
+                viewport_width = 0
+            if viewport_width < 360:
+                return
+            if getattr(self, "empty_state", None) is not None:
+                try:
+                    self.empty_state.stabilize_layout()
+                except Exception:
+                    pass
+            self._set_history_started(self.history_count > 0)
+            self._update_responsive_layout()
+            self._initial_layout_stable = True
+        except Exception:
+            pass
 
     def _apply_local_icons(self):
         if getattr(self, "plus_button", None) is not None:
             self.plus_button.setIcon(_reports_icon("report_add.svg"))
             self.plus_button.setIconSize(QSize(14, 14))
-            self.plus_button.setToolTip("Adicionar contexto")
+            self.plus_button.setToolTip(_rt("Adicionar contexto"))
 
         if getattr(self, "clear_chat_btn", None) is not None:
             self.clear_chat_btn.setIcon(_reports_icon("report_clear.svg"))
@@ -1587,15 +1626,15 @@ class ReportsWidget(QWidget):
     def _build_context_menu(self):
         menu = QMenu(self)
 
-        project_action = QAction("Projeto atual", menu)
+        project_action = QAction(_rt("Projeto atual"), menu)
         project_action.triggered.connect(lambda: self._set_context_source("project"))
         menu.addAction(project_action)
 
-        postgres_action = QAction("Banco PostgreSQL", menu)
+        postgres_action = QAction(_rt("Banco PostgreSQL"), menu)
         postgres_action.triggered.connect(lambda: self._set_context_source("postgres"))
         menu.addAction(postgres_action)
 
-        cloud_action = QAction("Cloud do plugin", menu)
+        cloud_action = QAction(_rt("Cloud do plugin"), menu)
         cloud_action.triggered.connect(lambda: self._set_context_source("cloud"))
         menu.addAction(cloud_action)
         return menu
@@ -1603,15 +1642,15 @@ class ReportsWidget(QWidget):
     def _build_engine_menu(self):
         menu = QMenu(self)
 
-        auto_action = QAction("IA automática", menu)
+        auto_action = QAction(_rt("IA automática"), menu)
         auto_action.triggered.connect(lambda: self._set_ai_mode("auto"))
         menu.addAction(auto_action)
 
-        local_action = QAction("Local rápido", menu)
+        local_action = QAction(_rt("Local rápido"), menu)
         local_action.triggered.connect(lambda: self._set_ai_mode("local"))
         menu.addAction(local_action)
 
-        analytic_action = QAction("Analítico", menu)
+        analytic_action = QAction(_rt("Analítico"), menu)
         analytic_action.triggered.connect(lambda: self._set_ai_mode("analytic"))
         menu.addAction(analytic_action)
 
@@ -1623,14 +1662,14 @@ class ReportsWidget(QWidget):
     def _populate_plus_menu(self):
         self.plus_menu.clear()
 
-        layer_menu = self.plus_menu.addMenu("Adicionar camada especifica")
-        limit_menu = self.plus_menu.addMenu("Limitar análise a uma camada")
+        layer_menu = self.plus_menu.addMenu(_rt("Adicionar camada específica"))
+        limit_menu = self.plus_menu.addMenu(_rt("Limitar análise a uma camada"))
         layers = self._project_layers()
         if not layers:
-            empty_layer = QAction("Nenhuma camada carregada", layer_menu)
+            empty_layer = QAction(_rt("Nenhuma camada carregada"), layer_menu)
             empty_layer.setEnabled(False)
             layer_menu.addAction(empty_layer)
-            empty_limit = QAction("Nenhuma camada carregada", limit_menu)
+            empty_limit = QAction(_rt("Nenhuma camada carregada"), limit_menu)
             empty_limit.setEnabled(False)
             limit_menu.addAction(empty_limit)
         else:
@@ -1648,12 +1687,12 @@ class ReportsWidget(QWidget):
                 limit_menu.addAction(limit_action)
 
         active_layer = self._active_layer()
-        active_action = QAction("Anexar camada atual selecionada", self.plus_menu)
+        active_action = QAction(_rt("Anexar camada atual selecionada"), self.plus_menu)
         active_action.setEnabled(active_layer is not None)
         active_action.triggered.connect(self._attach_active_layer)
         self.plus_menu.addAction(active_action)
 
-        project_context_action = QAction("Incluir contexto extra do projeto", self.plus_menu)
+        project_context_action = QAction(_rt("Incluir contexto extra do projeto"), self.plus_menu)
         project_context_action.setCheckable(True)
         project_context_action.setChecked(self.project_context_enabled)
         project_context_action.triggered.connect(
@@ -1663,7 +1702,7 @@ class ReportsWidget(QWidget):
 
         if self.context_layer_name or self.project_context_enabled:
             self.plus_menu.addSeparator()
-            clear_action = QAction("Limpar contexto extra", self.plus_menu)
+            clear_action = QAction(_rt("Limpar contexto extra"), self.plus_menu)
             clear_action.triggered.connect(self._clear_extra_context)
             self.plus_menu.addAction(clear_action)
 
@@ -1710,18 +1749,18 @@ class ReportsWidget(QWidget):
 
     def _context_source_label(self) -> str:
         return {
-            "project": "Projeto atual",
-            "postgres": "Banco PostgreSQL",
-            "cloud": "Cloud do plugin",
-        }.get(self.context_source, "Projeto atual")
+            "project": _rt("Projeto atual"),
+            "postgres": _rt("Banco PostgreSQL"),
+            "cloud": _rt("Cloud do plugin"),
+        }.get(self.context_source, _rt("Projeto atual"))
 
     def _ai_mode_label(self) -> str:
         return {
-            "auto": "IA: Automatica",
-            "local": "IA: Local rápido",
-            "analytic": "IA: Analítico",
-            "ollama": "IA: Ollama local",
-        }.get(self.ai_mode, "IA: Automatica")
+            "auto": _rt("IA: Automatica"),
+            "local": _rt("IA: Local rápido"),
+            "analytic": _rt("IA: Analítico"),
+            "ollama": _rt("IA: Ollama local"),
+        }.get(self.ai_mode, _rt("IA: Automatica"))
 
     def _context_status_label(self) -> str:
         if self.context_source == "postgres":
@@ -1730,10 +1769,10 @@ class ReportsWidget(QWidget):
 
                 total = len(connection_registry.all_connections() or [])
                 if total:
-                    return f"PostgreSQL ativo · {total} conexão(ões)"
+                    return _rt("PostgreSQL ativo · {total} conexão(ões)", total=total)
             except Exception:
                 pass
-            return "PostgreSQL ativo · sem conexão configurada"
+            return _rt("PostgreSQL ativo · sem conexão configurada")
 
         if self.context_source == "cloud":
             try:
@@ -1744,23 +1783,23 @@ class ReportsWidget(QWidget):
                         len(connection.get("layers") or [])
                         for connection in (cloud_session.cloud_connections() or [])
                     )
-                    return f"Cloud ativo · {total} camada(s)"
+                    return _rt("Cloud ativo · {total} camada(s)", total=total)
             except Exception:
                 pass
-            return "Cloud ativo · login necessário"
+            return _rt("Cloud ativo · login necessário")
 
         try:
             total_layers = len(self._project_layers())
         except Exception:
             total_layers = 0
-        return f"Projeto atual · {total_layers} camada(s)"
+        return _rt("Projeto atual · {total_layers} camada(s)", total_layers=total_layers)
 
     def _context_placeholder(self) -> str:
         base = {
-            "project": "Pergunte qualquer coisa sobre o projeto e as camadas abertas...",
-            "postgres": "Pergunte algo sobre as conexões PostgreSQL e os dados abertos...",
-            "cloud": "Pergunte algo sobre as camadas do cloud e o projeto atual...",
-        }.get(self.context_source, "Pergunte qualquer coisa sobre o projeto...")
+            "project": _rt("Pergunte qualquer coisa sobre o projeto e as camadas abertas..."),
+            "postgres": _rt("Pergunte algo sobre as conexões PostgreSQL e os dados abertos..."),
+            "cloud": _rt("Pergunte algo sobre as camadas do cloud e o projeto atual..."),
+        }.get(self.context_source, _rt("Pergunte qualquer coisa sobre o projeto..."))
         if self.context_layer_name:
             return f"{base} Camada em foco: {self.context_layer_name}."
         return base
@@ -1771,10 +1810,10 @@ class ReportsWidget(QWidget):
 
         parts = [self._context_status_label(), self._ai_mode_label()]
         if self.context_layer_name:
-            layer_prefix = "Camada" if self.context_layer_mode != "restrict" else "Limite"
+            layer_prefix = _rt("Camada") if self.context_layer_mode != "restrict" else _rt("Limite")
             parts.append(f"{layer_prefix}: {self.context_layer_name}")
         if self.project_context_enabled:
-            parts.append("Contexto extra ativo")
+            parts.append(_rt("Contexto extra ativo"))
         if getattr(self, "status_label", None) is not None:
             self.status_label.setText("  |  ".join(parts))
 
@@ -1939,7 +1978,7 @@ class ReportsWidget(QWidget):
         )
         self.clear_chat_btn.setEnabled(False)
         self.generate_btn.setEnabled(False)
-        self.generate_btn.setText("Analisando...")
+        self.generate_btn.setText(_rt("Analisando..."))
         self.question_edit.setEnabled(False)
         QTimer.singleShot(
             0,
@@ -1982,13 +2021,13 @@ class ReportsWidget(QWidget):
             return
         try:
             ok, message = self._ensure_report_executor().select_plan_features(plan)
-            response_widget.select_map_button.setText("Selecionado" if ok else "Sem selecao")
-            QTimer.singleShot(1600, lambda: response_widget.select_map_button and response_widget.select_map_button.setText("Selecionar no mapa"))
+            response_widget.select_map_button.setText(_rt("Selecionado") if ok else _rt("Sem selecao"))
+            QTimer.singleShot(1600, lambda: response_widget.select_map_button and response_widget.select_map_button.setText(_rt("Selecionar no mapa")))
             log_info(f"[Relatorios] selecao no mapa ok={ok} message='{message}'")
         except Exception as exc:
             detail = self._format_error_detail(exc)
-            response_widget.select_map_button.setText("Falhou")
-            QTimer.singleShot(1600, lambda: response_widget.select_map_button and response_widget.select_map_button.setText("Selecionar no mapa"))
+            response_widget.select_map_button.setText(_rt("Falhou"))
+            QTimer.singleShot(1600, lambda: response_widget.select_map_button and response_widget.select_map_button.setText(_rt("Selecionar no mapa")))
             log_error(
                 "[Relatorios] falha ao selecionar no mapa "
                 f"error={exc}\n{traceback.format_exc()}"
@@ -2004,10 +2043,10 @@ class ReportsWidget(QWidget):
         if not reuse_history or getattr(response_widget, "memory_handle", None) is None:
             response_widget.memory_handle = self._create_query_history_handle(question)
         response_widget.show_loading(question)
-        self._show_visual_loading("Analisando e preparando o resultado visual...")
+        self._show_visual_loading(_rt("Analisando e preparando o resultado visual..."))
         self.clear_chat_btn.setEnabled(False)
         self.generate_btn.setEnabled(False)
-        self.generate_btn.setText("Analisando...")
+        self.generate_btn.setText(_rt("Analisando..."))
         self.question_edit.setEnabled(False)
         QTimer.singleShot(
             0,
@@ -2034,7 +2073,7 @@ class ReportsWidget(QWidget):
                 f"runtime_widget_file='{__file__}' widget_class_file='{inspect.getsourcefile(self.__class__) or ''}' "
                 f"engine_created={bool(self.ai_engine is not None)} question='{question}' overrides={overrides}"
             )
-            self._push_loading_status(response_widget, "Pensando na sua pergunta...")
+            self._push_loading_status(response_widget, _rt("Pensando na sua pergunta..."))
             engine_payload = self._ensure_ai_engine().interpret_question(
                 question=question,
                 overrides=overrides,
@@ -2248,6 +2287,14 @@ class ReportsWidget(QWidget):
         self.empty_state.setVisible(not started)
         self.footer_suggestions.setVisible(not started)
         self.clear_chat_btn.setEnabled(started and self.generate_btn.isEnabled())
+        if started:
+            self.history_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        else:
+            self.history_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            try:
+                self.history_scroll.verticalScrollBar().setValue(0)
+            except Exception:
+                pass
 
     def _scroll_to_bottom(self):
         QTimer.singleShot(
@@ -2264,7 +2311,7 @@ class ReportsWidget(QWidget):
 
     def _finish_ui_after_run(self):
         self.generate_btn.setEnabled(True)
-        self.generate_btn.setText("Gerar")
+        self.generate_btn.setText(_rt("Gerar"))
         self.question_edit.setEnabled(True)
         self.clear_chat_btn.setEnabled(self.history_count > 0)
         self._refresh_context_header()
@@ -2675,3 +2722,4 @@ class ReportsWidget(QWidget):
         if enriched_result.status == "ambiguous" and enriched_result.candidate_interpretations:
             return enriched_result
         return base_result
+

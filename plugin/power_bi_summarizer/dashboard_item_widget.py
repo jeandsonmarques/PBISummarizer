@@ -22,6 +22,7 @@ from qgis.PyQt.QtWidgets import (
 from .dashboard_models import DashboardChartBinding, DashboardChartItem
 from .report_view.chart_factory import ReportChartWidget
 from .slim_dialogs import slim_get_text
+from .utils.i18n_runtime import tr_text as _rt
 
 
 def _icon_from_resource(name: str) -> QIcon:
@@ -100,7 +101,7 @@ class DashboardItemWidget(QFrame):
         header_layout.setContentsMargins(0, 0, 0, 0)
         header_layout.setSpacing(10)
 
-        self.drag_label = QLabel("Mover", self.header)
+        self.drag_label = QLabel(_rt("Mover"), self.header)
         self.drag_label.setObjectName("ModelDashboardDragHandle")
         header_layout.addWidget(self.drag_label, 0)
 
@@ -110,7 +111,7 @@ class DashboardItemWidget(QFrame):
         self.title_label = QLabel("", self.header)
         self.title_label.setObjectName("ModelDashboardItemTitle")
         self.title_label.setCursor(Qt.PointingHandCursor)
-        self.title_label.setToolTip("Duplo clique para renomear")
+        self.title_label.setToolTip(_rt("Duplo clique para renomear"))
         title_column.addWidget(self.title_label)
         self.subtitle_label = QLabel("", self.header)
         self.subtitle_label.setObjectName("ModelDashboardItemSubtitle")
@@ -121,7 +122,7 @@ class DashboardItemWidget(QFrame):
         self.model_edit_btn = QToolButton(self.header)
         self.model_edit_btn.setObjectName("ModelDashboardHeaderIconButton")
         self.model_edit_btn.setCursor(Qt.PointingHandCursor)
-        self.model_edit_btn.setToolTip("Alterar tipo de grafico")
+        self.model_edit_btn.setToolTip(_rt("Alterar tipo de grafico"))
         model_icon = _icon_from_resource("model_chart_type.svg")
         self.model_edit_btn.setIcon(model_icon)
         self.model_edit_btn.setIconSize(QSize(16, 16))
@@ -133,7 +134,7 @@ class DashboardItemWidget(QFrame):
         self.personalize_btn = QToolButton(self.header)
         self.personalize_btn.setObjectName("ModelDashboardHeaderIconButton")
         self.personalize_btn.setCursor(Qt.PointingHandCursor)
-        self.personalize_btn.setToolTip("Personalizar visual do grafico")
+        self.personalize_btn.setToolTip(_rt("Personalizar visual do grafico"))
         personalize_icon = _icon_from_resource("model_chart_brush.svg")
         self.personalize_btn.setIcon(personalize_icon)
         self.personalize_btn.setIconSize(QSize(16, 16))
@@ -142,17 +143,17 @@ class DashboardItemWidget(QFrame):
         self.personalize_btn.clicked.connect(self._open_chart_personalize_menu)
         header_layout.addWidget(self.personalize_btn, 0)
 
-        self.link_command_btn = QPushButton("+ Relacao", self.header)
+        self.link_command_btn = QPushButton(_rt("+ Relacao"), self.header)
         self.link_command_btn.setObjectName("ModelDashboardLinkCommandButton")
         self.link_command_btn.setCursor(Qt.PointingHandCursor)
-        self.link_command_btn.setToolTip("Criar relacao com outro grafico")
+        self.link_command_btn.setToolTip(_rt("Criar relacao com outro grafico"))
         self.link_command_btn.clicked.connect(lambda: self.linkCommandRequested.emit(self.item_id))
         header_layout.addWidget(self.link_command_btn, 0)
 
         self.remove_btn = QToolButton(self.header)
         self.remove_btn.setObjectName("ModelDashboardRemoveButton")
         self.remove_btn.setCursor(Qt.PointingHandCursor)
-        self.remove_btn.setToolTip("Fechar grafico")
+        self.remove_btn.setToolTip(_rt("Fechar grafico"))
         close_icon = _icon_from_resource("model_close.svg")
         self.remove_btn.setIcon(close_icon)
         self.remove_btn.setIconSize(QSize(14, 14))
@@ -367,7 +368,7 @@ class DashboardItemWidget(QFrame):
         self.link_command_btn.setVisible(self._edit_mode)
         self.subtitle_label.setVisible(self._edit_mode)
         self.footer_label.setVisible(self._edit_mode)
-        self.title_label.setToolTip("Duplo clique para renomear" if self._edit_mode else "")
+        self.title_label.setToolTip(_rt("Duplo clique para renomear") if self._edit_mode else "")
         if self._edit_mode:
             try:
                 margin = max(0, int(round(4 * self._zoom_scale)))
@@ -502,9 +503,9 @@ class DashboardItemWidget(QFrame):
         type_group = QActionGroup(menu)
         type_group.setExclusive(True)
 
-        priority_menu = menu.addMenu("Prioridade")
+        priority_menu = menu.addMenu(_rt("Prioridade"))
         for chart_type in list(self.chart_widget.TYPE_PRIORITY or []):
-            label = self.chart_widget.TYPE_LABELS.get(chart_type, chart_type)
+            label = self.chart_widget._type_label(chart_type)
             action = QAction(label, menu, checkable=True)
             action.setChecked(str(self.chart_widget.chart_state.chart_type or "bar") == chart_type)
             action.triggered.connect(lambda checked=False, value=chart_type: self.chart_widget._set_chart_type(value))
@@ -515,9 +516,9 @@ class DashboardItemWidget(QFrame):
             menu.addSeparator()
 
         for group_label, chart_types in list(self.chart_widget.TYPE_GROUPS or []):
-            group_menu = menu.addMenu(str(group_label or "Tipos"))
+            group_menu = menu.addMenu(_rt(str(group_label or "Tipos")))
             for chart_type in list(chart_types or []):
-                label = self.chart_widget.TYPE_LABELS.get(chart_type, chart_type)
+                label = self.chart_widget._type_label(chart_type)
                 action = QAction(label, menu, checkable=True)
                 action.setChecked(str(self.chart_widget.chart_state.chart_type or "bar") == chart_type)
                 action.triggered.connect(lambda checked=False, value=chart_type: self.chart_widget._set_chart_type(value))
@@ -534,17 +535,17 @@ class DashboardItemWidget(QFrame):
         if not self._edit_mode:
             return
         menu = QMenu(self)
-        font_menu = menu.addMenu("Tamanho da fonte")
-        palette_menu = menu.addMenu("Paleta")
-        sort_menu = menu.addMenu("Ordenacao")
-        corners_menu = menu.addMenu("Cantos")
+        font_menu = menu.addMenu(_rt("Tamanho da fonte"))
+        palette_menu = menu.addMenu(_rt("Paleta"))
+        sort_menu = menu.addMenu(_rt("Ordenacao"))
+        corners_menu = menu.addMenu(_rt("Cantos"))
 
         self.chart_widget._ensure_visual_state_compatibility()
 
         font_group = QActionGroup(menu)
         font_group.setExclusive(True)
         for scale, label in list(self.chart_widget.FONT_SCALE_PRESETS or []):
-            action = QAction(label, menu, checkable=True)
+            action = QAction(_rt(label), menu, checkable=True)
             action.setChecked(abs(float(getattr(self.chart_widget.chart_state, "font_scale", 1.0) or 1.0) - float(scale)) < 0.01)
             action.triggered.connect(lambda checked=False, value=scale: self.chart_widget.set_font_scale(value))
             font_group.addAction(action)
@@ -552,44 +553,44 @@ class DashboardItemWidget(QFrame):
 
         palette_group = QActionGroup(menu)
         palette_group.setExclusive(True)
-        for palette_name, label in dict(self.chart_widget.PALETTE_LABELS).items():
-            action = QAction(label, menu, checkable=True)
+        for palette_name in dict(self.chart_widget.PALETTE_LABELS):
+            action = QAction(self.chart_widget._palette_label(palette_name), menu, checkable=True)
             action.setChecked(str(self.chart_widget.chart_state.palette or "") == palette_name)
             action.triggered.connect(lambda checked=False, value=palette_name: self.chart_widget._set_chart_palette(value))
             palette_group.addAction(action)
             palette_menu.addAction(action)
 
-        legend_action = QAction("Mostrar legenda", menu, checkable=True)
+        legend_action = QAction(_rt("Mostrar legenda"), menu, checkable=True)
         legend_action.setChecked(bool(self.chart_widget.chart_state.show_legend))
         legend_action.triggered.connect(self.chart_widget._toggle_show_legend)
         menu.addAction(legend_action)
 
-        values_action = QAction("Mostrar valores", menu, checkable=True)
+        values_action = QAction(_rt("Mostrar valores"), menu, checkable=True)
         values_action.setChecked(bool(self.chart_widget.chart_state.show_values))
         values_action.triggered.connect(self.chart_widget._toggle_show_values)
         menu.addAction(values_action)
 
-        percent_action = QAction("Mostrar percentual", menu, checkable=True)
+        percent_action = QAction(_rt("Mostrar percentual"), menu, checkable=True)
         percent_action.setChecked(bool(self.chart_widget.chart_state.show_percent))
         percent_action.setEnabled(bool(self.chart_widget._supports_percentage()))
         percent_action.triggered.connect(self.chart_widget._toggle_show_percent)
         menu.addAction(percent_action)
 
-        grid_action = QAction("Mostrar grade", menu, checkable=True)
+        grid_action = QAction(_rt("Mostrar grade"), menu, checkable=True)
         grid_action.setChecked(bool(self.chart_widget.chart_state.show_grid))
         grid_action.setEnabled(str(self.chart_widget.chart_state.chart_type or "") in {"bar", "barh", "line", "area"})
         grid_action.triggered.connect(self.chart_widget._toggle_show_grid)
         menu.addAction(grid_action)
 
-        border_action = QAction("Mostrar borda", menu, checkable=True)
+        border_action = QAction(_rt("Mostrar borda"), menu, checkable=True)
         border_action.setChecked(bool(getattr(self.chart_widget.chart_state, "show_border", False)))
         border_action.triggered.connect(self.chart_widget._toggle_show_border)
         menu.addAction(border_action)
 
         sort_group = QActionGroup(menu)
         sort_group.setExclusive(True)
-        for sort_mode, label in dict(self.chart_widget.SORT_LABELS).items():
-            action = QAction(label, menu, checkable=True)
+        for sort_mode in dict(self.chart_widget.SORT_LABELS):
+            action = QAction(self.chart_widget._sort_label(sort_mode), menu, checkable=True)
             action.setChecked(str(self.chart_widget.chart_state.sort_mode or "default") == sort_mode)
             action.triggered.connect(lambda checked=False, value=sort_mode: self.chart_widget._set_sort_mode(value))
             sort_group.addAction(action)
@@ -597,20 +598,20 @@ class DashboardItemWidget(QFrame):
 
         corners_group = QActionGroup(menu)
         corners_group.setExclusive(True)
-        straight_action = QAction("Retos", menu, checkable=True)
+        straight_action = QAction(_rt("Retos"), menu, checkable=True)
         straight_action.setChecked(self.chart_widget._normalized_corner_style() == "square")
         straight_action.triggered.connect(lambda checked=False: self.chart_widget._set_bar_corner_style("square"))
         corners_group.addAction(straight_action)
         corners_menu.addAction(straight_action)
 
-        rounded_action = QAction("Arredondados", menu, checkable=True)
+        rounded_action = QAction(_rt("Arredondados"), menu, checkable=True)
         rounded_action.setChecked(self.chart_widget._normalized_corner_style() == "rounded")
         rounded_action.triggered.connect(lambda checked=False: self.chart_widget._set_bar_corner_style("rounded"))
         corners_group.addAction(rounded_action)
         corners_menu.addAction(rounded_action)
 
         menu.addSeparator()
-        reset_action = QAction("Restaurar visual padrao", menu)
+        reset_action = QAction(_rt("Restaurar visual padrao"), menu)
         reset_action.triggered.connect(self.chart_widget._reset_chart_style)
         menu.addAction(reset_action)
 
@@ -929,12 +930,12 @@ class DashboardItemWidget(QFrame):
         try:
             new_text, accepted = slim_get_text(
                 parent=self,
-                title="Editar titulo",
-                label_text="Titulo do grafico",
+                title=_rt("Editar titulo"),
+                label_text=_rt("Titulo do grafico"),
                 text=current,
-                placeholder="Digite o novo titulo",
-                helper_text="Altere apenas o nome exibido no card.",
-                accept_label="Salvar",
+                placeholder=_rt("Digite o novo titulo"),
+                helper_text=_rt("Altere apenas o nome exibido no card."),
+                accept_label=_rt("Salvar"),
             )
         except Exception:
             return

@@ -35,7 +35,6 @@ class SidebarController:
             self.ui = ui_or_host
 
         self.buttons: Dict[str, QPushButton] = {}
-        self.export_button: Optional[QPushButton] = None
         self.upload_button: Optional[QPushButton] = None
         self.current_mode: Optional[str] = None
         self._all_nav_buttons = []
@@ -74,7 +73,10 @@ class SidebarController:
             btn.setProperty("active", False)
             if mode == "relatorios":
                 icon_path = os.path.join(os.path.dirname(__file__), "resources", "icons", "icone_chat_exato_cropped.png")
-                btn.setIcon(QIcon(icon_path) if os.path.exists(icon_path) else svg_icon(icon_name))
+                if os.path.exists(icon_path):
+                    btn.setIcon(QIcon(icon_path))
+                else:
+                    btn.setIcon(svg_icon(icon_name))
             else:
                 btn.setIcon(svg_icon(icon_name))
             btn.clicked.connect(lambda checked, m=mode: self._handle_nav_click(m))
@@ -83,21 +85,6 @@ class SidebarController:
             self._all_nav_buttons.append(btn)
 
         layout.addStretch(1)
-
-        self.export_button = QPushButton("")
-        self.export_button.setCursor(Qt.PointingHandCursor)
-        self.export_button.setToolTip("Exportar camadas")
-        self.export_button.setFixedSize(36, 36)
-        self.export_button.setIconSize(QSize(20, 20))
-        self.export_button.setProperty("navIcon", "true")
-        self.export_button.setProperty("active", False)
-        export_icon_path = os.path.join(os.path.dirname(__file__), "resources", "icons", "icon_export.svg")
-        if os.path.exists(export_icon_path):
-            self.export_button.setIcon(QIcon(export_icon_path))
-        layout.addWidget(self.export_button, 0, Qt.AlignBottom)
-        if self.host is not None:
-            self.export_button.clicked.connect(self._trigger_export)
-        self._all_nav_buttons.append(self.export_button)
 
         self.upload_button = QPushButton("")
         self.upload_button.setCursor(Qt.PointingHandCursor)
@@ -113,15 +100,6 @@ class SidebarController:
         if self.host is not None:
             self.upload_button.clicked.connect(self._trigger_upload)
         self._all_nav_buttons.append(self.upload_button)
-
-    def _trigger_export(self):
-        host = self.host
-        if host is None:
-            return
-        try:
-            host.export_all_vector_layers()
-        except Exception:
-            pass
 
     def _trigger_upload(self):
         host = self.host

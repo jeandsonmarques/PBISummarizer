@@ -28,6 +28,7 @@ from qgis.utils import iface
 
 from .cloud_session import cloud_session
 from .slim_dialogs import SlimDialogBase, slim_message
+from .utils.i18n_runtime import apply_widget_translations as _apply_i18n_widgets, tr_text as _rt
 
 
 _ICON_DIR = os.path.join(os.path.dirname(__file__), "resources", "icons")
@@ -44,7 +45,7 @@ class PowerBICloudDialog(SlimDialogBase):
 
     def __init__(self, parent: Optional[QWidget] = None, initial_tab: Optional[str] = None):
         super().__init__(parent, geometry_key="PowerBISummarizer/cloud/dialog")
-        self.setWindowTitle("Summarizer Cloud (beta)")
+        self.setWindowTitle(_rt("Summarizer Cloud (beta)"))
         self.resize(640, 420)
         self._upload_layers: List[QgsVectorLayer] = []
         self._build_ui()
@@ -55,6 +56,17 @@ class PowerBICloudDialog(SlimDialogBase):
         self._refresh_upload_layers()
         self._refresh_group_choices()
         self._select_initial_tab(initial_tab)
+        self._apply_runtime_i18n()
+
+    def _apply_runtime_i18n(self):
+        try:
+            _apply_i18n_widgets(self)
+        except Exception:
+            pass
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._apply_runtime_i18n()
 
     # ------------------------------------------------------------------ UI
     def _build_ui(self):
@@ -287,10 +299,10 @@ class PowerBICloudDialog(SlimDialogBase):
     ):
         slim_message(
             self,
-            title=title,
-            text=text,
-            helper_text=helper_text,
-            accept_label=accept_label,
+            title=_rt(title),
+            text=_rt(text),
+            helper_text=_rt(helper_text),
+            accept_label=_rt(accept_label),
             icon=_cloud_popup_icon(),
         )
 
@@ -519,7 +531,7 @@ class PowerBICloudDialog(SlimDialogBase):
 
     def _set_upload_status(self, text: str, level: str = "info"):
         colors = {"info": "#5D5A58", "ok": "#2F8D46", "error": "#B3261E"}
-        self.upload_status_label.setText(text or "")
+        self.upload_status_label.setText(_rt(text or ""))
         self.upload_status_label.setStyleSheet(f"color: {colors.get(level, '#5D5A58')};")
 
     def _handle_upload_layer(self):
@@ -620,7 +632,7 @@ class PowerBICloudDialog(SlimDialogBase):
     def _set_status_badge(self, level: str, text: str):
         colors = {"online": "#2F8D46", "offline": "#B3261E", "sync": "#F2994A"}
         color = colors.get(level, "#5D5A58")
-        self.cloud_status_badge.setText(text)
+        self.cloud_status_badge.setText(_rt(text))
         self.cloud_status_badge.setStyleSheet(
             f"""
             QLabel#cloudDialogStatusBadge {{
@@ -667,12 +679,13 @@ class PowerBICloudDialog(SlimDialogBase):
                 session_details.append("Modo mock usando catálogo local de exemplo.")
         else:
             session_details.append("Status: aguardando login.")
-        self.session_detail.setText("\n".join(session_details))
+        self.session_detail.setText(_rt("\n".join(session_details)))
         self.warning_label.setVisible(not cloud_session.hosting_ready())
         if not is_auth:
             # Carregamos o e-mail padrão salvo por conexão para sugerir o login.
             self._prefill_user_from_connection()
         self._update_admin_tab_visibility()
+        self._apply_runtime_i18n()
 
     def _update_config_ui(self):
         config = cloud_session.config()
@@ -681,6 +694,7 @@ class PowerBICloudDialog(SlimDialogBase):
         self.layers_endpoint_edit.setText(config.get("layers_endpoint", ""))
         self.hosting_checkbox.setChecked(bool(config.get("hosting_ready")))
         self.warning_label.setVisible(not cloud_session.hosting_ready())
+        self._apply_runtime_i18n()
 
     def _on_layers_changed(self):
         stamp = QDateTime.currentDateTime().toString("dd/MM HH:mm")
@@ -788,6 +802,10 @@ class PowerBICloudDialog(SlimDialogBase):
 def open_cloud_dialog(parent: Optional[QWidget] = None, initial_tab: Optional[str] = None) -> PowerBICloudDialog:
     """Helper used by different entry points."""
     dialog = PowerBICloudDialog(parent, initial_tab=initial_tab)
+    try:
+        _apply_i18n_widgets(dialog)
+    except Exception:
+        pass
     dialog.exec_()
     return dialog
 

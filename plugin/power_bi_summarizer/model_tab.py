@@ -4,7 +4,7 @@ import os
 import uuid
 from typing import Dict, List, Optional
 
-from qgis.PyQt.QtCore import Qt, pyqtSignal
+from qgis.PyQt.QtCore import QSize, Qt, pyqtSignal
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import (
     QComboBox,
@@ -32,6 +32,7 @@ from .dashboard_models import DashboardChartBinding, DashboardChartItem, Dashboa
 from .dashboard_project_store import DashboardProjectStore, PROJECT_EXTENSION
 from .report_view.chart_factory import ChartVisualState
 from .report_view.result_models import ChartPayload
+from .utils.i18n_runtime import tr_text as _rt
 from .utils.resources import svg_icon
 
 
@@ -140,6 +141,7 @@ class ModelTab(QWidget):
         self.current_path: str = ""
         self._dirty = False
         self._syncing_zoom_controls = False
+        self._suspend_canvas_events = False
         self._builder_layers: Dict[str, QgsVectorLayer] = {}
 
         root = QVBoxLayout(self)
@@ -156,24 +158,33 @@ class ModelTab(QWidget):
         top_row.setContentsMargins(0, 0, 0, 0)
         top_row.setSpacing(8)
 
-        title = QLabel("Model")
-        title.setObjectName("ModelTitle")
-        top_row.addWidget(title, 0)
+        self.title_label = QLabel(_rt("Model"))
+        self.title_label.setObjectName("ModelTitle")
+        top_row.addWidget(self.title_label, 0)
 
-        self.project_status_label = QLabel("Nenhum painel aberto")
+        self.project_status_label = QLabel(_rt("Nenhum painel aberto"))
         self.project_status_label.setObjectName("ModelProjectStatus")
         top_row.addWidget(self.project_status_label, 0)
         top_row.addStretch(1)
 
-        self.new_btn = QPushButton("Novo")
-        self.open_btn = QPushButton("Abrir")
-        self.save_btn = QPushButton("Salvar")
-        self.save_as_btn = QPushButton("Salvar como")
-        self.export_btn = QPushButton("Exportar")
-        self.create_chart_btn = QPushButton("Criar grafico")
-        self.edit_mode_btn = QPushButton("Edicao")
+        self.new_btn = QPushButton(_rt("Novo"))
+        self.open_btn = QPushButton(_rt("Abrir"))
+        self.save_btn = QPushButton(_rt("Salvar"))
+        self.save_as_btn = QPushButton(_rt("Salvar como"))
+        self.export_btn = QPushButton(_rt("Exportar"))
+        self.create_chart_btn = QPushButton(_rt("Criar grafico"))
+        self.edit_mode_btn = QPushButton(_rt("Edicao"))
         self.edit_mode_btn.setCheckable(True)
         self.edit_mode_btn.setChecked(True)
+        self.close_project_btn = QToolButton()
+        self.close_project_btn.setObjectName("ModelCloseProjectButton")
+        self.close_project_btn.setIcon(svg_icon("Close.svg"))
+        self.close_project_btn.setIconSize(QSize(16, 16))
+        self.close_project_btn.setToolButtonStyle(Qt.ToolButtonIconOnly)
+        self.close_project_btn.setAutoRaise(False)
+        self.close_project_btn.setCursor(Qt.PointingHandCursor)
+        self.close_project_btn.setToolTip(_rt("Fechar projeto e voltar para a tela inicial"))
+        self.close_project_btn.setVisible(False)
         for button in (
             self.new_btn,
             self.open_btn,
@@ -182,13 +193,14 @@ class ModelTab(QWidget):
             self.export_btn,
             self.create_chart_btn,
             self.edit_mode_btn,
+            self.close_project_btn,
         ):
             button.setObjectName("ModelToolbarButton")
             top_row.addWidget(button, 0)
         header_layout.addLayout(top_row)
 
         self.project_hint_label = QLabel(
-            "Monte painéis com os graficos da aba Resumo e da aba Relatorios. O painel salvo continua editavel."
+            _rt("Monte painéis com os graficos da aba Resumo e da aba Relatorios. O painel salvo continua editavel.")
         )
         self.project_hint_label.setObjectName("ModelHint")
         self.project_hint_label.setWordWrap(True)
@@ -203,11 +215,11 @@ class ModelTab(QWidget):
         filters_layout = QHBoxLayout(self.filters_bar)
         filters_layout.setContentsMargins(14, 10, 14, 10)
         filters_layout.setSpacing(10)
-        self.filters_label = QLabel("Filtros ativos: nenhum")
+        self.filters_label = QLabel(_rt("Filtros ativos: nenhum"))
         self.filters_label.setObjectName("ModelFiltersLabel")
         self.filters_label.setWordWrap(True)
         filters_layout.addWidget(self.filters_label, 1)
-        self.clear_filters_btn = QPushButton("Limpar filtros")
+        self.clear_filters_btn = QPushButton(_rt("Limpar filtros"))
         self.clear_filters_btn.setObjectName("ModelToolbarButton")
         self.clear_filters_btn.clicked.connect(self._clear_model_filters)
         filters_layout.addWidget(self.clear_filters_btn, 0)
@@ -228,27 +240,18 @@ class ModelTab(QWidget):
         welcome_layout.setContentsMargins(18, 18, 18, 18)
         welcome_layout.setSpacing(14)
 
-        welcome_title = QLabel("Comece um painel no Model")
+        welcome_title = QLabel(_rt("Comece um painel no Model"))
         welcome_title.setObjectName("ModelWelcomeTitle")
         welcome_layout.addWidget(welcome_title)
 
         welcome_text = QLabel(
-            "Use os graficos do plugin como blocos editaveis. Adicione pelo menu contextual e reorganize no canvas branco."
+            _rt("Use os graficos do plugin como blocos editaveis. Adicione pelo menu contextual e reorganize no canvas branco.")
         )
         welcome_text.setObjectName("ModelWelcomeText")
         welcome_text.setWordWrap(True)
         welcome_layout.addWidget(welcome_text)
 
-        cards_row = QHBoxLayout()
-        cards_row.setContentsMargins(0, 0, 0, 0)
-        cards_row.setSpacing(12)
-        self.empty_new_btn = self._build_action_card("Novo painel", "Criar um painel em branco e comecar a montar.", "icon_dashboard.svg")
-        self.empty_open_btn = self._build_action_card("Abrir painel salvo", "Abrir um arquivo .pbsdash ja existente.", "report_add.svg")
-        self.empty_import_btn = self._build_action_card("Importar arquivo", "Selecionar um painel salvo para continuar editando.", "Workspace.svg")
-        cards_row.addWidget(self.empty_new_btn, 1)
-        cards_row.addWidget(self.empty_open_btn, 1)
-        cards_row.addWidget(self.empty_import_btn, 1)
-        welcome_layout.addLayout(cards_row)
+        welcome_layout.addStretch(1)
 
         empty_layout.addWidget(welcome, 0)
 
@@ -259,11 +262,11 @@ class ModelTab(QWidget):
         recents_layout.setContentsMargins(18, 18, 18, 18)
         recents_layout.setSpacing(10)
 
-        recents_title = QLabel("Paineis recentes")
+        recents_title = QLabel(_rt("Paineis recentes"))
         recents_title.setObjectName("ModelRecentsTitle")
         recents_layout.addWidget(recents_title)
 
-        self.recents_placeholder = QLabel("Nenhum painel recente encontrado.")
+        self.recents_placeholder = QLabel(_rt("Nenhum painel recente encontrado."))
         self.recents_placeholder.setObjectName("ModelRecentsPlaceholder")
         self.recents_placeholder.setWordWrap(True)
         recents_layout.addWidget(self.recents_placeholder)
@@ -338,9 +341,7 @@ class ModelTab(QWidget):
         self.zoom_in_btn.clicked.connect(self._zoom_canvas_in)
         self.zoom_slider.valueChanged.connect(self._zoom_slider_changed)
         self.edit_mode_btn.toggled.connect(self.set_edit_mode)
-        self.empty_new_btn.clicked.connect(self.new_project)
-        self.empty_open_btn.clicked.connect(self.open_project)
-        self.empty_import_btn.clicked.connect(self.import_project)
+        self.close_project_btn.clicked.connect(self.close_project)
         self.canvas.itemsChanged.connect(self._handle_canvas_changed)
         self.canvas.filtersChanged.connect(self._handle_canvas_filters_changed)
         self.canvas.zoomChanged.connect(self._handle_canvas_zoom_changed)
@@ -537,11 +538,11 @@ class ModelTab(QWidget):
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(10)
 
-        title = QLabel("Camada e campos")
+        title = QLabel(_rt("Camada e campos"))
         title.setObjectName("ModelBuilderTitle")
         layout.addWidget(title, 0)
 
-        helper = QLabel("Selecione a camada, campos e crie um grafico direto no canvas.")
+        helper = QLabel(_rt("Selecione a camada, campos e crie um grafico direto no canvas."))
         helper.setObjectName("ModelBuilderHint")
         helper.setWordWrap(True)
         layout.addWidget(helper, 0)
@@ -554,53 +555,53 @@ class ModelTab(QWidget):
 
         self.builder_layer_combo = QComboBox(panel)
         self.builder_layer_combo.setObjectName("ModelBuilderCombo")
-        form.addRow("Camada", self.builder_layer_combo)
+        form.addRow(_rt("Camada"), self.builder_layer_combo)
 
         self.builder_dimension_combo = QComboBox(panel)
         self.builder_dimension_combo.setObjectName("ModelBuilderCombo")
-        form.addRow("Categoria", self.builder_dimension_combo)
+        form.addRow(_rt("Categoria"), self.builder_dimension_combo)
 
         self.builder_value_combo = QComboBox(panel)
         self.builder_value_combo.setObjectName("ModelBuilderCombo")
-        form.addRow("Metrica", self.builder_value_combo)
+        form.addRow(_rt("Metrica"), self.builder_value_combo)
 
         self.builder_agg_combo = QComboBox(panel)
         self.builder_agg_combo.setObjectName("ModelBuilderCombo")
-        self.builder_agg_combo.addItem("Contagem", "count")
-        self.builder_agg_combo.addItem("Soma", "sum")
-        self.builder_agg_combo.addItem("Media", "avg")
-        self.builder_agg_combo.addItem("Minimo", "min")
-        self.builder_agg_combo.addItem("Maximo", "max")
-        form.addRow("Agregacao", self.builder_agg_combo)
+        self.builder_agg_combo.addItem(_rt("Contagem"), "count")
+        self.builder_agg_combo.addItem(_rt("Soma"), "sum")
+        self.builder_agg_combo.addItem(_rt("Media"), "avg")
+        self.builder_agg_combo.addItem(_rt("Minimo"), "min")
+        self.builder_agg_combo.addItem(_rt("Maximo"), "max")
+        form.addRow(_rt("Agregacao"), self.builder_agg_combo)
 
         self.builder_chart_type_combo = QComboBox(panel)
         self.builder_chart_type_combo.setObjectName("ModelBuilderCombo")
-        self.builder_chart_type_combo.addItem("Colunas", "bar")
-        self.builder_chart_type_combo.addItem("Barras", "barh")
-        self.builder_chart_type_combo.addItem("Linha", "line")
-        self.builder_chart_type_combo.addItem("Pizza", "pie")
-        self.builder_chart_type_combo.addItem("Rosca", "donut")
-        self.builder_chart_type_combo.addItem("Card", "card")
-        form.addRow("Tipo", self.builder_chart_type_combo)
+        self.builder_chart_type_combo.addItem(_rt("Colunas"), "bar")
+        self.builder_chart_type_combo.addItem(_rt("Barras"), "barh")
+        self.builder_chart_type_combo.addItem(_rt("Linha"), "line")
+        self.builder_chart_type_combo.addItem(_rt("Pizza"), "pie")
+        self.builder_chart_type_combo.addItem(_rt("Rosca"), "donut")
+        self.builder_chart_type_combo.addItem(_rt("Card"), "card")
+        form.addRow(_rt("Tipo"), self.builder_chart_type_combo)
 
         self.builder_topn_spin = QSpinBox(panel)
         self.builder_topn_spin.setObjectName("ModelBuilderSpin")
         self.builder_topn_spin.setRange(3, 50)
         self.builder_topn_spin.setValue(12)
-        form.addRow("Top N", self.builder_topn_spin)
+        form.addRow(_rt("Top N"), self.builder_topn_spin)
 
         self.builder_title_edit = QLineEdit(panel)
         self.builder_title_edit.setObjectName("ModelBuilderLineEdit")
-        self.builder_title_edit.setPlaceholderText("Titulo do grafico (opcional)")
-        form.addRow("Titulo", self.builder_title_edit)
+        self.builder_title_edit.setPlaceholderText(_rt("Titulo do grafico (opcional)"))
+        form.addRow(_rt("Titulo"), self.builder_title_edit)
         layout.addLayout(form, 0)
 
         actions = QHBoxLayout()
         actions.setContentsMargins(0, 0, 0, 0)
         actions.setSpacing(8)
-        self.builder_refresh_btn = QPushButton("Atualizar")
+        self.builder_refresh_btn = QPushButton(_rt("Atualizar"))
         self.builder_refresh_btn.setObjectName("ModelToolbarButton")
-        self.builder_add_btn = QPushButton("Adicionar grafico")
+        self.builder_add_btn = QPushButton(_rt("Adicionar grafico"))
         self.builder_add_btn.setObjectName("ModelToolbarButton")
         actions.addWidget(self.builder_refresh_btn, 0)
         actions.addWidget(self.builder_add_btn, 1)
@@ -648,7 +649,7 @@ class ModelTab(QWidget):
         self.builder_value_combo.blockSignals(True)
         self.builder_dimension_combo.clear()
         self.builder_value_combo.clear()
-        self.builder_value_combo.addItem("Contagem de registros", "__count__")
+        self.builder_value_combo.addItem(_rt("Contagem de registros"), "__count__")
         if layer is not None:
             for field_def in list(layer.fields()):
                 field_name = str(field_def.name() or "").strip()
@@ -690,11 +691,11 @@ class ModelTab(QWidget):
         layer_id = str(self.builder_layer_combo.currentData() or "")
         layer = self._builder_layers.get(layer_id)
         if layer is None or not layer.isValid():
-            QMessageBox.information(self, "Model", "Selecione uma camada valida para criar o grafico.")
+            QMessageBox.information(self, _rt("Model"), _rt("Selecione uma camada valida para criar o grafico."))
             return None
         dimension_field = str(self.builder_dimension_combo.currentData() or "").strip()
         if not dimension_field:
-            QMessageBox.information(self, "Model", "Selecione o campo de categoria.")
+            QMessageBox.information(self, _rt("Model"), _rt("Selecione o campo de categoria."))
             return None
         value_field = str(self.builder_value_combo.currentData() or "__count__").strip() or "__count__"
         aggregation = str(self.builder_agg_combo.currentData() or "count").strip().lower() or "count"
@@ -740,10 +741,10 @@ class ModelTab(QWidget):
             bucket["max"] = float(value) if current_max is None else max(float(current_max), float(value))
 
         if value_field != "__count__" and not has_numeric_values:
-            QMessageBox.information(self, "Model", "Nao foi possivel calcular valores numericos para esse campo.")
+            QMessageBox.information(self, _rt("Model"), _rt("Nao foi possivel calcular valores numericos para esse campo."))
             return None
         if not grouped:
-            QMessageBox.information(self, "Model", "A camada nao possui dados suficientes para montar o grafico.")
+            QMessageBox.information(self, _rt("Model"), _rt("A camada nao possui dados suficientes para montar o grafico."))
             return None
 
         rows: List[Dict[str, object]] = []
@@ -771,7 +772,7 @@ class ModelTab(QWidget):
             )
 
         if not rows:
-            QMessageBox.information(self, "Model", "Sem resultados para os campos selecionados.")
+            QMessageBox.information(self, _rt("Model"), _rt("Sem resultados para os campos selecionados."))
             return None
 
         rows.sort(key=lambda item: float(item.get("value") or 0.0), reverse=True)
@@ -784,19 +785,19 @@ class ModelTab(QWidget):
         feature_groups = [list(item.get("feature_ids") or []) for item in rows]
 
         agg_label = {
-            "count": "Contagem",
-            "sum": "Soma",
-            "avg": "Media",
-            "min": "Minimo",
-            "max": "Maximo",
-        }.get(aggregation, "Contagem")
-        value_label = "count" if value_field == "__count__" else f"{agg_label} de {value_field}"
+            "count": _rt("Contagem"),
+            "sum": _rt("Soma"),
+            "avg": _rt("Media"),
+            "min": _rt("Minimo"),
+            "max": _rt("Maximo"),
+        }.get(aggregation, _rt("Contagem"))
+        value_label = _rt("Contagem") if value_field == "__count__" else _rt("{agg_label} de {value_field}", agg_label=agg_label, value_field=value_field)
         title_text = str(self.builder_title_edit.text() or "").strip()
         if not title_text:
             if value_field == "__count__":
-                title_text = f"Contagem por {dimension_field}"
+                title_text = _rt("Contagem por {dimension_field}", dimension_field=dimension_field)
             else:
-                title_text = f"{agg_label} de {value_field} por {dimension_field}"
+                title_text = _rt("{agg_label} de {value_field} por {dimension_field}", agg_label=agg_label, value_field=value_field, dimension_field=dimension_field)
 
         payload = ChartPayload.build(
             chart_type=chart_type,
@@ -844,7 +845,7 @@ class ModelTab(QWidget):
         if item is None:
             return
         if self.current_project is None:
-            self._create_blank_project("Novo painel")
+            self._create_blank_project(_rt("Novo painel"))
         if self.current_project is None:
             return
         self.current_project.items.append(item)
@@ -855,8 +856,8 @@ class ModelTab(QWidget):
 
     def _open_canvas_context_menu(self, global_pos):
         menu = QMenu(self)
-        add_chart_action = menu.addAction("Adicionar grafico em branco")
-        open_panel_action = menu.addAction("Abrir painel de camada")
+        add_chart_action = menu.addAction(_rt("Adicionar grafico em branco"))
+        open_panel_action = menu.addAction(_rt("Abrir painel de camada"))
         chosen = menu.exec_(global_pos)
         if chosen is add_chart_action:
             self._add_chart_from_builder()
@@ -874,7 +875,7 @@ class ModelTab(QWidget):
         return str(self.current_project.name or "")
 
     def prompt_add_chart(self, snapshot: Dict[str, object]) -> bool:
-        chart_title = str(snapshot.get("title") or snapshot.get("payload", {}).get("title", "Grafico"))
+        chart_title = str(snapshot.get("title") or snapshot.get("payload", {}).get("title", _rt("Grafico")))
         dialog = DashboardAddDialog(
             chart_title,
             has_current_project=self.current_project is not None,
@@ -888,13 +889,13 @@ class ModelTab(QWidget):
         selection = dialog.selection()
         mode = selection.get("mode")
         if mode == "new":
-            self._create_blank_project(selection.get("name") or "Novo painel")
+            self._create_blank_project(selection.get("name") or _rt("Novo painel"))
         elif mode == "file":
             path = selection.get("path") or ""
             if not path:
                 path, _ = QFileDialog.getOpenFileName(
                     self,
-                    "Escolher painel salvo",
+                    _rt("Escolher painel salvo"),
                     self.store.default_directory(),
                     f"Summarizer Dashboard (*{PROJECT_EXTENSION});;JSON (*.json)",
                 )
@@ -902,14 +903,14 @@ class ModelTab(QWidget):
                 return False
             self.open_project(path)
         elif self.current_project is None:
-            self._create_blank_project("Novo painel")
+            self._create_blank_project(_rt("Novo painel"))
 
         self.add_chart_snapshot(snapshot)
         return True
 
     def add_chart_snapshot(self, snapshot: Dict[str, object]):
         if self.current_project is None:
-            self._create_blank_project("Novo painel")
+            self._create_blank_project(_rt("Novo painel"))
         if self.current_project is None:
             return
         item = DashboardChartItem.from_chart_snapshot(snapshot)
@@ -920,14 +921,45 @@ class ModelTab(QWidget):
         self._refresh_ui_state()
 
     def new_project(self):
-        self._create_blank_project("Novo painel")
+        self._create_blank_project(_rt("Novo painel"))
+
+    def close_project(self):
+        if self.current_project is not None and self._dirty:
+            answer = QMessageBox.question(
+                self,
+                _rt("Model"),
+                _rt("O painel atual tem alterações não salvas. Deseja salvar antes de fechar?"),
+                QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
+                QMessageBox.Yes,
+            )
+            if answer == QMessageBox.Cancel:
+                return
+            if answer == QMessageBox.Yes:
+                self.save_project()
+                if self.current_project is not None and self._dirty:
+                    return
+        self.current_project = None
+        self.current_path = ""
+        self._dirty = False
+        self._suspend_canvas_events = True
+        try:
+            self.canvas.set_items([], [], [])
+        finally:
+            self._suspend_canvas_events = False
+        self._refresh_builder_layers()
+        self._refresh_recents()
+        self._refresh_ui_state()
 
     def _create_blank_project(self, name: str):
-        self.current_project = DashboardProject(name=str(name or "Novo painel"))
+        self.current_project = DashboardProject(name=str(name or _rt("Novo painel")))
         self.current_project.edit_mode = bool(self.edit_mode_btn.isChecked())
         self.current_path = ""
         self._dirty = False
-        self.canvas.set_items([], [], [])
+        self._suspend_canvas_events = True
+        try:
+            self.canvas.set_items([], [], [])
+        finally:
+            self._suspend_canvas_events = False
         self._refresh_builder_layers()
         self._refresh_ui_state()
 
@@ -935,7 +967,7 @@ class ModelTab(QWidget):
         if not path:
             path, _ = QFileDialog.getOpenFileName(
                 self,
-                "Abrir painel salvo",
+                _rt("Abrir painel salvo"),
                 self.store.default_directory(),
                 f"Summarizer Dashboard (*{PROJECT_EXTENSION});;JSON (*.json)",
             )
@@ -944,7 +976,7 @@ class ModelTab(QWidget):
         try:
             project = self.store.load_project(path)
         except Exception as exc:
-            QMessageBox.warning(self, "Model", f"Nao foi possivel abrir o painel: {exc}")
+            QMessageBox.warning(self, _rt("Model"), _rt("Nao foi possivel abrir o painel: {error}", error=exc))
             return
         self.current_project = project
         self.current_path = self.store.normalize_path(path)
@@ -960,7 +992,7 @@ class ModelTab(QWidget):
 
     def save_project(self, save_as: bool = False):
         if self.current_project is None:
-            self._create_blank_project("Novo painel")
+            self._create_blank_project(_rt("Novo painel"))
         if self.current_project is None:
             return
         self.current_project.items = self.canvas.items()
@@ -969,11 +1001,11 @@ class ModelTab(QWidget):
         self.current_project.edit_mode = bool(self.edit_mode_btn.isChecked())
         target_path = self.current_path
         if save_as or not target_path:
-            suggested_name = (self.current_project.name or "painel").strip().replace(" ", "_")
+            suggested_name = (self.current_project.name or _rt("painel")).strip().replace(" ", "_")
             suggested_path = os.path.join(self.store.default_directory(), suggested_name)
             target_path, _ = QFileDialog.getSaveFileName(
                 self,
-                "Salvar painel",
+                _rt("Salvar painel"),
                 suggested_path,
                 f"Summarizer Dashboard (*{PROJECT_EXTENSION});;JSON (*.json)",
             )
@@ -982,7 +1014,7 @@ class ModelTab(QWidget):
         try:
             self.current_path = self.store.save_project(target_path, self.current_project)
         except Exception as exc:
-            QMessageBox.warning(self, "Model", f"Nao foi possivel salvar o painel: {exc}")
+            QMessageBox.warning(self, _rt("Model"), _rt("Nao foi possivel salvar o painel: {error}", error=exc))
             return
         self._dirty = False
         self._refresh_recents()
@@ -990,21 +1022,21 @@ class ModelTab(QWidget):
 
     def export_project(self):
         if not self.canvas.has_items():
-            QMessageBox.information(self, "Model", "Adicione ao menos um grafico antes de exportar.")
+            QMessageBox.information(self, _rt("Model"), _rt("Adicione ao menos um grafico antes de exportar."))
             return
-        suggested_name = (self.current_project_name() or "painel_model").strip().replace(" ", "_")
+        suggested_name = (self.current_project_name() or _rt("painel_model")).strip().replace(" ", "_")
         suggested_path = os.path.join(self.store.default_directory(), f"{suggested_name}.png")
-        path, _ = QFileDialog.getSaveFileName(self, "Exportar painel", suggested_path, "PNG (*.png)")
+        path, _ = QFileDialog.getSaveFileName(self, _rt("Exportar painel"), suggested_path, "PNG (*.png)")
         if not path:
             return
         if not self.canvas.export_image(path):
-            QMessageBox.warning(self, "Model", "Nao foi possivel exportar a imagem do painel.")
+            QMessageBox.warning(self, _rt("Model"), _rt("Nao foi possivel exportar a imagem do painel."))
             return
-        QMessageBox.information(self, "Model", f"Painel exportado para:\n{path}")
+        QMessageBox.information(self, _rt("Model"), _rt("Painel exportado para:\n{path}", path=path))
 
     def set_edit_mode(self, enabled: bool):
         self.canvas.set_edit_mode(enabled)
-        self.create_chart_btn.setVisible(bool(enabled))
+        self.create_chart_btn.setVisible(bool(enabled) and self.current_project is not None)
         self.builder_panel.setVisible(bool(enabled) and self.body_stack.currentWidget() is self.canvas_page)
         if self.current_project is not None:
             self.current_project.edit_mode = bool(enabled)
@@ -1052,7 +1084,22 @@ class ModelTab(QWidget):
     def _update_footer_visibility(self):
         self.footer_bar.setVisible(self.body_stack.currentWidget() is self.canvas_page)
 
+    def _update_toolbar_visibility(self):
+        has_project = self.current_project is not None
+        show_project_actions = has_project
+        for button in (
+            self.save_btn,
+            self.save_as_btn,
+            self.export_btn,
+            self.create_chart_btn,
+            self.edit_mode_btn,
+            self.close_project_btn,
+        ):
+            button.setVisible(show_project_actions)
+
     def _handle_canvas_changed(self):
+        if self._suspend_canvas_events:
+            return
         if self.current_project is not None:
             self.current_project.items = self.canvas.items()
             self.current_project.visual_links = self.canvas.visual_links()
@@ -1068,23 +1115,23 @@ class ModelTab(QWidget):
         summary = summary or self.canvas.interaction_manager.active_filters_summary()
         items = list(summary.get("items") or [])
         if not self.edit_mode_btn.isChecked() or not items:
-            self.filters_label.setText("Filtros ativos: nenhum")
+            self.filters_label.setText(_rt("Filtros ativos: nenhum"))
             self.filters_bar.setVisible(False)
             return
         parts = []
         for item in items:
             source_name = str(item.get("source_name") or "")
             field = str(item.get("field") or "")
-            label = str(item.get("label") or field or item.get("filter_key") or source_name or "Filtro")
+            label = str(item.get("label") or field or item.get("filter_key") or source_name or _rt("Filtro"))
             values = [str(value) for value in list(item.get("values") or []) if str(value).strip()]
-            value_text = ", ".join(values) if values else "seleção ativa"
+            value_text = ", ".join(values) if values else _rt("seleção ativa")
             if source_name and source_name != label:
                 parts.append(f"{label} ({source_name}) = {value_text}")
             elif field:
                 parts.append(f"{label} = {value_text}")
             else:
                 parts.append(f"{label}: {value_text}")
-        self.filters_label.setText("Filtros ativos: " + " | ".join(parts))
+        self.filters_label.setText(_rt("Filtros ativos: ") + " | ".join(parts))
         self.filters_bar.setVisible(True)
 
     def _clear_model_filters(self):
@@ -1118,17 +1165,19 @@ class ModelTab(QWidget):
         self.recents_layout.addStretch(1)
 
     def _refresh_ui_state(self):
-        project_name = self.current_project_name() or "Nenhum painel aberto"
-        path_text = self.current_path or "Sem arquivo salvo"
+        project_name = self.current_project_name() or _rt("Nenhum painel aberto")
+        path_text = self.current_path or _rt("Sem arquivo salvo")
         dirty_suffix = " *" if self._dirty else ""
         self.project_status_label.setText(f"{project_name}{dirty_suffix} | {path_text}")
         has_project = self.current_project is not None
         self.body_stack.setCurrentWidget(self.canvas_page if has_project else self.empty_page)
         in_canvas_page = self.body_stack.currentWidget() is self.canvas_page
-        self.create_chart_btn.setVisible(bool(self.edit_mode_btn.isChecked()))
+        self.new_btn.setVisible(True)
+        self.open_btn.setVisible(True)
+        self._update_toolbar_visibility()
+        self.close_project_btn.setVisible(has_project)
         self.builder_panel.setVisible(bool(self.edit_mode_btn.isChecked()) and in_canvas_page)
         self._update_footer_visibility()
         self._update_filters_bar()
         self.filters_bar.setVisible(bool(self.edit_mode_btn.isChecked()) and self.filters_bar.isVisible())
-        self.project_hint_label.setVisible(False)
 

@@ -1,0 +1,7 @@
+Abrir Summarizer Cloud... => Abrir Summarizer Cloud...
+Abrir no Navegador => Abrir en el navegador
+Direcao do filtro: => Dirección del filtro:
+Exportar camada (preview herdado) => Exportar capa (vista previa heredada)
+Filtros por Categoria => Filtros por categoría
+Limpar filtros => Limpiar filtros
+Visão de Categorias => Vista de categoría

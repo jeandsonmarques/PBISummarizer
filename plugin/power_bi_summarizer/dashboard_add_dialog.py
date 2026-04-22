@@ -16,6 +16,8 @@ from qgis.PyQt.QtWidgets import (
     QVBoxLayout,
 )
 
+from .utils.i18n_runtime import apply_widget_translations as _apply_i18n_widgets, tr_text as _rt
+
 
 class DashboardAddDialog(QDialog):
     def __init__(
@@ -29,7 +31,7 @@ class DashboardAddDialog(QDialog):
     ):
         super().__init__(parent)
         self.setObjectName("ModelAddDialog")
-        self.setWindowTitle("Adicionar ao Model")
+        self.setWindowTitle(_rt("Adicionar ao Model"))
         self.setModal(True)
         self.resize(460, 320)
 
@@ -40,11 +42,11 @@ class DashboardAddDialog(QDialog):
         layout.setContentsMargins(18, 18, 18, 18)
         layout.setSpacing(12)
 
-        title = QLabel("Adicionar grafico ao painel")
+        title = QLabel(_rt("Adicionar gráfico ao painel"))
         title.setProperty("cardTitle", True)
         layout.addWidget(title)
 
-        description = QLabel(f"Grafico selecionado: {chart_title or 'Grafico sem titulo'}")
+        description = QLabel(_rt("Gráfico selecionado: {chart_title}", chart_title=chart_title or _rt("Gráfico sem título")))
         description.setWordWrap(True)
         description.setProperty("role", "helper")
         layout.addWidget(description)
@@ -55,30 +57,30 @@ class DashboardAddDialog(QDialog):
         options_layout.setContentsMargins(14, 14, 14, 14)
         options_layout.setSpacing(10)
 
-        self.current_radio = QRadioButton("Adicionar ao painel atual")
-        current_text = current_project_name or "Nenhum painel aberto"
+        self.current_radio = QRadioButton(_rt("Adicionar ao painel atual"))
+        current_text = current_project_name or _rt("Nenhum painel aberto")
         self.current_radio.setEnabled(has_current_project)
         self.current_radio.setToolTip(current_text)
         options_layout.addWidget(self.current_radio)
 
-        self.new_radio = QRadioButton("Criar novo painel")
+        self.new_radio = QRadioButton(_rt("Criar novo painel"))
         options_layout.addWidget(self.new_radio)
 
         self.new_name_edit = QLineEdit(self)
-        self.new_name_edit.setPlaceholderText("Nome do novo painel")
+        self.new_name_edit.setPlaceholderText(_rt("Nome do novo painel"))
         options_layout.addWidget(self.new_name_edit)
 
-        self.file_radio = QRadioButton("Escolher painel salvo")
+        self.file_radio = QRadioButton(_rt("Escolher painel salvo"))
         options_layout.addWidget(self.file_radio)
 
         file_row = QHBoxLayout()
         file_row.setContentsMargins(0, 0, 0, 0)
         file_row.setSpacing(8)
-        self.file_path_label = QLabel("Nenhum painel selecionado")
+        self.file_path_label = QLabel(_rt("Nenhum painel selecionado"))
         self.file_path_label.setProperty("role", "helper")
         self.file_path_label.setWordWrap(True)
         file_row.addWidget(self.file_path_label, 1)
-        self.choose_file_btn = QPushButton("Escolher")
+        self.choose_file_btn = QPushButton(_rt("Escolher"))
         file_row.addWidget(self.choose_file_btn, 0)
         options_layout.addLayout(file_row)
 
@@ -113,7 +115,7 @@ class DashboardAddDialog(QDialog):
             self.current_radio.setChecked(True)
         else:
             self.new_radio.setChecked(True)
-            self.new_name_edit.setText("Novo painel")
+            self.new_name_edit.setText(_rt("Novo painel"))
         self._sync_enabled_state()
 
         self.setStyleSheet(
@@ -161,9 +163,9 @@ class DashboardAddDialog(QDialog):
 
     def _recent_hint_text(self) -> str:
         if not self._recent_projects:
-            return "Nenhum painel recente encontrado ainda."
+            return _rt("Nenhum painel recente encontrado ainda.")
         labels = [item.get("name") or item.get("path") for item in self._recent_projects[:3]]
-        return "Recentes: " + " | ".join([str(label) for label in labels if label])
+        return _rt("Recentes: ") + " | ".join([str(label) for label in labels if label])
 
     def _select_recent_path(self):
         initial_dir = ""
@@ -171,9 +173,9 @@ class DashboardAddDialog(QDialog):
             initial_dir = str(self._recent_projects[0].get("path") or "")
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Escolher painel salvo",
+            _rt("Escolher painel salvo"),
             initial_dir,
-            "Power BI Dashboard (*.pbsdash);;JSON (*.json)",
+            _rt("Power BI Dashboard (*.pbsdash);;JSON (*.json)"),
         )
         self._selected_recent_path = path
         if self._selected_recent_path:
@@ -195,6 +197,13 @@ class DashboardAddDialog(QDialog):
     def accept(self):
         selection = self.selection()
         if selection.get("mode") == "file" and not selection.get("path"):
-            self.file_path_label.setText("Selecione um painel recente para continuar.")
+            self.file_path_label.setText(_rt("Selecione um painel recente para continuar."))
             return
         super().accept()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        try:
+            _apply_i18n_widgets(self)
+        except Exception:
+            pass

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import os
@@ -49,6 +49,7 @@ from .slim_dialogs import SlimDialogBase, slim_message
 from .browser_integration import connection_registry
 from .cloud_session import cloud_session
 from .cloud_dialogs import open_cloud_dialog
+from .utils.i18n_runtime import apply_widget_translations as _apply_i18n_widgets, tr_text as _rt
 from .utils.resources import svg_icon
 
 _ICON_DIR = os.path.join(os.path.dirname(__file__), "resources", "icons")
@@ -304,6 +305,17 @@ class IntegrationPanel(QWidget):
         self._build_ui()
         self._register_shortcuts()
         self._populate_recents()
+        self._apply_runtime_i18n()
+
+    def _apply_runtime_i18n(self):
+        try:
+            _apply_i18n_widgets(self)
+        except Exception:
+            pass
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._apply_runtime_i18n()
 
     # ------------------------------------------------------------------ UI
     def _build_ui(self):
@@ -414,6 +426,7 @@ class IntegrationPanel(QWidget):
             }
             """
         )
+        self._apply_runtime_i18n()
 
     def _build_connectors(self):
         self._connectors: Dict[str, ConnectorConfig] = {}
@@ -547,14 +560,15 @@ class IntegrationPanel(QWidget):
     def _show_cloud_message(self, title: str, text: str, helper_text: str = ""):
         slim_message(
             self,
-            title=title,
-            text=text,
-            helper_text=helper_text,
+            title=_rt(title),
+            text=_rt(text),
+            helper_text=_rt(helper_text),
             icon=_cloud_popup_icon(),
         )
 
     def _open_cloud_popup(self):
         open_cloud_dialog(self)
+        self._apply_runtime_i18n()
 
     def _refresh_cloud_layers(self):
         from .browser_integration import reload_cloud_catalog
@@ -573,9 +587,10 @@ class IntegrationPanel(QWidget):
         payload = self.cloud_session.status_payload()
         state = payload.get("level") or "offline"
         text = payload.get("text") or "Desconectado"
-        self._set_cloud_status_badge(state, text)
-        self.cloud_summary_label.setText(text)
+        self._set_cloud_status_badge(state, _rt(text))
+        self.cloud_summary_label.setText(_rt(text))
         self.cloud_warning_label.setVisible(not self.cloud_session.hosting_ready())
+        self._apply_runtime_i18n()
 
     def _on_cloud_layers_changed(self, *_):
         stamp = QDateTime.currentDateTime().toString("dd/MM HH:mm")
@@ -632,6 +647,8 @@ class IntegrationPanel(QWidget):
             qitem.setText(f"{title}\n{connector} • {ts}")
             qitem.setData(Qt.UserRole, item)
             self.recents_list.addItem(qitem)
+
+        self._apply_runtime_i18n()
 
     def _store_recent(self, descriptor: Dict):
         descriptor = dict(descriptor)
@@ -796,15 +813,17 @@ class IntegrationPanel(QWidget):
         dialog = SlimDialogBase(
             self, geometry_key="PowerBISummarizer/integration/savedConnections"
         )
-        dialog.setWindowTitle("Gerenciar conexões salvas")
+        dialog.setWindowTitle(_rt("Gerenciar conexões salvas"))
         dialog.resize(520, 320)
         layout = QVBoxLayout(dialog)
         layout.setContentsMargins(14, 14, 14, 14)
         layout.setSpacing(8)
 
         info = QLabel(
-            "Conexões ficam salvas localmente neste computador utilizando QSettings. "
-            "Remova entradas que não usa mais para manter suas credenciais seguras.",
+            _rt(
+                "Conexões ficam salvas localmente neste computador utilizando QSettings. "
+                "Remova entradas que não usa mais para manter suas credenciais seguras."
+            ),
             dialog,
         )
         info.setWordWrap(True)
@@ -821,7 +840,9 @@ class IntegrationPanel(QWidget):
         layout.addWidget(list_widget, 1)
 
         cloud_hint = QLabel(
-            "Defina o campo abaixo para preencher automaticamente o login Cloud relativo a cada conexão.",
+            _rt(
+                "Defina o campo abaixo para preencher automaticamente o login Cloud relativo a cada conexão."
+            ),
             dialog,
         )
         cloud_hint.setWordWrap(True)
@@ -831,12 +852,12 @@ class IntegrationPanel(QWidget):
         cloud_form.setLabelAlignment(Qt.AlignLeft)
         cloud_user_edit = QLineEdit(dialog)
         cloud_user_edit.setPlaceholderText("usuario@empresa.com")
-        cloud_form.addRow("Usuário Cloud padrão", cloud_user_edit)
+        cloud_form.addRow(_rt("Usuário Cloud padrão"), cloud_user_edit)
         layout.addLayout(cloud_form)
 
         button_box = QDialogButtonBox(QDialogButtonBox.Close, dialog)
-        remove_btn = button_box.addButton("Remover", QDialogButtonBox.ActionRole)
-        save_btn = button_box.addButton("Salvar usuário Cloud", QDialogButtonBox.ActionRole)
+        remove_btn = button_box.addButton(_rt("Remover"), QDialogButtonBox.ActionRole)
+        save_btn = button_box.addButton(_rt("Salvar usuário Cloud"), QDialogButtonBox.ActionRole)
         remove_btn.setEnabled(False)
         save_btn.setEnabled(False)
         cloud_user_edit.setEnabled(False)
@@ -901,6 +922,7 @@ class IntegrationPanel(QWidget):
         button_box.rejected.connect(dialog.reject)
 
         update_state_from_selection()
+        _apply_i18n_widgets(dialog)
         dialog.exec_()
 
     # ------------------------------------------------------------------ Connectors
@@ -1032,7 +1054,7 @@ class IntegrationPanel(QWidget):
     # ------------------------------------------------------------------ Helpers
     def _finalize_import(self, df: pd.DataFrame, metadata: Dict):
         if df is None or df.empty:
-            QMessageBox.information(self, "Integração", "Nenhum dado encontrado para carregar.")
+            QMessageBox.information(self, _rt("Integração"), _rt("Nenhum dado encontrado para carregar."))
             return
         metadata = dict(metadata)
         metadata.setdefault("record_count", len(df))
@@ -1042,20 +1064,20 @@ class IntegrationPanel(QWidget):
             if descriptor:
                 self._store_recent(descriptor)
                 self._toast_success(
-                    f"Dados carregados: {descriptor.get('record_count', len(df)):,} linhas."
+                    _rt("Dados carregados: {count} linhas.", count=descriptor.get("record_count", len(df)))
                 )
         except Exception as exc:  # pragma: no cover - runtime safeguard
-            QMessageBox.critical(self, "Integração", f"Falha ao enviar dados para o plugin: {exc}")
+            QMessageBox.critical(self, _rt("Integração"), _rt("Falha ao enviar dados para o plugin: {exc}", exc=exc))
 
     def _toast_success(self, message: str):
         bar = getattr(self.iface, "messageBar", None)
         if callable(bar):
             try:
-                self.iface.messageBar().pushSuccess("Integração", message)
+                self.iface.messageBar().pushSuccess(_rt("Integração"), message)
                 return
             except Exception:
                 pass
-        QMessageBox.information(self, "Integração", message)
+        QMessageBox.information(self, _rt("Integração"), message)
 
     def _sample_dataset(self) -> pd.DataFrame:
         data = {
@@ -1190,7 +1212,7 @@ class ExcelImportDialog(SlimDialogBase):
         row = QHBoxLayout()
         self.path_edit = QLineEdit(self)
         self.path_edit.setPlaceholderText("Selecione o arquivo Excel…")
-        browse_btn = QPushButton("Procurar…", self)
+        browse_btn = QPushButton(_rt("Procurar…"), self)
         browse_btn.clicked.connect(self._browse)
         row.addWidget(self.path_edit, 1)
         row.addWidget(browse_btn, 0)
@@ -1204,8 +1226,8 @@ class ExcelImportDialog(SlimDialogBase):
         layout.addWidget(self.preview_table, 1)
 
         buttons = QDialogButtonBox(self)
-        preview_btn = buttons.addButton("Pré-visualizar", QDialogButtonBox.ActionRole)
-        load_btn = buttons.addButton("Carregar", QDialogButtonBox.AcceptRole)
+        preview_btn = buttons.addButton(_rt("Pré-visualizar"), QDialogButtonBox.ActionRole)
+        load_btn = buttons.addButton(_rt("Carregar"), QDialogButtonBox.AcceptRole)
         cancel_btn = buttons.addButton(QDialogButtonBox.Cancel)
         layout.addWidget(buttons)
 
@@ -1216,7 +1238,7 @@ class ExcelImportDialog(SlimDialogBase):
     def _browse(self):
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Selecionar arquivo Excel",
+            _rt("Selecionar arquivo Excel"),
             self.last_dir,
             "Excel (*.xlsx *.xls);;Todos (*.*)",
         )
@@ -1288,7 +1310,7 @@ class DelimitedFileDialog(SlimDialogBase):
         self._df: Optional[pd.DataFrame] = None
         self._metadata: Dict = {}
         self.last_dir = last_dir or ""
-        self.setWindowTitle("Importar arquivo CSV/Parquet")
+        self.setWindowTitle(_rt("Importar arquivo CSV/Parquet"))
         self.resize(640, 540)
         self._build_ui()
 
@@ -1299,19 +1321,19 @@ class DelimitedFileDialog(SlimDialogBase):
 
         row = QHBoxLayout()
         self.path_edit = QLineEdit(self)
-        self.path_edit.setPlaceholderText("Selecione o arquivo CSV ou Parquet…")
-        browse_btn = QPushButton("Procurar…", self)
+        self.path_edit.setPlaceholderText(_rt("Selecione o arquivo CSV ou Parquet…"))
+        browse_btn = QPushButton(_rt("Procurar…"), self)
         browse_btn.clicked.connect(self._browse)
         row.addWidget(self.path_edit, 1)
         row.addWidget(browse_btn, 0)
         layout.addLayout(row)
 
         options_row = QHBoxLayout()
-        options_row.addWidget(QLabel("Delimitador:", self))
+        options_row.addWidget(QLabel(_rt("Delimitador:"), self))
         self.delimiter_combo = QComboBox(self)
-        self.delimiter_combo.addItems(["Automático", ";", ",", "Tab"])
+        self.delimiter_combo.addItems([_rt("Automático"), ";", ",", "Tab"])
         options_row.addWidget(self.delimiter_combo)
-        options_row.addWidget(QLabel("Codificação:", self))
+        options_row.addWidget(QLabel(_rt("Codificação:"), self))
         self.encoding_combo = QComboBox(self)
         self.encoding_combo.addItems(["UTF-8", "ISO-8859-1", "Windows-1252"])
         options_row.addWidget(self.encoding_combo)
@@ -1321,8 +1343,8 @@ class DelimitedFileDialog(SlimDialogBase):
         layout.addWidget(self.preview_table, 1)
 
         buttons = QDialogButtonBox(self)
-        preview_btn = buttons.addButton("Pré-visualizar", QDialogButtonBox.ActionRole)
-        load_btn = buttons.addButton("Carregar", QDialogButtonBox.AcceptRole)
+        preview_btn = buttons.addButton(_rt("Pré-visualizar"), QDialogButtonBox.ActionRole)
+        load_btn = buttons.addButton(_rt("Carregar"), QDialogButtonBox.AcceptRole)
         cancel_btn = buttons.addButton(QDialogButtonBox.Cancel)
         layout.addWidget(buttons)
 
@@ -1333,9 +1355,9 @@ class DelimitedFileDialog(SlimDialogBase):
     def _browse(self):
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Selecionar arquivo",
+            _rt("Selecionar arquivo"),
             self.last_dir,
-            "Arquivos de dados (*.csv *.txt *.parquet);;CSV (*.csv);;Parquet (*.parquet);;Todos (*.*)",
+            _rt("Arquivos de dados (*.csv *.txt *.parquet);;CSV (*.csv);;Parquet (*.parquet);;Todos (*.*)"),
         )
         if path:
             self.path_edit.setText(path)
@@ -1343,24 +1365,24 @@ class DelimitedFileDialog(SlimDialogBase):
     def _preview(self):
         path = self.path_edit.text().strip()
         if not path:
-            QMessageBox.information(self, "Importar", "Selecione o arquivo.")
+            QMessageBox.information(self, _rt("Importar"), _rt("Selecione o arquivo."))
             return
         try:
             df = self._read_file(path, preview=True)
         except Exception as exc:
-            QMessageBox.warning(self, "Importar", f"Falha ao pré-visualizar: {exc}")
+            QMessageBox.warning(self, _rt("Importar"), _rt("Falha ao pré-visualizar: {exc}", exc=exc))
             return
         self._fill_preview(df)
 
     def _load(self):
         path = self.path_edit.text().strip()
         if not path:
-            QMessageBox.warning(self, "Importar", "Selecione o arquivo.")
+            QMessageBox.warning(self, _rt("Importar"), _rt("Selecione o arquivo."))
             return
         try:
             df = self._read_file(path, preview=False)
         except Exception as exc:
-            QMessageBox.critical(self, "Importar", f"Falha ao carregar: {exc}")
+            QMessageBox.critical(self, _rt("Importar"), _rt("Falha ao carregar: {exc}", exc=exc))
             return
 
         delimiter = self.delimiter_combo.currentText()
@@ -1432,7 +1454,7 @@ class ClipboardImportDialog(SlimDialogBase):
         super().__init__(parent, geometry_key="PowerBISummarizer/integration/clipboardDialog")
         self._df: Optional[pd.DataFrame] = None
         self._metadata: Dict = {}
-        self.setWindowTitle("Colar dados")
+        self.setWindowTitle(_rt("Colar dados"))
         self.resize(600, 480)
         self._build_ui()
 
@@ -1442,7 +1464,9 @@ class ClipboardImportDialog(SlimDialogBase):
         layout.setSpacing(12)
 
         info = QLabel(
-            "Cole dados tabulares abaixo. Detectamos automaticamente se o separador é tabulação, vírgula ou ponto e vírgula.",
+            _rt(
+                "Cole dados tabulares abaixo. Detectamos automaticamente se o separador é tabulação, vírgula ou ponto e vírgula."
+            ),
             self,
         )
         info.setWordWrap(True)
@@ -1452,8 +1476,8 @@ class ClipboardImportDialog(SlimDialogBase):
         layout.addWidget(self.text_edit, 1)
 
         buttons = QDialogButtonBox(self)
-        preview_btn = buttons.addButton("Pré-visualizar", QDialogButtonBox.ActionRole)
-        load_btn = buttons.addButton("Carregar", QDialogButtonBox.AcceptRole)
+        preview_btn = buttons.addButton(_rt("Pré-visualizar"), QDialogButtonBox.ActionRole)
+        load_btn = buttons.addButton(_rt("Carregar"), QDialogButtonBox.AcceptRole)
         cancel_btn = buttons.addButton(QDialogButtonBox.Cancel)
         layout.addWidget(buttons)
 
@@ -1485,7 +1509,7 @@ class ClipboardImportDialog(SlimDialogBase):
     def _parse_text(self) -> Optional[pd.DataFrame]:
         text = self.text_edit.toPlainText().strip()
         if not text:
-            QMessageBox.information(self, "Colar", "Nenhum dado encontrado.")
+            QMessageBox.information(self, _rt("Colar"), _rt("Nenhum dado encontrado."))
             return None
         delimiter = self._detect_delimiter(text)
         try:
@@ -1493,7 +1517,7 @@ class ClipboardImportDialog(SlimDialogBase):
 
             df = pd.read_csv(StringIO(text), sep=delimiter)
         except Exception as exc:
-            QMessageBox.warning(self, "Colar", f"Não foi possível interpretar os dados: {exc}")
+            QMessageBox.warning(self, _rt("Colar"), _rt("Não foi possível interpretar os dados: {exc}", exc=exc))
             return None
         return df
 
@@ -1537,9 +1561,20 @@ class DatabaseImportDialog(SlimDialogBase):
         self._browser_sync_callback = browser_sync_callback
         self._last_params: Dict[str, Dict] = self._load_last_params()
         self._suspend_defaults = False
-        self.setWindowTitle("Importar dados do banco de dados")
+        self.setWindowTitle(_rt("Importar dados do banco de dados"))
         self.resize(720, 580)
         self._build_ui()
+        self._apply_runtime_i18n()
+
+    def _apply_runtime_i18n(self):
+        try:
+            _apply_i18n_widgets(self)
+        except Exception:
+            pass
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._apply_runtime_i18n()
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
@@ -1553,66 +1588,66 @@ class DatabaseImportDialog(SlimDialogBase):
         self.driver_combo = QComboBox(self)
         self.driver_combo.addItems(["PostgreSQL", "SQL Server"])
         self.driver_combo.currentTextChanged.connect(self._on_driver_changed)
-        form.addWidget(QLabel("Banco de dados:"), 0, 0)
+        form.addWidget(QLabel(_rt("Banco de dados:")), 0, 0)
         form.addWidget(self.driver_combo, 0, 1)
 
         self.host_edit = QLineEdit(self)
         self.host_edit.setPlaceholderText("servidor.empresa.com")
-        form.addWidget(QLabel("Host:"), 1, 0)
+        form.addWidget(QLabel(_rt("Host:")), 1, 0)
         form.addWidget(self.host_edit, 1, 1)
 
         self.port_edit = QLineEdit(self)
         self.port_edit.setPlaceholderText("5432 ou 1433…")
-        form.addWidget(QLabel("Porta:"), 2, 0)
+        form.addWidget(QLabel(_rt("Porta:")), 2, 0)
         form.addWidget(self.port_edit, 2, 1)
 
         self.database_edit = QLineEdit(self)
-        form.addWidget(QLabel("Banco:"), 3, 0)
+        form.addWidget(QLabel(_rt("Banco:")), 3, 0)
         form.addWidget(self.database_edit, 3, 1)
 
         self.user_edit = QLineEdit(self)
-        form.addWidget(QLabel("Usuário:"), 4, 0)
+        form.addWidget(QLabel(_rt("Usuário:")), 4, 0)
         form.addWidget(self.user_edit, 4, 1)
 
         self.password_edit = QLineEdit(self)
         self.password_edit.setEchoMode(QLineEdit.Password)
-        form.addWidget(QLabel("Senha:"), 5, 0)
+        form.addWidget(QLabel(_rt("Senha:")), 5, 0)
         form.addWidget(self.password_edit, 5, 1)
 
         layout.addLayout(form)
 
-        self.remember_box = QCheckBox("Lembrar credenciais neste computador", self)
+        self.remember_box = QCheckBox(_rt("Lembrar credenciais neste computador"), self)
         layout.addWidget(self.remember_box)
 
         saved_row = QHBoxLayout()
         self.saved_combo = QComboBox(self)
-        self.saved_combo.addItem("Carregar conexão salva…")
+        self.saved_combo.addItem(_rt("Carregar conexão salva…"))
         for item in self.saved_connections:
             label = item.get("name") or f"{item.get('driver')} • {item.get('database')}"
             self.saved_combo.addItem(label, item)
         self.saved_combo.currentIndexChanged.connect(self._apply_saved)
         saved_row.addWidget(self.saved_combo, 1)
 
-        self.test_btn = QPushButton("Testar conexão", self)
+        self.test_btn = QPushButton(_rt("Testar conexão"), self)
         self.test_btn.clicked.connect(self._test_connection)
         saved_row.addWidget(self.test_btn, 0)
 
-        self.browser_sync_btn = QPushButton("Mostrar no Navegador", self)
-        self.browser_sync_btn.setToolTip("Força o nó 'Summarizer' a exibir esta conexão.")
+        self.browser_sync_btn = QPushButton(_rt("Mostrar no Navegador"), self)
+        self.browser_sync_btn.setToolTip(_rt("Força o nó 'Summarizer' a exibir esta conexão."))
         self.browser_sync_btn.clicked.connect(self._force_browser_sync)
         saved_row.addWidget(self.browser_sync_btn, 0)
         layout.addLayout(saved_row)
 
         self.tables_combo = QComboBox(self)
-        self.tables_combo.setPlaceholderText("Selecione uma tabela…")
+        self.tables_combo.setPlaceholderText(_rt("Selecione uma tabela…"))
         layout.addWidget(self.tables_combo)
 
         self.preview_table = QTableWidget(self)
         layout.addWidget(self.preview_table, 1)
 
         buttons = QDialogButtonBox(self)
-        preview_btn = buttons.addButton("Pré-visualizar", QDialogButtonBox.ActionRole)
-        load_btn = buttons.addButton("Carregar", QDialogButtonBox.AcceptRole)
+        preview_btn = buttons.addButton(_rt("Pré-visualizar"), QDialogButtonBox.ActionRole)
+        load_btn = buttons.addButton(_rt("Carregar"), QDialogButtonBox.AcceptRole)
         cancel_btn = buttons.addButton(QDialogButtonBox.Cancel)
         layout.addWidget(buttons)
 
@@ -1727,16 +1762,16 @@ class DatabaseImportDialog(SlimDialogBase):
         params = self._params()
         ok, db_or_error = self._create_connection(params)
         if ok:
-            QMessageBox.information(self, "Conexão", "Conexão estabelecida com sucesso.")
+            QMessageBox.information(self, _rt("Conexão"), _rt("Conexão estabelecida com sucesso."))
             self._remember_last_params(params)
             self._populate_tables(db_or_error, params["driver"])
             db_or_error.close()
         else:
-            QMessageBox.warning(self, "Conexão", db_or_error)
+            QMessageBox.warning(self, _rt("Conexão"), db_or_error)
 
     def _create_connection(self, params: Dict) -> Tuple[bool, object]:
         if QSqlDatabase is None:
-            return False, "QtSql não está disponível nesta instalação."
+            return False, _rt("QtSql não está disponível nesta instalação.")
 
         conn_name = f"integ_{id(self)}_{QDateTime.currentMSecsSinceEpoch()}"
         driver = params.get("driver")
@@ -1762,7 +1797,7 @@ class DatabaseImportDialog(SlimDialogBase):
         if not db.open():
             error = db.lastError().text()
             db = None
-            return False, error or "Falha ao abrir a conexão."
+            return False, error or _rt("Falha ao abrir a conexão.")
         return True, db
 
     def _populate_tables(self, db, driver: str):
@@ -1819,7 +1854,7 @@ class DatabaseImportDialog(SlimDialogBase):
         params = self._params()
         ok, db_or_error = self._create_connection(params)
         if not ok:
-            QMessageBox.warning(self, "Importar", db_or_error)
+            QMessageBox.warning(self, _rt("Importar"), db_or_error)
             return
         db = db_or_error
         self._remember_last_params(params)
@@ -1828,18 +1863,22 @@ class DatabaseImportDialog(SlimDialogBase):
                 self._populate_tables(db, params["driver"])
             table = self.tables_combo.currentText()
             if not table:
-                QMessageBox.information(self, "Importar", "Selecione uma tabela.")
+                QMessageBox.information(self, _rt("Importar"), _rt("Selecione uma tabela."))
                 return
 
             quoted_table = self._quote_table_name(table, params["driver"])
             if not quoted_table:
-                QMessageBox.warning(self, "Importar", "Selecione uma tabela válida carregada da conexão.")
+                QMessageBox.warning(
+                    self,
+                    _rt("Importar"),
+                    _rt("Selecione uma tabela válida carregada da conexão."),
+                )
                 return
             sql = self._build_select_sql(quoted_table, params["driver"], preview)
 
             query = QSqlQuery(db)
             if not query.exec_(sql):
-                QMessageBox.warning(self, "Importar", query.lastError().text())
+                QMessageBox.warning(self, _rt("Importar"), query.lastError().text())
                 return
 
             record = query.record()
@@ -1885,8 +1924,8 @@ class DatabaseImportDialog(SlimDialogBase):
         if not params.get("host") or not params.get("database") or not params.get("user"):
             QMessageBox.information(
                 self,
-                "Navegador",
-                "Informe host, banco e usuário antes de sincronizar com o Navegador.",
+                _rt("Navegador"),
+                _rt("Informe host, banco e usuário antes de sincronizar com o Navegador."),
             )
             return
         payload = self._build_connection_payload(params)
@@ -1895,8 +1934,10 @@ class DatabaseImportDialog(SlimDialogBase):
             self._browser_sync_callback(payload)
         QMessageBox.information(
             self,
-            "Navegador",
-            "Conexão enviada para o Navegador.\nExpanda 'PostgreSQL' (ou 'Summarizer', se disponível) para visualizar.",
+            _rt("Navegador"),
+            _rt(
+                "Conexão enviada para o Navegador.\nExpanda 'PostgreSQL' (ou 'Summarizer', se disponível) para visualizar."
+            ),
         )
 
 
@@ -1905,9 +1946,20 @@ class GoogleSheetsDialog(SlimDialogBase):
         super().__init__(parent, geometry_key="PowerBISummarizer/integration/googleSheetsDialog")
         self._df: Optional[pd.DataFrame] = None
         self._metadata: Dict = {}
-        self.setWindowTitle("Importar dados do Google Sheets")
+        self.setWindowTitle(_rt("Importar dados do Google Sheets"))
         self.resize(560, 360)
         self._build_ui()
+        self._apply_runtime_i18n()
+
+    def _apply_runtime_i18n(self):
+        try:
+            _apply_i18n_widgets(self)
+        except Exception:
+            pass
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._apply_runtime_i18n()
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
@@ -1926,8 +1978,8 @@ class GoogleSheetsDialog(SlimDialogBase):
         layout.addWidget(self.url_edit)
 
         buttons = QDialogButtonBox(self)
-        preview_btn = buttons.addButton("Pré-visualizar", QDialogButtonBox.ActionRole)
-        load_btn = buttons.addButton("Carregar", QDialogButtonBox.AcceptRole)
+        preview_btn = buttons.addButton(_rt("Pré-visualizar"), QDialogButtonBox.ActionRole)
+        load_btn = buttons.addButton(_rt("Carregar"), QDialogButtonBox.AcceptRole)
         cancel_btn = buttons.addButton(QDialogButtonBox.Cancel)
         layout.addWidget(buttons)
 
@@ -1941,12 +1993,12 @@ class GoogleSheetsDialog(SlimDialogBase):
     def _retrieve(self, preview: bool):
         url = self.url_edit.text().strip()
         if not url:
-            QMessageBox.information(self, "Google Sheets", "Informe a URL da planilha.")
+            QMessageBox.information(self, _rt("Google Sheets"), _rt("Informe a URL da planilha."))
             return
         try:
             df = pd.read_csv(url)
         except Exception as exc:
-            QMessageBox.warning(self, "Google Sheets", f"Falha ao baixar dados: {exc}")
+            QMessageBox.warning(self, _rt("Google Sheets"), _rt("Falha ao baixar dados: {exc}", exc=exc))
             return
         if preview:
             self._fill_preview(df.head(PREVIEW_ROW_LIMIT))
@@ -2000,3 +2052,5 @@ class ExtendedConnectorsDialog(SlimDialogBase):
         close_btn = QDialogButtonBox(QDialogButtonBox.Close, self)
         close_btn.rejected.connect(self.reject)
         layout.addWidget(close_btn)
+        _apply_i18n_widgets(self)
+

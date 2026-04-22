@@ -1,0 +1,4 @@
+Dashboard Interativo => Interactive Dashboard
+Dashboard Interativo - Summarizer => Interactive Dashboard - Summarizer
+Exportar dashboard => Export dashboard
+Selecione uma camada e gere um resumo para visualizar o dashboard. => Select a layer and generate a summary to view the dashboard.

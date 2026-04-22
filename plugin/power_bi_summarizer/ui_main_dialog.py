@@ -20,6 +20,7 @@ from qgis.PyQt.QtWidgets import (
 from qgis.core import QgsMapLayerProxyModel
 from qgis.gui import QgsMapLayerComboBox
 
+from .utils.i18n_runtime import tr_text as _rt
 from .utils.resources import svg_icon
 
 
@@ -27,7 +28,7 @@ class Ui_PowerBISummarizerDialog(object):
     def setupUi(self, Dialog):
         Dialog.setObjectName("Dialog")
         Dialog.resize(1200, 800)
-        Dialog.setWindowTitle("Summarizer - QGIS")
+        Dialog.setWindowTitle(_rt("Summarizer - QGIS"))
 
         self.verticalLayout = QVBoxLayout(Dialog)
         self.verticalLayout.setContentsMargins(6, 6, 6, 12)
@@ -46,24 +47,27 @@ class Ui_PowerBISummarizerDialog(object):
             self.logo_label.setPixmap(logo_icon.pixmap(QSize(40, 40)))
         header_layout.addWidget(self.logo_label, 0, Qt.AlignLeft | Qt.AlignVCenter)
 
-        self.title_label = QLabel("Summarizer")
+        self.title_label = QLabel(_rt("Summarizer"))
         self.title_label.setProperty("role", "appTitle")
         header_layout.addWidget(self.title_label, 0, Qt.AlignLeft | Qt.AlignVCenter)
         header_layout.addStretch()
 
-        self.minimize_btn = QToolButton()
-        self.minimize_btn.setText("Min")
-        self.minimize_btn.setToolTip("Minimizar")
-        self.minimize_btn.setAutoRaise(True)
-        self.minimize_btn.setCursor(Qt.PointingHandCursor)
-        header_layout.addWidget(self.minimize_btn, 0, Qt.AlignRight | Qt.AlignVCenter)
-
         self.maximize_btn = QToolButton()
-        self.maximize_btn.setText("Max")
-        self.maximize_btn.setToolTip("Maximizar")
+        self.maximize_btn.setText(_rt("Max"))
+        self.maximize_btn.setToolTip(_rt("Maximizar"))
         self.maximize_btn.setAutoRaise(True)
         self.maximize_btn.setCursor(Qt.PointingHandCursor)
         header_layout.addWidget(self.maximize_btn, 0, Qt.AlignRight | Qt.AlignVCenter)
+
+        self.language_btn = QToolButton()
+        self.language_btn.setIcon(svg_icon("Globe.svg"))
+        self.language_btn.setIconSize(QSize(16, 16))
+        self.language_btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.language_btn.setText("Auto")
+        self.language_btn.setToolTip(_rt("Idioma"))
+        self.language_btn.setAutoRaise(True)
+        self.language_btn.setCursor(Qt.PointingHandCursor)
+        header_layout.addWidget(self.language_btn, 0, Qt.AlignRight | Qt.AlignVCenter)
 
         self.verticalLayout.addWidget(self.header_widget)
 
@@ -116,9 +120,9 @@ class Ui_PowerBISummarizerDialog(object):
         def icon(name: str) -> QIcon:
             return svg_icon(name)
 
-        dados_group, dados_row = make_group("Dados")
-        self.ribbon_get_data_btn = make_button("Dados", icon("Import.svg"))
-        self.ribbon_get_data_btn.setToolTip("Obter dados para o modelo")
+        dados_group, dados_row = make_group(_rt("Dados"))
+        self.ribbon_get_data_btn = make_button(_rt("Dados"), icon("Import.svg"))
+        self.ribbon_get_data_btn.setToolTip(_rt("Obter dados para o modelo"))
         dados_row.addWidget(self.ribbon_get_data_btn)
         ribbon_layout.addWidget(dados_group, 0, Qt.AlignVCenter)
 
@@ -167,7 +171,7 @@ class Ui_PowerBISummarizerDialog(object):
         header_layout.setSpacing(10)
 
         layer_row = QHBoxLayout()
-        self.layer_label = QLabel("Camada:")
+        self.layer_label = QLabel(_rt("Camada:"))
         layer_row.addWidget(self.layer_label)
         self.layer_combo = QgsMapLayerComboBox()
         self.layer_combo.setFilters(QgsMapLayerProxyModel.VectorLayer)
@@ -175,12 +179,12 @@ class Ui_PowerBISummarizerDialog(object):
         header_layout.addLayout(layer_row)
 
         actions_row = QHBoxLayout()
-        self.auto_update_check = QCheckBox("AtualizaÃ§Ã£o automÃ¡tica")
+        self.auto_update_check = QCheckBox(_rt("Atualização automática"))
         self.auto_update_check.setChecked(True)
         self.auto_update_check.setProperty("role", "helper")
         actions_row.addWidget(self.auto_update_check)
         actions_row.addStretch()
-        self.dashboard_btn = QPushButton("Dashboard Interativo")
+        self.dashboard_btn = QPushButton(_rt("Dashboard Interativo"))
         self.dashboard_btn.setProperty("variant", "secondary")
         actions_row.addWidget(self.dashboard_btn)
         header_layout.addLayout(actions_row)
@@ -203,34 +207,34 @@ class Ui_PowerBISummarizerDialog(object):
         export_layout.setContentsMargins(16, 16, 16, 16)
         export_layout.setSpacing(12)
 
-        self.export_info_label = QLabel("Configure o formato e o destino para exportar o resumo.")
+        self.export_info_label = QLabel(_rt("Configure o formato e o destino para exportar o resumo."))
         self.export_info_label.setWordWrap(True)
         self.export_info_label.setProperty("role", "helper")
         export_layout.addWidget(self.export_info_label)
 
         export_form_layout = QGridLayout()
-        export_form_layout.addWidget(QLabel("Formato:"), 0, 0)
+        export_form_layout.addWidget(QLabel(_rt("Formato:")), 0, 0)
         self.export_format_combo = QComboBox()
         export_form_layout.addWidget(self.export_format_combo, 0, 1, 1, 2)
 
-        export_form_layout.addWidget(QLabel("Arquivo de destino:"), 1, 0)
+        export_form_layout.addWidget(QLabel(_rt("Arquivo de destino:")), 1, 0)
         self.export_path_edit = QLineEdit()
-        self.export_path_edit.setPlaceholderText("Selecione o arquivo de destino...")
+        self.export_path_edit.setPlaceholderText(_rt("Selecione o arquivo de destino..."))
         export_form_layout.addWidget(self.export_path_edit, 1, 1)
-        self.export_browse_btn = QPushButton("Procurar...")
+        self.export_browse_btn = QPushButton(_rt("Procurar..."))
         self.export_browse_btn.setProperty("variant", "secondary")
         export_form_layout.addWidget(self.export_browse_btn, 1, 2)
 
         export_layout.addLayout(export_form_layout)
 
-        self.export_include_timestamp_check = QCheckBox("Adicionar data e hora ao nome do arquivo")
+        self.export_include_timestamp_check = QCheckBox(_rt("Adicionar data e hora ao nome do arquivo"))
         self.export_include_timestamp_check.setChecked(True)
         self.export_include_timestamp_check.setProperty("role", "helper")
         export_layout.addWidget(self.export_include_timestamp_check)
 
         export_button_layout = QHBoxLayout()
         export_button_layout.addStretch()
-        self.export_execute_btn = QPushButton("Exportar")
+        self.export_execute_btn = QPushButton(_rt("Exportar"))
         export_button_layout.addWidget(self.export_execute_btn)
         export_layout.addLayout(export_button_layout)
 
@@ -256,7 +260,7 @@ class Ui_PowerBISummarizerDialog(object):
         integracao_layout.setContentsMargins(0, 0, 0, 0)
         integracao_layout.setSpacing(12)
 
-        self.integration_placeholder = QLabel("IntegraÃ§Ãµes externas serÃ£o exibidas aqui.")
+        self.integration_placeholder = QLabel(_rt("Integrações externas serão exibidas aqui."))
         self.integration_placeholder.setAlignment(Qt.AlignCenter)
         self.integration_placeholder.setProperty("role", "helper")
 
@@ -277,14 +281,14 @@ class Ui_PowerBISummarizerDialog(object):
         footer_layout.setSpacing(8)
 
         footer_layout.addStretch()
-        self.manage_connections_btn = QPushButton("Gerenciar conexÃµes")
+        self.manage_connections_btn = QPushButton(_rt("Gerenciar conexões"))
         self.manage_connections_btn.setProperty("variant", "secondary")
         self.manage_connections_btn.setMinimumHeight(26)
         self.manage_connections_btn.setMaximumHeight(26)
         self.manage_connections_btn.setVisible(False)
         footer_layout.addWidget(self.manage_connections_btn)
 
-        self.footer_about_btn = QPushButton("Sobre")
+        self.footer_about_btn = QPushButton(_rt("Sobre"))
         self.footer_about_btn.setProperty("variant", "secondary")
         self.footer_about_btn.setFixedSize(58, 24)
         self.footer_about_btn.setStyleSheet("padding: 0 8px; font-size: 9px;")

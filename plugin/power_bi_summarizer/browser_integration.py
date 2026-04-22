@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import re
@@ -27,6 +27,7 @@ from qgis.gui import QgsGui
 from .cloud_session import cloud_session
 from .quick_connect_dialogs import PostgresQuickConnectDialog
 from .utils.plugin_logging import log_info, log_warning
+from .utils.i18n_runtime import tr_text as _rt
 from .utils.resources import svg_icon
 SAVED_CONNECTIONS_KEY = "PowerBISummarizer/integration/saved_connections"
 SUPPORTED_DRIVERS = {
@@ -239,7 +240,7 @@ class PowerBIRootItem(QgsDataCollectionItem):
         widget = parent
         actions: List[QAction] = []
 
-        cloud_action = QAction("Configurar Summarizer Cloud...", widget)
+        cloud_action = QAction(_rt("Configurar Summarizer Cloud..."), widget)
 
         def _open_cloud_dialog():
             from .cloud_dialogs import open_cloud_dialog  # Import tardio evita ciclo
@@ -249,11 +250,11 @@ class PowerBIRootItem(QgsDataCollectionItem):
         cloud_action.triggered.connect(_open_cloud_dialog)
         actions.append(cloud_action)
 
-        pg_action = QAction("Nova conexão PostgreSQL...", widget)
+        pg_action = QAction(_rt("Nova conexÃ£o PostgreSQL..."), widget)
         pg_action.triggered.connect(lambda: self._open_quick_postgres(widget))
         actions.append(pg_action)
 
-        refresh_action = QAction("Atualizar lista", widget)
+        refresh_action = QAction(_rt("Atualizar lista"), widget)
         refresh_action.triggered.connect(self.refresh)
         actions.append(refresh_action)
 
@@ -271,11 +272,11 @@ class PowerBIRootItem(QgsDataCollectionItem):
         saved = [conn for conn in connection_registry.saved_connections() if conn.get("fingerprint") != payload["fingerprint"]]
         saved.insert(0, payload)
         connection_registry.replace_saved_connections(saved, persist=True)
-        log_info("Conexão PostgreSQL adicionada via Navegador.")
+        log_info("ConexÃ£o PostgreSQL adicionada via Navegador.")
         QMessageBox.information(
             parent,
-            "Summarizer",
-            f"Conexão '{payload.get('name')}' salva. Expanda o nó novamente para ver as tabelas.",
+            _rt("Summarizer"),
+            _rt("ConexÃ£o '{name}' salva. Expanda o nÃ³ novamente para ver as tabelas.", name=payload.get("name")),
         )
 
 
@@ -285,7 +286,7 @@ class PowerBICloudRootItem(QgsDataCollectionItem):
     def __init__(self, parent: Optional[QgsDataItem]):
         super().__init__(
             parent,
-            "Summarizer Cloud (beta)",
+            _rt("Summarizer Cloud (beta)"),
             f"{ROOT_PATH}/cloud",
             PowerBISummarizerBrowserProvider.PROVIDER_NAME,
         )
@@ -295,7 +296,7 @@ class PowerBICloudRootItem(QgsDataCollectionItem):
         cloud_session.layersChanged.connect(self.refresh)
         global _CLOUD_NODE_LOGGED
         if not _CLOUD_NODE_LOGGED:
-            log_info("Nó Summarizer Cloud carregado no Navegador.")
+            log_info("NÃ³ Summarizer Cloud carregado no Navegador.")
             _CLOUD_NODE_LOGGED = True
 
     def createChildren(self) -> List[QgsDataItem]:
@@ -323,7 +324,7 @@ class PowerBICloudLoginItem(QgsDataCollectionItem):
     def __init__(self, parent: QgsDataItem):
         super().__init__(
             parent,
-            "Faça login na aba Integração.",
+            _rt("FaÃ§a login na aba IntegraÃ§Ã£o."),
             f"{parent.path()}/login",
             PowerBISummarizerBrowserProvider.PROVIDER_NAME,
         )
@@ -341,7 +342,7 @@ class PowerBICloudPlaceholderItem(QgsDataCollectionItem):
     def __init__(self, parent: QgsDataItem):
         super().__init__(
             parent,
-            "Nenhuma camada Cloud disponível.",
+            _rt("Nenhuma camada Cloud disponÃ­vel."),
             f"{parent.path()}/placeholder",
             PowerBISummarizerBrowserProvider.PROVIDER_NAME,
         )
@@ -356,7 +357,7 @@ class PowerBICloudGroupItem(QgsDataCollectionItem):
     """Represents a logical group/folder for Cloud layers."""
 
     def __init__(self, parent: QgsDataItem, group_name: str, layers: List[Dict]):
-        display = group_name or "Sem Grupo"
+        display = group_name or _rt("Sem Grupo")
         safe_segment = re.sub(r"[^A-Za-z0-9_.-]+", "_", display).strip("_") or "sem_grupo"
         path = f"{parent.path()}/{safe_segment}"
         super().__init__(parent, display, path, PowerBISummarizerBrowserProvider.PROVIDER_NAME)
@@ -390,22 +391,22 @@ class PowerBICloudLayerItem(QgsLayerItem):
         tooltip_parts = [self.meta.get("description", "")]
         geometry = self.meta.get("geometry")
         if geometry:
-            tooltip_parts.append(f"Geometria: {geometry}")
+            tooltip_parts.append(_rt("Geometria: {geometry}", geometry=geometry))
         tags = self.meta.get("tags") or []
         if tags:
-            tooltip_parts.append(f"Tags: {', '.join(tags)}")
+            tooltip_parts.append(_rt("Tags: {tags}", tags=", ".join(tags)))
         self.setToolTip("\n".join(part for part in tooltip_parts if part))
 
     def actions(self, parent: Optional[QWidget]) -> List[QAction]:  # type: ignore[override]
         widget = parent
         actions: List[QAction] = []
 
-        warn_action = QAction("Abrir camada real", widget)
+        warn_action = QAction(_rt("Abrir camada real"), widget)
         warn_action.triggered.connect(self._warn_real_access)
         actions.append(warn_action)
 
         if self._can_delete_layer():
-            delete_action = QAction("Gerenciar → Deletar Camada", widget)
+            delete_action = QAction(_rt("Gerenciar â†’ Deletar Camada"), widget)
             delete_action.triggered.connect(self._delete_layer)
             actions.append(delete_action)
 
@@ -413,10 +414,11 @@ class PowerBICloudLayerItem(QgsLayerItem):
 
     def _warn_real_access(self):
         if cloud_session.hosting_ready():
-            message = "As camadas do Summarizer Cloud são abertas diretamente do servidor configurado no plugin."
+            message = _rt("As camadas do Summarizer Cloud sÃ£o abertas diretamente do servidor configurado no plugin.")
         else:
-            message = "Ative 'Hospedagem ativa' nas Configurações Cloud para usar apenas camadas reais do servidor."
-        QMessageBox.information(None, "Summarizer Cloud", message)
+            message = _rt("Ative 'Hospedagem ativa' nas ConfiguraÃ§Ãµes Cloud para usar apenas camadas reais do servidor.")
+        QMessageBox.information(None, _rt("Summarizer Cloud"), message)
+
     def _can_delete_layer(self) -> bool:
         if self.meta.get("mock_only", True):
             return False
@@ -428,28 +430,28 @@ class PowerBICloudLayerItem(QgsLayerItem):
     def _delete_layer(self):
         layer_id = self.meta.get("id")
         if not layer_id:
-            QMessageBox.warning(None, "Summarizer Cloud", "Identificador da camada inválido.")
+            QMessageBox.warning(None, _rt("Summarizer Cloud"), _rt("Identificador da camada invÃ¡lido."))
             return
         layer_name = self.meta.get("name") or str(layer_id)
         confirm = QMessageBox.question(
             None,
-            "Summarizer Cloud",
-            f"Tem certeza que deseja excluir a camada '{layer_name}'?",
+            _rt("Summarizer Cloud"),
+            _rt("Tem certeza que deseja excluir a camada '{layer_name}'?", layer_name=layer_name),
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No,
         )
         if confirm != QMessageBox.Yes:
             return
         QgsMessageLog.logMessage(
-            f"Summarizer Cloud solicitando exclusão da camada {layer_name} (id={layer_id})",
-            "Summarizer",
+            _rt("Summarizer Cloud solicitando exclusÃ£o da camada {layer_name} (id={layer_id})", layer_name=layer_name, layer_id=layer_id),
+            _rt("Summarizer"),
             Qgis.Info,
         )
         try:
             cloud_session.delete_cloud_layer(layer_id)
         except Exception as exc:
-            log_warning(f"Summarizer Cloud falha ao excluir camada {layer_name}: {exc}")
-            QMessageBox.warning(None, "Summarizer Cloud", f"Falha ao excluir camada:\n{exc}")
+            log_warning(_rt("Summarizer Cloud falha ao excluir camada {layer_name}: {exc}", layer_name=layer_name, exc=exc))
+            QMessageBox.warning(None, _rt("Summarizer Cloud"), _rt("Falha ao excluir camada:\n{exc}", exc=exc))
             return
         parent_item = self.parent()
         try:
@@ -463,11 +465,11 @@ class PowerBICloudLayerItem(QgsLayerItem):
             pass
         reload_cloud_catalog(force_remote_only=True)
         QgsMessageLog.logMessage(
-            f"Summarizer Cloud camada {layer_name} excluída com sucesso.",
-            "Summarizer",
+            _rt("Summarizer Cloud camada {layer_name} excluída com sucesso.", layer_name=layer_name),
+            _rt("Summarizer"),
             Qgis.Info,
         )
-        QMessageBox.information(None, "Summarizer Cloud", f"Camada '{layer_name}' foi excluída com sucesso.")
+        QMessageBox.information(None, _rt("Summarizer Cloud"), _rt("Camada '{layer_name}' foi excluída com sucesso.", layer_name=layer_name))
 
 class PowerBIPlaceholderItem(QgsDataCollectionItem):
     """Displayed when there are no saved connections."""
@@ -475,7 +477,7 @@ class PowerBIPlaceholderItem(QgsDataCollectionItem):
     def __init__(self, parent: QgsDataItem):
         super().__init__(
             parent,
-            "Nenhuma conexão local disponível.",
+            _rt("Nenhuma conexão local disponível."),
             f"{ROOT_PATH}/placeholder",
             PowerBISummarizerBrowserProvider.PROVIDER_NAME,
         )
@@ -510,7 +512,7 @@ class PowerBIConnectionItem(QgsDataCollectionItem):
 
     def createChildren(self) -> List[QgsDataItem]:
         if not self._provider_key:
-            self._last_error = "Provedor não suportado para esta conexão."
+            self._last_error = _rt("Provedor nÃ£o suportado para esta conexÃ£o.")
             return []
         self._tables_cache = self._load_tables()
         items: List[QgsDataItem] = []
@@ -523,15 +525,15 @@ class PowerBIConnectionItem(QgsDataCollectionItem):
         widget = parent
         actions: List[QAction] = []
 
-        refresh_action = QAction("Atualizar", widget)
+        refresh_action = QAction(_rt("Atualizar"), widget)
         refresh_action.triggered.connect(self.refresh)
         actions.append(refresh_action)
 
-        props_action = QAction("Propriedades da conexão", widget)
+        props_action = QAction(_rt("Propriedades da conexÃ£o"), widget)
         props_action.triggered.connect(self._show_properties)
         actions.append(props_action)
 
-        remove_action = QAction("Remover", widget)
+        remove_action = QAction(_rt("Remover"), widget)
         remove_action.triggered.connect(self._remove_connection)
         actions.append(remove_action)
 
@@ -539,17 +541,17 @@ class PowerBIConnectionItem(QgsDataCollectionItem):
 
     def _show_properties(self):
         details = [
-            f"Driver: {self.meta.get('driver')}",
-            f"Servidor: {self.meta.get('host') or self.meta.get('service')}",
-            f"Porta: {self.meta.get('port')}",
-            f"Banco: {self.meta.get('database')}",
-            f"Usuário: {self.meta.get('user')}",
+            _rt("Driver: {driver}", driver=self.meta.get("driver")),
+            _rt("Servidor: {server}", server=self.meta.get("host") or self.meta.get("service")),
+            _rt("Porta: {port}", port=self.meta.get("port")),
+            _rt("Banco: {database}", database=self.meta.get("database")),
+            _rt("UsuÃ¡rio: {user}", user=self.meta.get("user")),
         ]
         if self._last_error:
-            details.append(f"Último erro: {self._last_error}")
+            details.append(_rt("Ãšltimo erro: {error}", error=self._last_error))
         QMessageBox.information(
             None,
-            "Summarizer",
+            _rt("Summarizer"),
             "\n".join(details),
         )
 
@@ -559,8 +561,8 @@ class PowerBIConnectionItem(QgsDataCollectionItem):
             return
         confirm = QMessageBox.question(
             None,
-            "Remover conexão",
-            f"Remover '{self.meta.get('name') or fingerprint}' da lista?",
+            _rt("Remover conexÃ£o"),
+            _rt("Remover '{name}' da lista?", name=self.meta.get("name") or fingerprint),
         )
         if confirm == QMessageBox.Yes:
             connection_registry.remove_connection(fingerprint)
@@ -570,11 +572,11 @@ class PowerBIConnectionItem(QgsDataCollectionItem):
         grouped: Dict[str, List[TableEntry]] = {}
         metadata = QgsProviderRegistry.instance().providerMetadata(self._provider_key)
         if metadata is None:
-            self._last_error = f"Provedor '{self._provider_key}' não encontrado."
+            self._last_error = _rt("Provedor '{provider}' nÃ£o encontrado.", provider=self._provider_key)
             return grouped
         uri = self._build_uri()
         if not uri:
-            self._last_error = "Parâmetros da conexão incompletos."
+            self._last_error = _rt("ParÃ¢metros da conexÃ£o incompletos.")
             return grouped
         try:
             connection = metadata.createConnection(uri.connectionInfo(), {})
@@ -583,7 +585,7 @@ class PowerBIConnectionItem(QgsDataCollectionItem):
             self.setIcon(OFFLINE_ICON)
             return grouped
         if not isinstance(connection, QgsAbstractDatabaseProviderConnection):
-            self._last_error = "Provedor não suporta navegação no navegador."
+            self._last_error = _rt("Provedor nÃ£o suporta navegaÃ§Ã£o no navegador.")
             return grouped
 
         try:
@@ -641,7 +643,7 @@ class PowerBISchemaItem(QgsDataCollectionItem):
         provider_key: str,
     ):
         path = f"{parent.path()}/{schema or 'public'}"
-        display = schema or "(padrão)"
+        display = schema or _rt("(padrÃ£o)")
         super().__init__(parent, display, path, PowerBISummarizerBrowserProvider.PROVIDER_NAME)
         self._tables = tables
         self._meta = connection_meta
@@ -669,9 +671,9 @@ class PowerBITableItem(QgsLayerItem):
         path = f"{parent.path()}/{table.name}"
         super().__init__(parent, table.name, path, uri, layer_type, provider_key)
         self.setIcon(TABLE_ICON if table.is_vector else QgsLayerItem.iconTable())
-        tooltip_parts = [f"Schema: {table.schema or '(padrão)'}"]
+        tooltip_parts = [_rt("Schema: {schema}", schema=table.schema or _rt("(padrÃ£o)"))]
         if table.geometry_column:
-            tooltip_parts.append(f"Geom: {table.geometry_column}")
+            tooltip_parts.append(_rt("Geom: {geom}", geom=table.geometry_column))
         if table.comment:
             tooltip_parts.append(table.comment)
         self.setToolTip("\n".join(tooltip_parts))
@@ -726,16 +728,13 @@ def _refresh_browser_model():
 
 def reload_cloud_catalog(force_remote_only: Optional[bool] = None) -> None:
     """
-    Recarrega completamente o catálogo do Summarizer Cloud:
-    - Chama a API /layers (quando hospedagem ativa)
-    - Reconstrói a estrutura: Summarizer Cloud (beta) -> grupos -> camadas
-    - Atualiza a árvore do navegador
+    {note}
     """
     force_remote = cloud_session.hosting_ready() if force_remote_only is None else bool(force_remote_only)
     try:
         cloud_session.reload_cloud_layers(force_remote_only=force_remote)
     except Exception as exc:
-        log_warning(f"Summarizer Cloud falhou ao recarregar catálogo: {exc}")
+        log_warning(f"Summarizer Cloud falhou ao recarregar catÃ¡logo: {exc}")
     _refresh_browser_model()
 
 
@@ -743,7 +742,7 @@ def register_browser_provider() -> PowerBISummarizerBrowserProvider:
     """Adds the provider to QGIS' data item registry."""
     registry = _provider_registry()
     if registry is None:
-        raise RuntimeError("Não foi possível acessar o registro de providers do Navegador.")
+        raise RuntimeError("NÃ£o foi possÃ­vel acessar o registro de providers do Navegador.")
     provider = PowerBISummarizerBrowserProvider()
     registry.addProvider(provider)
     _refresh_browser_model()
@@ -762,18 +761,8 @@ def unregister_browser_provider(provider: Optional[PowerBISummarizerBrowserProvi
 
 
 USAGE_NOTES = """
-Instalação:
-  • Salve este arquivo como PowerBISummarizer/browser_integration.py dentro do plugin.
-
-Registro no QGIS:
-  • No construtor principal (data_summarizer.PowerBISummarizer), importe
-    register_browser_provider/unregister_browser_provider e chame
-    register_browser_provider() em initGui() para exibir o nó “Summarizer”
-    e unregister_browser_provider() em unload().
-
-Sincronização de conexões:
-  • Sempre que a aba Integração criar/editar/remover conexões salvas, envie a
-    lista atualizada para connection_registry.replace_saved_connections(...).
-  • Ao usar uma conexão sem salvá‑la, informe os dados temporários através de
-    connection_registry.register_runtime_connection(...) para que ela apareça no navegador.
+Notes:
+  - This module registers the Summarizer Browser node and keeps saved/runtime connections synced.
+  - The plugin host should call register_browser_provider() on initGui() and unregister_browser_provider() on unload().
 """
+

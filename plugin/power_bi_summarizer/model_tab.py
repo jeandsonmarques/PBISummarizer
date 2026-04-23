@@ -1,22 +1,27 @@
 ﻿from __future__ import annotations
 
+import json
 import os
 import uuid
 from typing import Dict, List, Optional
 
-from qgis.PyQt.QtCore import QSize, Qt, pyqtSignal
-from qgis.PyQt.QtGui import QIcon
+from qgis.PyQt.QtCore import QEasingCurve, QPoint, QRectF, QSize, Qt, QVariantAnimation, pyqtSignal
+from qgis.PyQt.QtGui import QColor, QIcon, QKeySequence, QPainter, QPen
 from qgis.PyQt.QtWidgets import (
+    QCheckBox,
     QComboBox,
+    QDialog,
     QFileDialog,
     QFormLayout,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMenu,
     QMessageBox,
     QPushButton,
+    QShortcut,
     QSlider,
     QSpinBox,
     QToolButton,
@@ -30,10 +35,10 @@ from .dashboard_add_dialog import DashboardAddDialog
 from .dashboard_canvas import DashboardCanvas
 from .dashboard_models import DashboardChartBinding, DashboardChartItem, DashboardPage, DashboardProject
 from .dashboard_page_widget import DashboardPageWidget
-from .dashboard_page_strip import DashboardPageStrip
 from .dashboard_project_store import DashboardProjectStore, PROJECT_EXTENSION
 from .report_view.chart_factory import ChartVisualState
 from .report_view.result_models import ChartPayload
+from .slim_dialogs import slim_message, slim_question
 from .utils.i18n_runtime import tr_text as _rt
 from .utils.resources import svg_icon
 
@@ -133,6 +138,177 @@ class _ModelRecentCard(QFrame):
         super().mouseReleaseEvent(event)
 
 
+class _DialogDragHandle(QFrame):
+    def __init__(self, target: QDialog, parent=None):
+        super().__init__(parent)
+        self._target = target
+        self._drag_active = False
+        self._drag_offset = QPoint()
+        self.setCursor(Qt.OpenHandCursor)
+
+    @staticmethod
+    def _global_pos(event) -> QPoint:
+        try:
+            pos = event.globalPosition()
+            return QPoint(int(pos.x()), int(pos.y()))
+        except Exception:
+            try:
+                return event.globalPos()
+            except Exception:
+                return QPoint()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._drag_active = True
+            self._drag_offset = self._global_pos(event) - self._target.frameGeometry().topLeft()
+            self.setCursor(Qt.ClosedHandCursor)
+            try:
+                event.accept()
+            except Exception:
+                pass
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._drag_active:
+            self._target.move(self._global_pos(event) - self._drag_offset)
+            try:
+                event.accept()
+            except Exception:
+                pass
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._drag_active = False
+            self.setCursor(Qt.OpenHandCursor)
+            try:
+                event.accept()
+            except Exception:
+                pass
+            return
+        super().mouseReleaseEvent(event)
+
+
+class _ModelModeToggle(QWidget):
+    toggled = pyqtSignal(bool)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._checked = True
+        self._thumb_pos = 1.0
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFocusPolicy(Qt.StrongFocus)
+        self.setFixedSize(34, 18)
+
+        self._animation = QVariantAnimation(self)
+        self._animation.setDuration(170)
+        self._animation.setEasingCurve(QEasingCurve.OutCubic)
+        self._animation.valueChanged.connect(self._handle_animation_step)
+
+    @staticmethod
+    def _event_pos(event) -> QPoint:
+        try:
+            pos = event.position()
+            return QPoint(int(pos.x()), int(pos.y()))
+        except Exception:
+            try:
+                return event.pos()
+            except Exception:
+                return QPoint()
+
+    def _handle_animation_step(self, value):
+        try:
+            self._thumb_pos = float(value)
+        except Exception:
+            self._thumb_pos = 1.0 if self._checked else 0.0
+        self.update()
+
+    def isChecked(self) -> bool:
+        return bool(self._checked)
+
+    def setChecked(self, checked: bool, animated: bool = True):
+        checked = bool(checked)
+        changed = checked != self._checked
+        self._checked = checked
+        target = 1.0 if checked else 0.0
+        if animated and self.isVisible():
+            self._animation.stop()
+            self._animation.setStartValue(float(self._thumb_pos))
+            self._animation.setEndValue(target)
+            self._animation.start()
+        else:
+            self._thumb_pos = target
+            self.update()
+        if changed and not self.signalsBlocked():
+            self.toggled.emit(self._checked)
+
+    def _toggle(self):
+        self.setChecked(not self._checked, animated=True)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton and self.rect().contains(self._event_pos(event)):
+            self._toggle()
+            try:
+                event.accept()
+            except Exception:
+                pass
+            return
+        super().mouseReleaseEvent(event)
+
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key_Space, Qt.Key_Return, Qt.Key_Enter):
+            self._toggle()
+            try:
+                event.accept()
+            except Exception:
+                pass
+            return
+        super().keyPressEvent(event)
+
+    def paintEvent(self, event):
+        del event
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        try:
+            painter.setRenderHint(QPainter.HighQualityAntialiasing, True)
+        except Exception:
+            pass
+        painter.setPen(Qt.NoPen)
+        track_rect = QRectF(0.5, 0.5, float(max(1, self.width() - 1)), float(max(1, self.height() - 1)))
+        radius = track_rect.height() / 2.0
+
+        track_on = QColor("#111827")
+        track_off = QColor("#D1D5DB")
+        border_on = QColor("#111827")
+        border_off = QColor("#C7CDD6")
+        if not self.isEnabled():
+            track_on = QColor("#A3AAB5")
+            track_off = QColor("#E5E7EB")
+            border_on = QColor("#A3AAB5")
+            border_off = QColor("#D1D5DB")
+
+        active_track = track_on if self._checked else track_off
+        active_border = border_on if self._checked else border_off
+        if self.underMouse() and self.isEnabled() and not self._checked:
+            active_track = QColor("#C7CDD6")
+
+        painter.setPen(QPen(active_border, 1.0))
+        painter.setBrush(active_track)
+        painter.drawRoundedRect(track_rect, radius, radius)
+
+        thumb_margin = 2.0
+        thumb_diameter = track_rect.height() - (thumb_margin * 2.0)
+        thumb_travel = max(0.0, track_rect.width() - thumb_diameter - (thumb_margin * 2.0))
+        thumb_x = track_rect.left() + thumb_margin + (thumb_travel * float(self._thumb_pos))
+        thumb_y = track_rect.top() + thumb_margin
+
+        painter.setPen(QPen(QColor("#E5E7EB"), 0.8))
+        painter.setBrush(QColor("#FFFFFF"))
+        painter.drawEllipse(QRectF(thumb_x, thumb_y, thumb_diameter, thumb_diameter))
+
+
 class ModelTab(QWidget):
 
     def __init__(self, parent=None):
@@ -148,7 +324,14 @@ class ModelTab(QWidget):
         self._builder_layers: Dict[str, QgsVectorLayer] = {}
         self._page_widgets: Dict[str, DashboardPageWidget] = {}
         self._selected_page_id: str = ""
+        self._single_page_mode = True
         self.canvas: Optional[DashboardCanvas] = None
+        self._history_undo: List[Dict[str, object]] = []
+        self._history_redo: List[Dict[str, object]] = []
+        self._history_current: Optional[Dict[str, object]] = None
+        self._history_restoring = False
+        self._history_limit = 80
+        self._builder_panel_open = False
 
         root = QVBoxLayout(self)
         root.setContentsMargins(18, 18, 18, 18)
@@ -162,36 +345,48 @@ class ModelTab(QWidget):
 
         top_row = QHBoxLayout()
         top_row.setContentsMargins(0, 0, 0, 0)
-        top_row.setSpacing(8)
-
-        self.title_label = QLabel(_rt("Model"))
-        self.title_label.setObjectName("ModelTitle")
-        top_row.addWidget(self.title_label, 0)
-
-        self.project_status_label = QLabel(_rt("Nenhum painel aberto"))
-        self.project_status_label.setObjectName("ModelProjectStatus")
-        top_row.addWidget(self.project_status_label, 0)
-        top_row.addStretch(1)
+        top_row.setSpacing(0)
 
         self.new_btn = QPushButton(_rt("Novo"))
         self.open_btn = QPushButton(_rt("Abrir"))
         self.save_btn = QPushButton(_rt("Salvar"))
         self.save_as_btn = QPushButton(_rt("Salvar como"))
         self.export_btn = QPushButton(_rt("Exportar"))
+        self.undo_btn = QPushButton(_rt("Desfazer"))
+        self.redo_btn = QPushButton(_rt("Refazer"))
         self.create_chart_btn = QPushButton(_rt("Criar grafico"))
         self.edit_mode_btn = QPushButton(_rt("Edicao"))
+        self.settings_btn = QPushButton(_rt("Configuracoes"))
+        self.create_chart_btn.setCheckable(True)
+        self.create_chart_btn.setChecked(False)
         self.edit_mode_btn.setCheckable(True)
         self.edit_mode_btn.setChecked(True)
         self.close_project_btn = QToolButton()
         self.close_project_btn.setObjectName("ModelCloseProjectButton")
-        self.close_project_btn.setIcon(svg_icon("Close.svg"))
-        self.close_project_btn.setIconSize(QSize(16, 16))
-        self.close_project_btn.setToolButtonStyle(Qt.ToolButtonIconOnly)
-        self.close_project_btn.setAutoRaise(False)
-        self.close_project_btn.setCursor(Qt.PointingHandCursor)
-        self.close_project_btn.setToolTip(_rt("Fechar projeto e voltar para a tela inicial"))
+        self._configure_toolbar_icon_button(self.undo_btn, "Walker-Undo.svg", _rt("Desfazer (Ctrl+Z)"))
+        self._configure_toolbar_icon_button(self.redo_btn, "Walker-Redo.svg", _rt("Refazer (Ctrl+Shift+Z)"))
+        self._configure_toolbar_icon_button(self.new_btn, "Walker-New.svg", _rt("Novo"))
+        self._configure_toolbar_icon_button(self.open_btn, "Walker-Open.svg", _rt("Abrir"))
+        self._configure_toolbar_icon_button(self.save_btn, "Walker-Save.svg", _rt("Salvar"))
+        self._configure_toolbar_icon_button(self.save_as_btn, "Walker-SaveAs.svg", _rt("Salvar como"))
+        self._configure_toolbar_icon_button(self.export_btn, "Walker-Image.svg", _rt("Exportar imagem"))
+        self._configure_toolbar_icon_button(self.create_chart_btn, "Walker-Chart.svg", _rt("Criar grafico"))
+        self._configure_toolbar_icon_button(self.edit_mode_btn, "Walker-Edit.svg", _rt("Edicao"))
+        self._configure_toolbar_icon_button(
+            self.settings_btn,
+            "Walker-Settings.svg",
+            _rt("Configurar fundo e grade do canvas"),
+        )
+        self._configure_toolbar_icon_button(
+            self.close_project_btn,
+            "Close.svg",
+            _rt("Fechar projeto e voltar para a tela inicial"),
+            icon_size=16,
+        )
         self.close_project_btn.setVisible(False)
         for button in (
+            self.undo_btn,
+            self.redo_btn,
             self.new_btn,
             self.open_btn,
             self.save_btn,
@@ -199,10 +394,44 @@ class ModelTab(QWidget):
             self.export_btn,
             self.create_chart_btn,
             self.edit_mode_btn,
+            self.settings_btn,
             self.close_project_btn,
         ):
             button.setObjectName("ModelToolbarButton")
-            top_row.addWidget(button, 0)
+
+        self.toolbar_strip = QFrame(header)
+        self.toolbar_strip.setObjectName("ModelToolbarStrip")
+        self.toolbar_strip.setAttribute(Qt.WA_StyledBackground, True)
+        toolbar_layout = QHBoxLayout(self.toolbar_strip)
+        toolbar_layout.setContentsMargins(8, 5, 8, 5)
+        toolbar_layout.setSpacing(2)
+        for button in (self.undo_btn, self.redo_btn):
+            toolbar_layout.addWidget(button, 0)
+        toolbar_layout.addWidget(self._create_toolbar_separator(self.toolbar_strip), 0)
+        for button in (self.new_btn, self.open_btn, self.save_btn, self.save_as_btn, self.export_btn):
+            toolbar_layout.addWidget(button, 0)
+        toolbar_layout.addWidget(self._create_toolbar_separator(self.toolbar_strip), 0)
+        for button in (self.create_chart_btn, self.edit_mode_btn, self.settings_btn):
+            toolbar_layout.addWidget(button, 0)
+        toolbar_layout.addStretch(1)
+        self.mode_switch_wrap = QWidget(self.toolbar_strip)
+        self.mode_switch_wrap.setObjectName("ModelModeSwitchWrap")
+        mode_layout = QHBoxLayout(self.mode_switch_wrap)
+        mode_layout.setContentsMargins(0, 0, 0, 0)
+        mode_layout.setSpacing(6)
+        self.mode_state_label = QLabel(_rt("Edição"), self.mode_switch_wrap)
+        self.mode_state_label.setObjectName("ModelModeStateLabel")
+        self.mode_toggle = _ModelModeToggle(self.mode_switch_wrap)
+        self.mode_toggle.setObjectName("ModelModeToggle")
+        self.mode_toggle.setChecked(True, animated=False)
+        self.mode_toggle.setToolTip(_rt("Alternar entre modo de edição e pré-visualização"))
+        mode_layout.addWidget(self.mode_state_label, 0)
+        mode_layout.addWidget(self.mode_toggle, 0)
+        toolbar_layout.addWidget(self.mode_switch_wrap, 0)
+        toolbar_layout.addSpacing(8)
+        toolbar_layout.addWidget(self.close_project_btn, 0)
+
+        top_row.addWidget(self.toolbar_strip, 1)
         header_layout.addLayout(top_row)
 
         self.project_hint_label = QLabel(
@@ -226,7 +455,7 @@ class ModelTab(QWidget):
         self.filters_label.setWordWrap(True)
         filters_layout.addWidget(self.filters_label, 1)
         self.clear_filters_btn = QPushButton(_rt("Limpar filtros"))
-        self.clear_filters_btn.setObjectName("ModelToolbarButton")
+        self.clear_filters_btn.setObjectName("ModelActionButton")
         self.clear_filters_btn.clicked.connect(self._clear_model_filters)
         filters_layout.addWidget(self.clear_filters_btn, 0)
         root.addWidget(self.filters_bar, 0)
@@ -311,8 +540,8 @@ class ModelTab(QWidget):
         footer_layout.setContentsMargins(4, 3, 4, 3)
         footer_layout.setSpacing(6)
 
-        self.page_strip = DashboardPageStrip(self.footer_bar)
-        footer_layout.addWidget(self.page_strip, 1)
+        self.page_strip = None
+        footer_layout.addStretch(1)
 
         self.zoom_label = QLabel("100%")
         self.zoom_label.setObjectName("ModelZoomLabel")
@@ -345,32 +574,57 @@ class ModelTab(QWidget):
         self.save_btn.clicked.connect(self.save_project)
         self.save_as_btn.clicked.connect(lambda: self.save_project(save_as=True))
         self.export_btn.clicked.connect(self.export_project)
-        self.create_chart_btn.clicked.connect(self._add_chart_from_builder)
+        self.undo_btn.clicked.connect(self._undo_last_action)
+        self.redo_btn.clicked.connect(self._redo_last_action)
+        self.create_chart_btn.toggled.connect(self._handle_create_chart_toggle)
+        self.settings_btn.clicked.connect(self._open_canvas_style_settings)
         self.zoom_out_btn.clicked.connect(self._zoom_canvas_out)
         self.zoom_reset_btn.clicked.connect(self._zoom_canvas_reset)
         self.zoom_in_btn.clicked.connect(self._zoom_canvas_in)
         self.zoom_slider.valueChanged.connect(self._zoom_slider_changed)
         self.edit_mode_btn.toggled.connect(self.set_edit_mode)
+        self.mode_toggle.toggled.connect(self._handle_mode_toggle)
         self.close_project_btn.clicked.connect(self.close_project)
-        self.page_strip.pageAddRequested.connect(self._add_page)
-        self.page_strip.pageSelected.connect(self._set_active_page)
-        self.page_strip.pageRenameRequested.connect(self._rename_page_by_id)
-        self.page_strip.pageDeleteRequested.connect(self._delete_page_by_id)
-        self.page_strip.tabMoved.connect(self._handle_page_tabs_moved)
+        self._shortcut_undo = QShortcut(QKeySequence("Ctrl+Z"), self)
+        self._shortcut_undo.activated.connect(self._undo_last_action)
+        self._shortcut_redo = QShortcut(QKeySequence("Ctrl+Shift+Z"), self)
+        self._shortcut_redo.activated.connect(self._redo_last_action)
+        self._shortcut_redo_alt = QShortcut(QKeySequence("Ctrl+Y"), self)
+        self._shortcut_redo_alt.activated.connect(self._redo_last_action)
 
         self.setStyleSheet(
             """
             QWidget#ModelTabRoot {
                 background: #FFFFFF;
             }
-            QLabel#ModelTitle {
-                color: #111827;
-                font-size: 22px;
-                font-weight: 700;
+            QFrame#ModelHeader {
+                background: transparent;
+                border: none;
             }
-            QLabel#ModelProjectStatus {
-                color: #4B5563;
-                font-size: 12px;
+            QFrame#ModelToolbarStrip {
+                background: #FFFFFF;
+                border: 1px solid #D6D9E0;
+                border-radius: 8px;
+            }
+            QFrame#ModelToolbarSeparator {
+                min-width: 1px;
+                max-width: 1px;
+                margin: 4px 6px;
+                background: #E5E7EB;
+            }
+            QWidget#ModelModeSwitchWrap {
+                background: transparent;
+            }
+            QLabel#ModelModeStateLabel {
+                color: #374151;
+                font-size: 11px;
+                font-weight: 400;
+            }
+            QLabel#ModelModeStateLabel[modeState="preview"] {
+                color: #6B7280;
+            }
+            QWidget#ModelModeToggle {
+                background: transparent;
             }
             QLabel#ModelHint,
             QLabel#ModelWelcomeText,
@@ -545,26 +799,52 @@ class ModelTab(QWidget):
             QSlider#ModelZoomSlider::handle:horizontal:hover {
                 background: #4F46E5;
             }
-            QPushButton#ModelToolbarButton {
-                min-height: 34px;
+            QPushButton#ModelActionButton {
+                min-height: 30px;
                 padding: 0 12px;
                 color: #374151;
                 background: #FFFFFF;
                 border: 1px solid #D1D5DB;
-                border-radius: 10px;
+                border-radius: 8px;
                 font-weight: 400;
             }
-            QPushButton#ModelToolbarButton:hover {
+            QPushButton#ModelActionButton:hover {
                 background: #F9FAFB;
                 border-color: #9CA3AF;
             }
-            QPushButton#ModelToolbarButton:checked {
-                background: #EEF2FF;
-                border-color: #818CF8;
-                color: #3730A3;
-            }
-            QPushButton#ModelToolbarButton:pressed {
+            QPushButton#ModelActionButton:pressed {
                 background: #E5E7EB;
+            }
+            QPushButton#ModelToolbarButton,
+            QToolButton#ModelToolbarButton {
+                min-height: 30px;
+                padding: 0 4px;
+                color: #111827;
+                background: transparent;
+                border: none;
+                border-radius: 6px;
+                font-weight: 400;
+            }
+            QPushButton#ModelToolbarButton:hover,
+            QToolButton#ModelToolbarButton:hover {
+                background: #F3F4F6;
+            }
+            QPushButton#ModelToolbarButton:checked,
+            QToolButton#ModelToolbarButton:checked {
+                background: #E5E7EB;
+                color: #111827;
+            }
+            QPushButton#ModelToolbarButton:pressed,
+            QToolButton#ModelToolbarButton:pressed {
+                background: #E5E7EB;
+            }
+            QPushButton#ModelToolbarButton[toolbarMode="icon"],
+            QToolButton#ModelToolbarButton[toolbarMode="icon"] {
+                min-width: 30px;
+                max-width: 30px;
+                min-height: 30px;
+                max-height: 30px;
+                padding: 0;
             }
             QPushButton#ModelZoomButton {
                 min-height: 16px;
@@ -616,7 +896,9 @@ class ModelTab(QWidget):
 
         self._refresh_recents()
         self._refresh_builder_layers()
+        self._sync_mode_switch_state(bool(self.edit_mode_btn.isChecked()))
         self._refresh_ui_state()
+        self._reset_history()
         project = QgsProject.instance()
         try:
             project.layersAdded.connect(lambda *_: self._refresh_builder_layers())
@@ -696,9 +978,9 @@ class ModelTab(QWidget):
         actions.setContentsMargins(0, 0, 0, 0)
         actions.setSpacing(8)
         self.builder_refresh_btn = QPushButton(_rt("Atualizar"))
-        self.builder_refresh_btn.setObjectName("ModelToolbarButton")
+        self.builder_refresh_btn.setObjectName("ModelActionButton")
         self.builder_add_btn = QPushButton(_rt("Adicionar grafico"))
-        self.builder_add_btn.setObjectName("ModelToolbarButton")
+        self.builder_add_btn.setObjectName("ModelActionButton")
         actions.addWidget(self.builder_refresh_btn, 0)
         actions.addWidget(self.builder_add_btn, 1)
         layout.addLayout(actions, 0)
@@ -810,6 +1092,651 @@ class ModelTab(QWidget):
             pass
         return ""
 
+    def _configure_toolbar_icon_button(self, button, icon_name: str, tooltip: str, icon_size: int = 18):
+        button.setProperty("toolbarMode", "icon")
+        button.setCursor(Qt.PointingHandCursor)
+        button.setFocusPolicy(Qt.NoFocus)
+        button.setToolTip(tooltip)
+        button.setStatusTip(tooltip)
+        try:
+            button.setAccessibleName(tooltip)
+        except Exception:
+            pass
+        try:
+            button.setText("")
+        except Exception:
+            pass
+        icon = svg_icon(icon_name)
+        if not icon.isNull():
+            button.setIcon(icon)
+        button.setIconSize(QSize(icon_size, icon_size))
+        if isinstance(button, QToolButton):
+            button.setToolButtonStyle(Qt.ToolButtonIconOnly)
+            button.setAutoRaise(False)
+
+    def _create_toolbar_separator(self, parent: QWidget) -> QFrame:
+        separator = QFrame(parent)
+        separator.setObjectName("ModelToolbarSeparator")
+        separator.setFrameShape(QFrame.VLine)
+        separator.setFrameShadow(QFrame.Plain)
+        return separator
+
+    def _normalize_hex_color(self, value: object, fallback: str) -> str:
+        color = QColor(str(value or "").strip())
+        if not color.isValid():
+            color = QColor(str(fallback or "#FFFFFF"))
+        return color.name().upper()
+
+    def _default_canvas_style(self) -> Dict[str, object]:
+        return {
+            "background": "#FFFFFF",
+            "grid_color": "#E5E7EB",
+            "show_grid": True,
+            "grid_size": 8,
+            "grid_opacity": 0.72,
+        }
+
+    def _normalized_canvas_style(self, style: Optional[Dict[str, object]] = None) -> Dict[str, object]:
+        base = self._default_canvas_style()
+        payload = dict(style or {})
+        try:
+            grid_size = int(round(float(payload.get("grid_size", base["grid_size"]))))
+        except Exception:
+            grid_size = int(base["grid_size"])
+        grid_size = max(4, min(48, grid_size))
+        try:
+            grid_opacity = float(payload.get("grid_opacity", base["grid_opacity"]))
+        except Exception:
+            grid_opacity = float(base["grid_opacity"])
+        grid_opacity = max(0.1, min(1.0, grid_opacity))
+        return {
+            "background": self._normalize_hex_color(payload.get("background"), str(base["background"])),
+            "grid_color": self._normalize_hex_color(payload.get("grid_color"), str(base["grid_color"])),
+            "show_grid": bool(payload.get("show_grid", base["show_grid"])),
+            "grid_size": grid_size,
+            "grid_opacity": grid_opacity,
+        }
+
+    def _project_canvas_style(self) -> Dict[str, object]:
+        if self.current_project is None:
+            return self._default_canvas_style()
+        source_meta = dict(getattr(self.current_project, "source_meta", {}) or {})
+        return self._normalized_canvas_style(source_meta.get("canvas_style"))
+
+    def _apply_canvas_style_to_widget(self, widget: Optional[DashboardPageWidget], style: Dict[str, object]):
+        if widget is None or not hasattr(widget, "canvas"):
+            return
+        canvas_style = self._normalized_canvas_style(style)
+        try:
+            widget.canvas.set_canvas_style(
+                background_color=canvas_style["background"],
+                grid_color=canvas_style["grid_color"],
+                show_grid=canvas_style["show_grid"],
+                grid_size=canvas_style["grid_size"],
+                grid_opacity=canvas_style["grid_opacity"],
+            )
+        except Exception:
+            pass
+
+    def _apply_canvas_style_to_pages(
+        self,
+        style: Optional[Dict[str, object]] = None,
+        *,
+        persist: bool = False,
+        mark_dirty: bool = False,
+        record_history: bool = False,
+    ):
+        canvas_style = self._normalized_canvas_style(style if style is not None else self._project_canvas_style())
+        if persist and self.current_project is not None:
+            source_meta = dict(getattr(self.current_project, "source_meta", {}) or {})
+            source_meta["canvas_style"] = dict(canvas_style)
+            self.current_project.source_meta = source_meta
+        for widget in self._page_widgets_in_order():
+            self._apply_canvas_style_to_widget(widget, canvas_style)
+        if self.current_project is not None and mark_dirty:
+            self._dirty = True
+        if record_history:
+            self._commit_history_if_changed()
+        self._refresh_ui_state()
+
+    def _set_color_preview_chip(self, label: QLabel, color_value: object, fallback: str):
+        color_hex = self._normalize_hex_color(color_value, fallback)
+        label.setText(" ")
+        label.setStyleSheet(
+            f"""
+            QLabel {{
+                min-width: 22px;
+                max-width: 22px;
+                min-height: 22px;
+                max-height: 22px;
+                border-radius: 6px;
+                border: 1px solid #D1D5DB;
+                background: {color_hex};
+            }}
+            """
+        )
+
+    def _open_canvas_style_settings(self):
+        if self.current_project is None:
+            return
+        style = self._project_canvas_style()
+        draft = dict(style)
+
+        dialog = QDialog(self)
+        dialog.setObjectName("WalkerCanvasStyleDialog")
+        dialog.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
+        dialog.setModal(True)
+        dialog.resize(560, 392)
+        dialog.setStyleSheet(
+            """
+            QDialog#WalkerCanvasStyleDialog {
+                background: #FFFFFF;
+                border: 1px solid #D1D5DB;
+                border-radius: 10px;
+            }
+            QFrame#WalkerDialogCard {
+                background: #FFFFFF;
+                border: 1px solid #E5E7EB;
+                border-radius: 8px;
+            }
+            QFrame#WalkerDialogDragHandle {
+                background: transparent;
+                border: none;
+            }
+            QLabel#WalkerDialogTitle {
+                color: #111827;
+                font-size: 14px;
+                font-weight: 500;
+            }
+            QLabel#WalkerDialogSubtitle {
+                color: #6B7280;
+                font-size: 11px;
+            }
+            QLabel#WalkerFieldLabel {
+                color: #111827;
+                font-size: 12px;
+                font-weight: 400;
+            }
+            QLineEdit#WalkerDialogInput,
+            QComboBox#WalkerDialogInput,
+            QSpinBox#WalkerDialogInput {
+                min-height: 30px;
+                padding: 0 9px;
+                color: #111827;
+                background: #FFFFFF;
+                border: 1px solid #D1D5DB;
+                border-radius: 8px;
+            }
+            QLineEdit#WalkerDialogInput:focus,
+            QComboBox#WalkerDialogInput:focus,
+            QSpinBox#WalkerDialogInput:focus {
+                border-color: #9CA3AF;
+            }
+            QSpinBox#WalkerDialogInput::up-button,
+            QSpinBox#WalkerDialogInput::down-button {
+                width: 0px;
+                border: none;
+                background: transparent;
+                margin: 0;
+                padding: 0;
+            }
+            QSpinBox#WalkerDialogInput::up-arrow,
+            QSpinBox#WalkerDialogInput::down-arrow {
+                width: 0px;
+                height: 0px;
+                image: none;
+            }
+            QCheckBox#WalkerDialogCheck {
+                color: #111827;
+                font-size: 12px;
+                font-weight: 400;
+            }
+            QPushButton#WalkerDialogPrimaryButton,
+            QPushButton#WalkerDialogSecondaryButton {
+                min-height: 32px;
+                border-radius: 8px;
+                padding: 0 14px;
+                font-size: 12px;
+            }
+            QPushButton#WalkerDialogSecondaryButton {
+                color: #111827;
+                background: #FFFFFF;
+                border: 1px solid #D1D5DB;
+                font-weight: 400;
+            }
+            QPushButton#WalkerDialogSecondaryButton:hover {
+                background: #F9FAFB;
+                border-color: #9CA3AF;
+            }
+            QPushButton#WalkerDialogPrimaryButton {
+                color: #FFFFFF;
+                background: #111827;
+                border: 1px solid #111827;
+                font-weight: 500;
+            }
+            QPushButton#WalkerDialogPrimaryButton:hover {
+                background: #1F2937;
+                border-color: #1F2937;
+            }
+            QPushButton#WalkerColorChip {
+                min-width: 22px;
+                max-width: 22px;
+                min-height: 22px;
+                max-height: 22px;
+                border-radius: 5px;
+                border: 1px solid #D1D5DB;
+                padding: 0;
+            }
+            QLabel#WalkerAuxText {
+                color: #6B7280;
+                font-size: 10px;
+            }
+            QToolButton#ConfigDialogCloseButton {
+                min-width: 22px;
+                max-width: 22px;
+                min-height: 22px;
+                max-height: 22px;
+                border: 1px solid transparent;
+                border-radius: 6px;
+                background: transparent;
+                color: #6B7280;
+                font-size: 14px;
+            }
+            QToolButton#ConfigDialogCloseButton:hover {
+                color: #111827;
+                background: #F3F4F6;
+            }
+            """
+        )
+
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(10)
+
+        drag_handle = _DialogDragHandle(dialog, dialog)
+        drag_handle.setObjectName("WalkerDialogDragHandle")
+        drag_handle.setFixedHeight(24)
+        top_bar = QHBoxLayout(drag_handle)
+        top_bar.setContentsMargins(0, 0, 0, 0)
+        top_bar.setSpacing(8)
+        top_hint = QLabel(_rt("Configuração visual"), dialog)
+        top_hint.setObjectName("WalkerDialogSubtitle")
+        top_bar.addWidget(top_hint, 0)
+        top_bar.addStretch(1)
+        close_btn = QToolButton(dialog)
+        close_btn.setObjectName("ConfigDialogCloseButton")
+        close_btn.setText("×")
+        close_btn.clicked.connect(dialog.reject)
+        top_bar.addWidget(close_btn, 0)
+        layout.addWidget(drag_handle, 0)
+
+        title = QLabel(_rt("Configurar canvas"), dialog)
+        title.setObjectName("WalkerDialogTitle")
+        layout.addWidget(title, 0)
+
+        subtitle = QLabel(_rt("Ajuste fundo, grade e densidade visual com visual minimalista."), dialog)
+        subtitle.setObjectName("WalkerDialogSubtitle")
+        subtitle.setWordWrap(True)
+        layout.addWidget(subtitle, 0)
+
+        card = QFrame(dialog)
+        card.setObjectName("WalkerDialogCard")
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(12, 12, 12, 12)
+        card_layout.setSpacing(10)
+
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(10)
+        grid.setVerticalSpacing(10)
+
+        def _build_label(text: str) -> QLabel:
+            label = QLabel(text, card)
+            label.setObjectName("WalkerFieldLabel")
+            return label
+
+        theme_label = _build_label(_rt("Tema"))
+        theme_combo = QComboBox(card)
+        theme_combo.setObjectName("WalkerDialogInput")
+        presets = {
+            "clean": {
+                "background": "#FFFFFF",
+                "grid_color": "#E5E7EB",
+                "show_grid": True,
+                "grid_size": 8,
+                "grid_opacity": 0.72,
+            },
+            "soft": {
+                "background": "#F8FAFC",
+                "grid_color": "#D1D5DB",
+                "show_grid": True,
+                "grid_size": 10,
+                "grid_opacity": 0.66,
+            },
+            "dark": {
+                "background": "#111827",
+                "grid_color": "#374151",
+                "show_grid": True,
+                "grid_size": 8,
+                "grid_opacity": 0.6,
+            },
+        }
+        theme_combo.addItem(_rt("Personalizado"), "custom")
+        theme_combo.addItem(_rt("Padrão clean"), "clean")
+        theme_combo.addItem(_rt("Padrão suave"), "soft")
+        theme_combo.addItem(_rt("Noturno"), "dark")
+        grid.addWidget(theme_label, 0, 0)
+        grid.addWidget(theme_combo, 0, 1, 1, 3)
+
+        bg_label = _build_label(_rt("Cor do fundo"))
+        bg_edit = QLineEdit(str(draft.get("background") or ""), card)
+        bg_edit.setObjectName("WalkerDialogInput")
+        bg_preview = QLabel(card)
+        self._set_color_preview_chip(bg_preview, bg_edit.text(), "#FFFFFF")
+        grid.addWidget(bg_label, 1, 0)
+        grid.addWidget(bg_edit, 1, 1, 1, 2)
+        grid.addWidget(bg_preview, 1, 3)
+
+        grid_label = _build_label(_rt("Cor da grade"))
+        grid_edit = QLineEdit(str(draft.get("grid_color") or ""), card)
+        grid_edit.setObjectName("WalkerDialogInput")
+        grid_preview = QLabel(card)
+        self._set_color_preview_chip(grid_preview, grid_edit.text(), "#E5E7EB")
+        grid.addWidget(grid_label, 2, 0)
+        grid.addWidget(grid_edit, 2, 1, 1, 2)
+        grid.addWidget(grid_preview, 2, 3)
+
+        show_grid_check = QCheckBox(_rt("Mostrar grade no modo de edicao"), card)
+        show_grid_check.setObjectName("WalkerDialogCheck")
+        show_grid_check.setChecked(bool(draft.get("show_grid", True)))
+        grid.addWidget(show_grid_check, 3, 0, 1, 4)
+
+        grid_size_label = _build_label(_rt("Tamanho da grade"))
+        grid_size_spin = QSpinBox(card)
+        grid_size_spin.setObjectName("WalkerDialogInput")
+        grid_size_spin.setRange(4, 48)
+        grid_size_spin.setValue(int(draft.get("grid_size", 8)))
+        grid_size_spin.setButtonSymbols(QSpinBox.NoButtons)
+        grid_size_spin.setAlignment(Qt.AlignCenter)
+        grid.addWidget(grid_size_label, 4, 0)
+        grid.addWidget(grid_size_spin, 4, 1)
+
+        grid_opacity_label = _build_label(_rt("Opacidade da grade (%)"))
+        grid_opacity_spin = QSpinBox(card)
+        grid_opacity_spin.setObjectName("WalkerDialogInput")
+        grid_opacity_spin.setRange(10, 100)
+        grid_opacity_spin.setValue(int(round(float(draft.get("grid_opacity", 0.72)) * 100.0)))
+        grid_opacity_spin.setButtonSymbols(QSpinBox.NoButtons)
+        grid_opacity_spin.setAlignment(Qt.AlignCenter)
+        grid.addWidget(grid_opacity_label, 4, 2)
+        grid.addWidget(grid_opacity_spin, 4, 3)
+
+        card_layout.addLayout(grid)
+
+        palette_bg = QHBoxLayout()
+        palette_bg.setContentsMargins(0, 0, 0, 0)
+        palette_bg.setSpacing(6)
+        palette_bg.addWidget(QLabel(_rt("Paleta fundo"), card))
+        bg_quick_colors = ["#FFFFFF", "#F8FAFC", "#F3F4F6", "#F1F5F9", "#111827"]
+        for color in bg_quick_colors:
+            chip = QPushButton("", card)
+            chip.setObjectName("WalkerColorChip")
+            chip.setToolTip(color)
+            chip.setStyleSheet(
+                f"QPushButton#WalkerColorChip{{background:{color};border:1px solid #D1D5DB;border-radius:6px;}}"
+            )
+            chip.clicked.connect(lambda checked=False, value=color: bg_edit.setText(value))
+            palette_bg.addWidget(chip)
+        palette_bg.addStretch(1)
+        card_layout.addLayout(palette_bg)
+
+        palette_grid = QHBoxLayout()
+        palette_grid.setContentsMargins(0, 0, 0, 0)
+        palette_grid.setSpacing(6)
+        palette_grid.addWidget(QLabel(_rt("Paleta grade"), card))
+        grid_quick_colors = ["#E5E7EB", "#D1D5DB", "#9CA3AF", "#6B7280", "#374151"]
+        for color in grid_quick_colors:
+            chip = QPushButton("", card)
+            chip.setObjectName("WalkerColorChip")
+            chip.setToolTip(color)
+            chip.setStyleSheet(
+                f"QPushButton#WalkerColorChip{{background:{color};border:1px solid #D1D5DB;border-radius:6px;}}"
+            )
+            chip.clicked.connect(lambda checked=False, value=color: grid_edit.setText(value))
+            palette_grid.addWidget(chip)
+        palette_grid.addStretch(1)
+        card_layout.addLayout(palette_grid)
+
+        helper = QLabel(_rt("Dica: use fundo claro com grade suave para um visual limpo."), card)
+        helper.setObjectName("WalkerAuxText")
+        helper.setWordWrap(True)
+        card_layout.addWidget(helper, 0)
+
+        layout.addWidget(card, 1)
+
+        actions = QHBoxLayout()
+        actions.setContentsMargins(0, 0, 0, 0)
+        actions.setSpacing(8)
+        actions.addStretch(1)
+
+        reset_btn = QPushButton(_rt("Restaurar padrao"), dialog)
+        reset_btn.setObjectName("WalkerDialogSecondaryButton")
+        cancel_btn = QPushButton(_rt("Cancelar"), dialog)
+        cancel_btn.setObjectName("WalkerDialogSecondaryButton")
+        apply_btn = QPushButton(_rt("Aplicar"), dialog)
+        apply_btn.setObjectName("WalkerDialogPrimaryButton")
+
+        actions.addWidget(reset_btn, 0)
+        actions.addWidget(cancel_btn, 0)
+        actions.addWidget(apply_btn, 0)
+        layout.addLayout(actions)
+
+        def _refresh_color_previews():
+            self._set_color_preview_chip(bg_preview, bg_edit.text(), "#FFFFFF")
+            self._set_color_preview_chip(grid_preview, grid_edit.text(), "#E5E7EB")
+
+        bg_edit.textChanged.connect(lambda *_: _refresh_color_previews())
+        grid_edit.textChanged.connect(lambda *_: _refresh_color_previews())
+
+        preset_signal_lock = {"active": False}
+
+        def _apply_style_to_controls(style_payload: Dict[str, object]):
+            normalized = self._normalized_canvas_style(style_payload)
+            bg_edit.setText(str(normalized.get("background") or "#FFFFFF"))
+            grid_edit.setText(str(normalized.get("grid_color") or "#E5E7EB"))
+            show_grid_check.setChecked(bool(normalized.get("show_grid", True)))
+            grid_size_spin.setValue(int(normalized.get("grid_size", 8)))
+            grid_opacity_spin.setValue(int(round(float(normalized.get("grid_opacity", 0.72)) * 100.0)))
+            _refresh_color_previews()
+
+        def _handle_preset_changed(index: int):
+            key = str(theme_combo.itemData(index) or "")
+            if key not in presets:
+                return
+            preset_signal_lock["active"] = True
+            try:
+                _apply_style_to_controls(dict(presets[key]))
+            finally:
+                preset_signal_lock["active"] = False
+
+        theme_combo.currentIndexChanged.connect(_handle_preset_changed)
+
+        def _mark_custom():
+            if preset_signal_lock["active"]:
+                return
+            custom_index = theme_combo.findData("custom")
+            if custom_index >= 0 and theme_combo.currentIndex() != custom_index:
+                theme_combo.setCurrentIndex(custom_index)
+
+        bg_edit.textChanged.connect(lambda *_: _mark_custom())
+        grid_edit.textChanged.connect(lambda *_: _mark_custom())
+        show_grid_check.toggled.connect(lambda *_: _mark_custom())
+        grid_size_spin.valueChanged.connect(lambda *_: _mark_custom())
+        grid_opacity_spin.valueChanged.connect(lambda *_: _mark_custom())
+
+        def _reset_defaults():
+            preset_signal_lock["active"] = True
+            try:
+                _apply_style_to_controls(self._default_canvas_style())
+                default_index = theme_combo.findData("clean")
+                if default_index >= 0:
+                    theme_combo.setCurrentIndex(default_index)
+            finally:
+                preset_signal_lock["active"] = False
+
+        reset_btn.clicked.connect(_reset_defaults)
+        cancel_btn.clicked.connect(dialog.reject)
+        apply_btn.clicked.connect(dialog.accept)
+
+        if dialog.exec_() != QDialog.Accepted:
+            return
+
+        draft["background"] = self._normalize_hex_color(bg_edit.text(), str(style.get("background") or "#FFFFFF"))
+        draft["grid_color"] = self._normalize_hex_color(grid_edit.text(), str(style.get("grid_color") or "#E5E7EB"))
+        draft["show_grid"] = bool(show_grid_check.isChecked())
+        draft["grid_size"] = int(grid_size_spin.value())
+        draft["grid_opacity"] = max(0.1, min(1.0, float(grid_opacity_spin.value()) / 100.0))
+        self._apply_canvas_style_to_pages(draft, persist=True, mark_dirty=True, record_history=True)
+
+    def _project_snapshot_payload(self) -> Optional[Dict[str, object]]:
+        if self.current_project is None:
+            return None
+        try:
+            self._sync_project_from_pages(self._current_page_id())
+        except Exception:
+            pass
+        project = self.current_project
+        pages = [page.normalized() for page in list(project.pages or [])]
+        if not pages:
+            pages = [DashboardPage(title=self._page_display_title(1)).normalized()]
+        active_page_id = str(project.active_page_id or pages[0].page_id or "").strip() or pages[0].page_id
+        active_page = pages[0]
+        for page in pages:
+            if str(page.page_id or "").strip() == active_page_id:
+                active_page = page
+                break
+        payload = {
+            "version": int(project.version or 2),
+            "project_id": str(project.project_id or ""),
+            "name": str(project.name or ""),
+            "created_at": str(project.created_at or ""),
+            "updated_at": str(project.updated_at or ""),
+            "edit_mode": bool(project.edit_mode),
+            "source_meta": dict(project.source_meta or {}),
+            "active_page_id": active_page_id,
+            "pages": [page.to_dict() for page in pages],
+            "items": [item.to_dict() for item in list(active_page.items or [])],
+            "visual_links": [link.to_dict() for link in list(active_page.visual_links or [])],
+            "chart_relations": [relation.to_dict() for relation in list(active_page.chart_relations or [])],
+        }
+        try:
+            return json.loads(json.dumps(payload, ensure_ascii=False))
+        except Exception:
+            return payload
+
+    def _snapshot_state(self) -> Dict[str, object]:
+        return {
+            "project": self._project_snapshot_payload(),
+            "path": str(self.current_path or ""),
+            "dirty": bool(self._dirty),
+        }
+
+    def _snapshot_signature(self, snapshot: Optional[Dict[str, object]]) -> str:
+        payload = dict(snapshot or {})
+        serial = {
+            "project": payload.get("project"),
+            "path": str(payload.get("path") or ""),
+        }
+        try:
+            return json.dumps(serial, sort_keys=True, ensure_ascii=False)
+        except Exception:
+            return str(serial)
+
+    def _reset_history(self):
+        self._history_undo.clear()
+        self._history_redo.clear()
+        self._history_current = self._snapshot_state()
+        self._update_undo_redo_buttons()
+
+    def _commit_history_if_changed(self):
+        if self._history_restoring:
+            return
+        current_snapshot = self._snapshot_state()
+        if self._history_current is None:
+            self._history_current = current_snapshot
+            self._update_undo_redo_buttons()
+            return
+        if self._snapshot_signature(current_snapshot) == self._snapshot_signature(self._history_current):
+            self._update_undo_redo_buttons()
+            return
+        self._history_undo.append(self._history_current)
+        if len(self._history_undo) > self._history_limit:
+            self._history_undo = self._history_undo[-self._history_limit :]
+        self._history_current = current_snapshot
+        self._history_redo.clear()
+        self._update_undo_redo_buttons()
+
+    def _restore_history_snapshot(self, snapshot: Dict[str, object]):
+        payload = dict(snapshot or {})
+        project_payload = payload.get("project")
+        self._history_restoring = True
+        self._suspend_canvas_events = True
+        try:
+            if project_payload is None:
+                self.current_project = None
+                self.current_path = ""
+                self._dirty = False
+                self._selected_page_id = ""
+                self._clear_page_widgets()
+                self._clear_page_tab_buttons()
+                self.canvas = None
+            else:
+                project = DashboardProject.from_dict(project_payload)
+                self.current_project = project
+                raw_path = str(payload.get("path") or "")
+                self.current_path = self.store.normalize_path(raw_path) if raw_path else ""
+                self._dirty = bool(payload.get("dirty"))
+                self._selected_page_id = ""
+                self._rebuild_page_stack(project.active_page_id or (project.pages[0].page_id if project.pages else ""))
+                self.edit_mode_btn.blockSignals(True)
+                try:
+                    self.edit_mode_btn.setChecked(bool(project.edit_mode))
+                finally:
+                    self.edit_mode_btn.blockSignals(False)
+                self.set_edit_mode(bool(project.edit_mode))
+                self._apply_canvas_style_to_pages(self._project_canvas_style(), persist=False, mark_dirty=False, record_history=False)
+            self._refresh_builder_layers()
+            self._refresh_ui_state()
+        finally:
+            self._suspend_canvas_events = False
+            self._history_restoring = False
+
+    def _undo_last_action(self):
+        if not self._history_undo:
+            return
+        current_snapshot = self._history_current or self._snapshot_state()
+        target_snapshot = self._history_undo.pop()
+        self._history_redo.append(current_snapshot)
+        self._restore_history_snapshot(target_snapshot)
+        self._history_current = self._snapshot_state()
+        self._update_undo_redo_buttons()
+
+    def _redo_last_action(self):
+        if not self._history_redo:
+            return
+        current_snapshot = self._history_current or self._snapshot_state()
+        target_snapshot = self._history_redo.pop()
+        self._history_undo.append(current_snapshot)
+        self._restore_history_snapshot(target_snapshot)
+        self._history_current = self._snapshot_state()
+        self._update_undo_redo_buttons()
+
+    def _update_undo_redo_buttons(self):
+        has_project = self.current_project is not None
+        can_undo = has_project and bool(self._history_undo)
+        can_redo = has_project and bool(self._history_redo)
+        self.undo_btn.setEnabled(can_undo)
+        self.redo_btn.setEnabled(can_redo)
+
     def _page_widgets_in_order(self) -> List[DashboardPageWidget]:
         widgets: List[DashboardPageWidget] = []
         if not hasattr(self, "page_stack"):
@@ -839,25 +1766,25 @@ class ModelTab(QWidget):
         return None
 
     def _clear_page_tab_buttons(self):
-        if hasattr(self, "page_strip"):
+        if self.page_strip is not None:
             self.page_strip.clear_pages()
 
     def _scroll_page_tabs(self, delta: int):
-        if hasattr(self, "page_strip"):
+        if self.page_strip is not None:
             self.page_strip.scroll_by(delta)
 
     def _ensure_page_button_visible(self, page_id: str):
-        if hasattr(self, "page_strip"):
+        if self.page_strip is not None:
             self.page_strip.ensure_page_visible(page_id)
 
     def _select_page_button(self, page_id: str):
         target_id = str(page_id or "").strip()
         self._selected_page_id = target_id
-        if hasattr(self, "page_strip"):
+        if self.page_strip is not None:
             self.page_strip.set_active_page(target_id)
 
     def _handle_page_tabs_moved(self, from_index: int, to_index: int):
-        if self.current_project is None or not hasattr(self, "page_strip"):
+        if self.current_project is None or self.page_strip is None:
             return
         order = list(self.page_strip.page_ids() or [])
         if not order:
@@ -893,6 +1820,7 @@ class ModelTab(QWidget):
         finally:
             self._suspend_canvas_events = False
         self._dirty = True
+        self._commit_history_if_changed()
         self._refresh_ui_state()
 
     def _handle_page_stack_current_changed(self, index: int):
@@ -903,7 +1831,7 @@ class ModelTab(QWidget):
             return
         self.canvas = widget.canvas
         self._selected_page_id = str(widget.page_id or "").strip()
-        if hasattr(self, "page_strip"):
+        if self.page_strip is not None:
             self.page_strip.set_active_page(widget.page_id)
         if self.current_project is not None:
             self.current_project.active_page_id = str(widget.page_id or "").strip()
@@ -971,6 +1899,7 @@ class ModelTab(QWidget):
 
     def _create_page_widget(self, page: DashboardPage) -> DashboardPageWidget:
         widget = DashboardPageWidget(page, self.page_stack)
+        self._apply_canvas_style_to_widget(widget, self._project_canvas_style())
         widget.itemsChanged.connect(lambda page_id, self=self: self._handle_canvas_changed(page_id))
         widget.filtersChanged.connect(
             lambda page_id, summary, self=self: self._handle_canvas_filters_changed(summary, page_id)
@@ -1007,6 +1936,18 @@ class ModelTab(QWidget):
         pages = [page.normalized() for page in list(self.current_project.pages or [])]
         if not pages:
             pages = [DashboardPage(title=self._page_display_title(1)).normalized()]
+        if self._single_page_mode and len(pages) > 1:
+            target_id = str(active_page_id or self.current_project.active_page_id or "").strip()
+            selected = None
+            for page in pages:
+                if str(page.page_id or "").strip() == target_id:
+                    selected = page.normalized()
+                    break
+            if selected is None:
+                selected = pages[0].normalized()
+            pages = [selected]
+        self.current_project.pages = pages
+        self.current_project.active_page_id = pages[0].page_id
         existing_widgets = dict(self._page_widgets)
         stack_blocked = False
         if hasattr(self, "page_stack"):
@@ -1039,7 +1980,7 @@ class ModelTab(QWidget):
         self._set_active_page(resolved_active_id, sync_project=False, update_tabs=False)
 
     def _refresh_page_tabs(self, active_page_id: Optional[str] = None):
-        if not hasattr(self, "page_strip"):
+        if self.page_strip is None:
             return
         pages = list(self.current_project.pages or []) if self.current_project is not None else []
         resolved_active_id = str(active_page_id or self.current_project.active_page_id or "").strip()
@@ -1062,6 +2003,16 @@ class ModelTab(QWidget):
                 continue
         if not pages:
             pages = [DashboardPage(title=self._page_display_title(1)).normalized()]
+        if self._single_page_mode and len(pages) > 1:
+            target_id = str(active_page_id or self.current_project.active_page_id or "").strip()
+            selected = None
+            for page in pages:
+                if str(page.page_id or "").strip() == target_id:
+                    selected = page.normalized()
+                    break
+            if selected is None:
+                selected = pages[0].normalized()
+            pages = [selected]
         self.current_project.pages = pages
         resolved_active_id = str(active_page_id or self.current_project.active_page_id or pages[0].page_id or "").strip()
         if not resolved_active_id:
@@ -1111,6 +2062,8 @@ class ModelTab(QWidget):
         return None
 
     def _add_page(self, checked: bool = False, title: Optional[str] = None, activate: bool = True):
+        if self._single_page_mode:
+            return
         if self._is_adding_page:
             return
         self._is_adding_page = True
@@ -1137,6 +2090,7 @@ class ModelTab(QWidget):
                 self._refresh_page_tabs(self.current_project.active_page_id)
                 self._sync_project_from_pages(self.current_project.active_page_id)
             self._dirty = True
+            self._commit_history_if_changed()
             self._refresh_ui_state()
         finally:
             self._is_adding_page = False
@@ -1145,8 +2099,10 @@ class ModelTab(QWidget):
         self._delete_page_by_id(self._current_page_id())
 
     def _delete_page_by_id(self, page_id: str):
+        if self._single_page_mode:
+            return
         page_index = self._page_index_from_id(page_id)
-        if page_index < 0 and hasattr(self, "page_strip"):
+        if page_index < 0 and self.page_strip is not None:
             try:
                 order = list(self.page_strip.page_ids() or [])
             except Exception:
@@ -1160,7 +2116,7 @@ class ModelTab(QWidget):
             return
         pages = list(self.current_project.pages or [])
         if len(pages) <= 1:
-            QMessageBox.information(self, _rt("Model"), _rt("O painel precisa manter ao menos uma pagina."))
+            slim_message(self, _rt("Model"), _rt("O painel precisa manter ao menos uma pagina."))
             return
         pages.pop(page_index)
         self.current_project.pages = pages
@@ -1170,6 +2126,7 @@ class ModelTab(QWidget):
         self._selected_page_id = next_page.page_id
         self._dirty = True
         self._rebuild_page_stack(next_page.page_id)
+        self._commit_history_if_changed()
         self._refresh_ui_state()
 
     def _rename_page_by_id(self, page_id: str, title: str):
@@ -1183,21 +2140,22 @@ class ModelTab(QWidget):
         widget = self._page_widget_for_id(page.page_id)
         if widget is not None:
             widget.set_page_identity(page.page_id, new_title)
-        if hasattr(self, "page_strip"):
+        if self.page_strip is not None:
             self.page_strip.update_page_title(page.page_id, new_title)
         self._sync_project_from_pages(self._current_page_id() or page.page_id)
         self._dirty = True
+        self._commit_history_if_changed()
         self._refresh_ui_state()
 
     def _build_model_chart_item_from_builder(self) -> Optional[DashboardChartItem]:
         layer_id = str(self.builder_layer_combo.currentData() or "")
         layer = self._builder_layers.get(layer_id)
         if layer is None or not layer.isValid():
-            QMessageBox.information(self, _rt("Model"), _rt("Selecione uma camada valida para criar o grafico."))
+            slim_message(self, _rt("Model"), _rt("Selecione uma camada valida para criar o grafico."))
             return None
         dimension_field = str(self.builder_dimension_combo.currentData() or "").strip()
         if not dimension_field:
-            QMessageBox.information(self, _rt("Model"), _rt("Selecione o campo de categoria."))
+            slim_message(self, _rt("Model"), _rt("Selecione o campo de categoria."))
             return None
         value_field = str(self.builder_value_combo.currentData() or "__count__").strip() or "__count__"
         aggregation = str(self.builder_agg_combo.currentData() or "count").strip().lower() or "count"
@@ -1206,12 +2164,12 @@ class ModelTab(QWidget):
 
         dimension_field = self._resolve_layer_field_name(layer, dimension_field)
         if not dimension_field:
-            QMessageBox.information(self, _rt("Model"), _rt("O campo de categoria nao existe na camada selecionada."))
+            slim_message(self, _rt("Model"), _rt("O campo de categoria nao existe na camada selecionada."))
             return None
         if value_field != "__count__":
             value_field = self._resolve_layer_field_name(layer, value_field)
             if not value_field:
-                QMessageBox.information(self, _rt("Model"), _rt("O campo de metrica nao existe na camada selecionada."))
+                slim_message(self, _rt("Model"), _rt("O campo de metrica nao existe na camada selecionada."))
                 return None
 
         grouped: Dict[str, Dict[str, object]] = {}
@@ -1253,10 +2211,10 @@ class ModelTab(QWidget):
             bucket["max"] = float(value) if current_max is None else max(float(current_max), float(value))
 
         if value_field != "__count__" and not has_numeric_values:
-            QMessageBox.information(self, _rt("Model"), _rt("Nao foi possivel calcular valores numericos para esse campo."))
+            slim_message(self, _rt("Model"), _rt("Nao foi possivel calcular valores numericos para esse campo."))
             return None
         if not grouped:
-            QMessageBox.information(self, _rt("Model"), _rt("A camada nao possui dados suficientes para montar o grafico."))
+            slim_message(self, _rt("Model"), _rt("A camada nao possui dados suficientes para montar o grafico."))
             return None
 
         rows: List[Dict[str, object]] = []
@@ -1284,7 +2242,7 @@ class ModelTab(QWidget):
             )
 
         if not rows:
-            QMessageBox.information(self, _rt("Model"), _rt("Sem resultados para os campos selecionados."))
+            slim_message(self, _rt("Model"), _rt("Sem resultados para os campos selecionados."))
             return None
 
         rows.sort(key=lambda item: float(item.get("value") or 0.0), reverse=True)
@@ -1367,6 +2325,7 @@ class ModelTab(QWidget):
         active_canvas.add_item(item)
         self._sync_project_from_pages(active_widget.page_id)
         self._dirty = True
+        self._commit_history_if_changed()
         self._refresh_ui_state()
 
     def _open_canvas_context_menu(self, global_pos, page_id: Optional[str] = None):
@@ -1377,8 +2336,7 @@ class ModelTab(QWidget):
         if chosen is add_chart_action:
             self._add_chart_from_builder()
         elif chosen is open_panel_action:
-            self.builder_panel.setVisible(True)
-            self.builder_layer_combo.setFocus(Qt.TabFocusReason)
+            self._set_builder_panel_open(True, focus=True)
 
     def _build_action_card(self, title: str, description: str, icon_name: str) -> QWidget:
         card = _ModelCardAction(title, description, icon_name, self)
@@ -1436,6 +2394,7 @@ class ModelTab(QWidget):
         active_canvas.add_item(item)
         self._sync_project_from_pages(active_widget.page_id)
         self._dirty = True
+        self._commit_history_if_changed()
         self._refresh_ui_state()
 
     def new_project(self):
@@ -1443,12 +2402,12 @@ class ModelTab(QWidget):
 
     def close_project(self):
         if self.current_project is not None and self._dirty:
-            answer = QMessageBox.question(
+            answer = slim_question(
                 self,
                 _rt("Model"),
                 _rt("O painel atual tem alterações não salvas. Deseja salvar antes de fechar?"),
-                QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
-                QMessageBox.Yes,
+                buttons=QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
+                default_button=QMessageBox.Yes,
             )
             if answer == QMessageBox.Cancel:
                 return
@@ -1469,6 +2428,7 @@ class ModelTab(QWidget):
             self._suspend_canvas_events = False
         self._refresh_builder_layers()
         self._refresh_recents()
+        self._reset_history()
         self._refresh_ui_state()
 
     def _create_blank_project(self, name: str):
@@ -1479,12 +2439,15 @@ class ModelTab(QWidget):
             active_page_id=page.page_id,
         )
         self.current_project.edit_mode = bool(self.edit_mode_btn.isChecked())
+        self.current_project.source_meta["canvas_style"] = self._default_canvas_style()
         self.current_path = ""
         self._dirty = False
         self._rebuild_page_stack(page.page_id)
         self._set_active_page(page.page_id, sync_project=False, update_tabs=False)
         self.set_edit_mode(bool(self.edit_mode_btn.isChecked()))
+        self._apply_canvas_style_to_pages(self._project_canvas_style(), persist=False, mark_dirty=False, record_history=False)
         self._refresh_builder_layers()
+        self._reset_history()
         self._refresh_ui_state()
 
     def open_project(self, path: Optional[str] = None):
@@ -1500,7 +2463,7 @@ class ModelTab(QWidget):
         try:
             project = self.store.load_project(path)
         except Exception as exc:
-            QMessageBox.warning(self, _rt("Model"), _rt("Nao foi possivel abrir o painel: {error}", error=exc))
+            slim_message(self, _rt("Model"), _rt("Nao foi possivel abrir o painel: {error}", error=exc))
             return
         try:
             if bool(project.source_meta.get("_legacy_single_page")) and len(list(project.pages or [])) == 1:
@@ -1514,6 +2477,9 @@ class ModelTab(QWidget):
                     project.set_active_page(legacy_page.page_id)
         except Exception:
             pass
+        source_meta = dict(getattr(project, "source_meta", {}) or {})
+        source_meta["canvas_style"] = self._normalized_canvas_style(source_meta.get("canvas_style"))
+        project.source_meta = source_meta
         self.current_project = project
         self.current_path = self.store.normalize_path(path)
         self._dirty = False
@@ -1525,8 +2491,10 @@ class ModelTab(QWidget):
         finally:
             self.edit_mode_btn.blockSignals(False)
         self.set_edit_mode(bool(project.edit_mode))
+        self._apply_canvas_style_to_pages(self._project_canvas_style(), persist=False, mark_dirty=False, record_history=False)
         self._refresh_builder_layers()
         self._refresh_recents()
+        self._reset_history()
         self._refresh_ui_state()
 
     def import_project(self):
@@ -1555,16 +2523,18 @@ class ModelTab(QWidget):
         try:
             self.current_path = self.store.save_project(target_path, self.current_project)
         except Exception as exc:
-            QMessageBox.warning(self, _rt("Model"), _rt("Nao foi possivel salvar o painel: {error}", error=exc))
+            slim_message(self, _rt("Model"), _rt("Nao foi possivel salvar o painel: {error}", error=exc))
             return
         self._dirty = False
+        self._history_current = self._snapshot_state()
         self._refresh_recents()
+        self._update_undo_redo_buttons()
         self._refresh_ui_state()
 
     def export_project(self):
         active_canvas = self._active_canvas()
         if active_canvas is None or not active_canvas.has_items():
-            QMessageBox.information(self, _rt("Model"), _rt("Adicione ao menos um grafico antes de exportar."))
+            slim_message(self, _rt("Model"), _rt("Adicione ao menos um grafico antes de exportar."))
             return
         suggested_name = (self.current_project_name() or _rt("painel_model")).strip().replace(" ", "_")
         suggested_path = os.path.join(self.store.default_directory(), f"{suggested_name}.png")
@@ -1572,20 +2542,71 @@ class ModelTab(QWidget):
         if not path:
             return
         if not active_canvas.export_image(path):
-            QMessageBox.warning(self, _rt("Model"), _rt("Nao foi possivel exportar a imagem do painel."))
+            slim_message(self, _rt("Model"), _rt("Nao foi possivel exportar a imagem do painel."))
             return
-        QMessageBox.information(self, _rt("Model"), _rt("Painel exportado para:\n{path}", path=path))
+        slim_message(self, _rt("Model"), _rt("Painel exportado para:\n{path}", path=path))
+
+    def _sync_mode_switch_state(self, editing_enabled: bool):
+        state_text = _rt("Edição") if editing_enabled else _rt("Pré-visualizar")
+        self.mode_state_label.setText(state_text)
+        self.mode_state_label.setProperty("modeState", "editing" if editing_enabled else "preview")
+        self.mode_state_label.style().unpolish(self.mode_state_label)
+        self.mode_state_label.style().polish(self.mode_state_label)
+        self.mode_toggle.blockSignals(True)
+        try:
+            self.mode_toggle.setChecked(bool(editing_enabled), animated=False)
+        finally:
+            self.mode_toggle.blockSignals(False)
+
+    def _handle_mode_toggle(self, checked: bool):
+        target = bool(checked)
+        self.edit_mode_btn.blockSignals(True)
+        try:
+            self.edit_mode_btn.setChecked(target)
+        finally:
+            self.edit_mode_btn.blockSignals(False)
+        self.set_edit_mode(target)
+
+    def _set_builder_panel_open(self, enabled: bool, *, focus: bool = False):
+        in_canvas_page = self.body_stack.currentWidget() is self.canvas_page
+        active = bool(enabled) and bool(self.edit_mode_btn.isChecked()) and bool(self.current_project is not None) and in_canvas_page
+        self._builder_panel_open = bool(active)
+        self.builder_panel.setVisible(active)
+        self.create_chart_btn.blockSignals(True)
+        try:
+            if self.create_chart_btn.isChecked() != active:
+                self.create_chart_btn.setChecked(active)
+        finally:
+            self.create_chart_btn.blockSignals(False)
+        if active and focus:
+            try:
+                self.builder_layer_combo.setFocus(Qt.TabFocusReason)
+            except Exception:
+                pass
+
+    def _handle_create_chart_toggle(self, checked: bool):
+        self._set_builder_panel_open(bool(checked), focus=bool(checked))
 
     def set_edit_mode(self, enabled: bool):
+        enabled = bool(enabled)
         for widget in self._page_widgets_in_order():
             try:
                 widget.set_edit_mode(enabled)
             except Exception:
                 continue
-        self.create_chart_btn.setVisible(bool(enabled) and self.current_project is not None)
-        self.builder_panel.setVisible(bool(enabled) and self.body_stack.currentWidget() is self.canvas_page)
+        self.create_chart_btn.setVisible(enabled and self.current_project is not None)
+        if not enabled:
+            self._builder_panel_open = False
+        self._set_builder_panel_open(self._builder_panel_open)
+        if self.edit_mode_btn.isChecked() != enabled:
+            self.edit_mode_btn.blockSignals(True)
+            try:
+                self.edit_mode_btn.setChecked(enabled)
+            finally:
+                self.edit_mode_btn.blockSignals(False)
+        self._sync_mode_switch_state(enabled)
         if self.current_project is not None:
-            self.current_project.edit_mode = bool(enabled)
+            self.current_project.edit_mode = enabled
         self._refresh_ui_state()
 
     def _zoom_canvas_in(self):
@@ -1640,14 +2661,19 @@ class ModelTab(QWidget):
         has_project = self.current_project is not None
         show_project_actions = has_project
         for button in (
+            self.undo_btn,
+            self.redo_btn,
             self.save_btn,
             self.save_as_btn,
             self.export_btn,
-            self.create_chart_btn,
             self.edit_mode_btn,
+            self.settings_btn,
             self.close_project_btn,
         ):
             button.setVisible(show_project_actions)
+        self.create_chart_btn.setVisible(show_project_actions and bool(self.edit_mode_btn.isChecked()))
+        self.mode_switch_wrap.setVisible(show_project_actions)
+        self._update_undo_redo_buttons()
 
     def _handle_canvas_changed(self, page_id: Optional[str] = None):
         if self._suspend_canvas_events:
@@ -1655,6 +2681,7 @@ class ModelTab(QWidget):
         if self.current_project is not None:
             self._sync_project_from_pages(page_id or self._current_page_id())
         self._dirty = True
+        self._commit_history_if_changed()
         self._refresh_ui_state()
 
     def _handle_canvas_filters_changed(self, summary: Dict[str, object], page_id: Optional[str] = None):
@@ -1663,6 +2690,8 @@ class ModelTab(QWidget):
         if not page_id or page_id == self._current_page_id():
             self._update_filters_bar(summary)
         self._dirty = True
+        self._commit_history_if_changed()
+        self._refresh_ui_state()
 
     def _update_filters_bar(self, summary: Optional[Dict[str, object]] = None):
         active_canvas = self._active_canvas()
@@ -1723,10 +2752,6 @@ class ModelTab(QWidget):
         self.recents_layout.addStretch(1)
 
     def _refresh_ui_state(self):
-        project_name = self.current_project_name() or _rt("Nenhum painel aberto")
-        path_text = self.current_path or _rt("Sem arquivo salvo")
-        dirty_suffix = " *" if self._dirty else ""
-        self.project_status_label.setText(f"{project_name}{dirty_suffix} | {path_text}")
         has_project = self.current_project is not None
         self.body_stack.setCurrentWidget(self.canvas_page if has_project else self.empty_page)
         in_canvas_page = self.body_stack.currentWidget() is self.canvas_page
@@ -1748,8 +2773,10 @@ class ModelTab(QWidget):
         self.open_btn.setVisible(True)
         self._update_toolbar_visibility()
         self.close_project_btn.setVisible(has_project)
-        self.builder_panel.setVisible(bool(self.edit_mode_btn.isChecked()) and in_canvas_page)
+        self._set_builder_panel_open(self._builder_panel_open)
         self._update_footer_visibility()
         self._update_filters_bar()
         self.filters_bar.setVisible(bool(self.edit_mode_btn.isChecked()) and self.filters_bar.isVisible())
+        self._sync_mode_switch_state(bool(self.edit_mode_btn.isChecked()))
+        self._update_undo_redo_buttons()
 

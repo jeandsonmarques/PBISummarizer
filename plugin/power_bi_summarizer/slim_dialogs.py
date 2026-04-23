@@ -1,6 +1,6 @@
 ﻿from __future__ import annotations
 
-from typing import Iterable, List, Optional, Sequence, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 from qgis.PyQt.QtCore import QByteArray, QSettings, Qt
 from qgis.PyQt.QtGui import QColor, QFont, QIcon
@@ -16,8 +16,10 @@ from qgis.PyQt.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QMessageBox,
     QPushButton,
     QSpinBox,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -213,6 +215,21 @@ QPushButton#SlimSecondaryButton {
 QPushButton#SlimSecondaryButton:hover {
     background: #F8FAFC;
     border-color: #CBD5E1;
+}
+QToolButton#SlimPopoverCloseButton {
+    min-width: 22px;
+    max-width: 22px;
+    min-height: 22px;
+    max-height: 22px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: #6B7280;
+    font-size: 14px;
+}
+QToolButton#SlimPopoverCloseButton:hover {
+    color: #111827;
+    background: #F3F4F6;
 }
 """
 
@@ -491,6 +508,176 @@ class SlimMessageDialog(SlimPopoverDialog):
         self.panel_layout.addLayout(actions)
 
         self.accept_button.clicked.connect(self.accept)
+
+
+class SlimChoiceDialog(SlimPopoverDialog):
+    """Reusable message dialog with configurable StandardButtons."""
+
+    _BUTTON_ORDER = (
+        QMessageBox.Yes,
+        QMessageBox.No,
+        QMessageBox.Ok,
+        QMessageBox.Cancel,
+        QMessageBox.Save,
+        QMessageBox.Discard,
+        QMessageBox.Close,
+        QMessageBox.Abort,
+        QMessageBox.Retry,
+        QMessageBox.Ignore,
+    )
+
+    def __init__(
+        self,
+        title: str,
+        text: str,
+        parent: Optional[QWidget] = None,
+        *,
+        helper_text: str = "",
+        buttons: int = QMessageBox.Ok,
+        default_button: int = QMessageBox.NoButton,
+        icon: Optional[QIcon] = None,
+        geometry_key: str = "",
+    ):
+        super().__init__(parent, geometry_key=geometry_key)
+        self.setWindowTitle(title)
+        self.setMinimumWidth(420)
+        self.setMaximumWidth(520)
+        self._result_button = QMessageBox.NoButton
+        self._buttons = self._resolve_buttons(buttons)
+        self._default_button = self._resolve_default_button(default_button)
+
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.setSpacing(10)
+
+        if icon is not None and not icon.isNull():
+            icon_wrap = QFrame(self.panel)
+            icon_wrap.setObjectName("SlimPopoverIconWrap")
+            icon_layout = QVBoxLayout(icon_wrap)
+            icon_layout.setContentsMargins(0, 0, 0, 0)
+            icon_layout.setSpacing(0)
+            icon_label = QLabel(icon_wrap)
+            icon_label.setObjectName("SlimPopoverIcon")
+            icon_label.setPixmap(icon.pixmap(14, 14))
+            icon_label.setAlignment(Qt.AlignCenter)
+            icon_layout.addWidget(icon_label)
+            header.addWidget(icon_wrap, 0, Qt.AlignTop)
+
+        title_column = QVBoxLayout()
+        title_column.setContentsMargins(0, 0, 0, 0)
+        title_column.setSpacing(2)
+
+        title_label = QLabel(title, self.panel)
+        title_label.setObjectName("SlimPopoverTitle")
+        title_column.addWidget(title_label)
+
+        if helper_text:
+            subtitle_label = QLabel(helper_text, self.panel)
+            subtitle_label.setObjectName("SlimPopoverSubtitle")
+            subtitle_label.setWordWrap(True)
+            title_column.addWidget(subtitle_label)
+
+        header.addLayout(title_column, 1)
+        close_btn = QToolButton(self.panel)
+        close_btn.setObjectName("SlimPopoverCloseButton")
+        close_btn.setText("×")
+        close_btn.clicked.connect(self.reject)
+        header.addWidget(close_btn, 0, Qt.AlignTop)
+        self.panel_layout.addLayout(header)
+
+        body_label = QLabel(text, self.panel)
+        body_label.setObjectName("SlimMessageBody")
+        body_label.setWordWrap(True)
+        body_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.panel_layout.addWidget(body_label)
+
+        actions = QHBoxLayout()
+        actions.setContentsMargins(0, 2, 0, 0)
+        actions.setSpacing(8)
+        actions.addStretch(1)
+
+        self._button_widgets: Dict[int, QPushButton] = {}
+        for button in self._buttons:
+            action = QPushButton(self._button_label(button), self.panel)
+            is_primary = button == self._default_button
+            action.setObjectName("SlimPrimaryButton" if is_primary else "SlimSecondaryButton")
+            action.setDefault(is_primary)
+            action.clicked.connect(lambda checked=False, value=button: self._choose(value))
+            actions.addWidget(action, 0)
+            self._button_widgets[int(button)] = action
+        self.panel_layout.addLayout(actions)
+
+    @staticmethod
+    def _translate(text: str) -> str:
+        try:
+            from .utils.i18n_runtime import tr_text as _rt
+
+            return _rt(text)
+        except Exception:
+            return text
+
+    def _button_label(self, button: int) -> str:
+        labels = {
+            int(QMessageBox.Ok): self._translate("OK"),
+            int(QMessageBox.Cancel): self._translate("Cancelar"),
+            int(QMessageBox.Yes): self._translate("Sim"),
+            int(QMessageBox.No): self._translate("Não"),
+            int(QMessageBox.Save): self._translate("Salvar"),
+            int(QMessageBox.Discard): self._translate("Descartar"),
+            int(QMessageBox.Close): self._translate("Fechar"),
+            int(QMessageBox.Abort): self._translate("Abortar"),
+            int(QMessageBox.Retry): self._translate("Tentar novamente"),
+            int(QMessageBox.Ignore): self._translate("Ignorar"),
+        }
+        return labels.get(int(button), self._translate("OK"))
+
+    def _resolve_buttons(self, buttons_mask: int) -> List[int]:
+        try:
+            parsed_mask = int(buttons_mask)
+        except Exception:
+            parsed_mask = int(QMessageBox.Ok)
+        result: List[int] = []
+        for button in self._BUTTON_ORDER:
+            try:
+                if parsed_mask & int(button):
+                    result.append(int(button))
+            except Exception:
+                continue
+        if not result:
+            result = [int(QMessageBox.Ok)]
+        return result
+
+    def _resolve_default_button(self, button: int) -> int:
+        try:
+            default_button = int(button)
+        except Exception:
+            default_button = int(QMessageBox.NoButton)
+        if default_button in self._buttons:
+            return default_button
+        for candidate in (int(QMessageBox.Ok), int(QMessageBox.Yes), int(QMessageBox.Save)):
+            if candidate in self._buttons:
+                return candidate
+        return self._buttons[0]
+
+    def _fallback_button(self) -> int:
+        for candidate in (int(QMessageBox.Cancel), int(QMessageBox.No), int(QMessageBox.Close), int(QMessageBox.Ok)):
+            if candidate in self._buttons:
+                return candidate
+        return self._buttons[0]
+
+    def _choose(self, button: int):
+        self._result_button = int(button)
+        self.accept()
+
+    def reject(self):
+        if int(self._result_button) == int(QMessageBox.NoButton):
+            self._result_button = self._fallback_button()
+        super().reject()
+
+    def selected_button(self) -> int:
+        if int(self._result_button) == int(QMessageBox.NoButton):
+            return self._fallback_button()
+        return int(self._result_button)
 
 
 class SlimChecklistDialog(SlimDialogBase):
@@ -786,6 +973,31 @@ def slim_message(
         geometry_key=geometry_key,
     )
     return dialog.exec_() == QDialog.Accepted
+
+
+def slim_question(
+    parent: Optional[QWidget],
+    title: str,
+    text: str,
+    *,
+    helper_text: str = "",
+    buttons: int = QMessageBox.Yes | QMessageBox.No,
+    default_button: int = QMessageBox.No,
+    icon: Optional[QIcon] = None,
+    geometry_key: str = "",
+) -> int:
+    dialog = SlimChoiceDialog(
+        title=title,
+        text=text,
+        parent=parent,
+        helper_text=helper_text,
+        buttons=buttons,
+        default_button=default_button,
+        icon=icon,
+        geometry_key=geometry_key,
+    )
+    dialog.exec_()
+    return int(dialog.selected_button())
 
 
 def slim_get_int(

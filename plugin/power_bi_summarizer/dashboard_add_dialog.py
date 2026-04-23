@@ -122,15 +122,22 @@ class DashboardAddDialog(QDialog):
             """
             QDialog#ModelAddDialog {
                 background: #FFFFFF;
+                border: 1px solid #D1D5DB;
+                border-radius: 14px;
             }
             QFrame#ModelDialogOptionsCard {
                 background: #FFFFFF;
                 border: 1px solid #E5E7EB;
-                border-radius: 14px;
+                border-radius: 12px;
             }
             QDialog#ModelAddDialog QLabel {
                 color: #1F2937;
                 font-weight: 400;
+            }
+            QDialog#ModelAddDialog QLabel[cardTitle="true"] {
+                color: #111827;
+                font-size: 22px;
+                font-weight: 700;
             }
             QLineEdit#ModelDialogLineEdit {
                 min-height: 36px;
@@ -144,19 +151,28 @@ class DashboardAddDialog(QDialog):
             QPushButton#ModelDialogSecondaryButton {
                 min-height: 36px;
                 padding: 0 14px;
-                color: #111827;
-                background: #FFFFFF;
-                border: 1px solid #D1D5DB;
                 border-radius: 10px;
-                font-weight: 400;
+                font-size: 13px;
             }
-            QPushButton#ModelDialogPrimaryButton:hover,
             QPushButton#ModelDialogSecondaryButton:hover {
                 background: #F9FAFB;
                 border-color: #9CA3AF;
             }
-            QPushButton#ModelDialogPrimaryButton {
+            QPushButton#ModelDialogSecondaryButton {
+                color: #111827;
+                background: #FFFFFF;
+                border: 1px solid #D1D5DB;
                 font-weight: 500;
+            }
+            QPushButton#ModelDialogPrimaryButton {
+                color: #FFFFFF;
+                background: #111827;
+                border: 1px solid #111827;
+                font-weight: 600;
+            }
+            QPushButton#ModelDialogPrimaryButton:hover {
+                background: #1F2937;
+                border-color: #1F2937;
             }
             """
         )

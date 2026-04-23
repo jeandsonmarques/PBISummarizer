@@ -42,10 +42,15 @@ class _DashboardCanvasSurface(QWidget):
         super().paintEvent(event)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        painter.fillRect(self.rect(), QColor("#FFFFFF"))
+        painter.fillRect(self.rect(), QColor(self._canvas._background_color))
 
-        if self._canvas._edit_mode:
-            grid_pen = QPen(QColor("#F3F4F6"))
+        if self._canvas._edit_mode and self._canvas._show_grid:
+            grid_color = QColor(self._canvas._grid_color)
+            try:
+                grid_color.setAlphaF(max(0.1, min(1.0, float(self._canvas._grid_opacity))))
+            except Exception:
+                pass
+            grid_pen = QPen(grid_color)
             grid_pen.setWidth(1)
             painter.setPen(grid_pen)
             grid_size = max(4, int(round(self._canvas.grid_size * max(self._canvas._zoom, 0.0001))))
@@ -181,6 +186,10 @@ class DashboardCanvas(QWidget):
         self._min_zoom = 0.6
         self._max_zoom = 2.0
         self._zoom_step = 1.15
+        self._background_color = QColor("#FFFFFF")
+        self._grid_color = QColor("#E5E7EB")
+        self._show_grid = True
+        self._grid_opacity = 0.72
         self.interaction_manager = ModelInteractionManager(self)
         self.interaction_manager.filtersChanged.connect(self.filtersChanged.emit)
 
@@ -189,18 +198,93 @@ class DashboardCanvas(QWidget):
         root.setSpacing(0)
 
         self.scroll = QScrollArea(self)
+        self.scroll.setObjectName("DashboardCanvasScrollArea")
         self.scroll.setWidgetResizable(True)
         self.scroll.setFrameShape(QFrame.NoFrame)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         root.addWidget(self.scroll, 1)
 
         self.surface = _DashboardCanvasSurface(self, self.scroll)
         self.scroll.setWidget(self.surface)
+        self.scroll.horizontalScrollBar().setObjectName("DashboardCanvasHScrollBar")
+        self.scroll.verticalScrollBar().setObjectName("DashboardCanvasVScrollBar")
 
         self.setStyleSheet(
             """
             QWidget#DashboardCanvasRoot,
             QWidget#DashboardCanvasSurface {
                 background: #FFFFFF;
+            }
+            QScrollArea#DashboardCanvasScrollArea {
+                border: none;
+                background: transparent;
+            }
+            QScrollArea#DashboardCanvasScrollArea::corner {
+                background: transparent;
+                border: none;
+            }
+            QScrollBar#DashboardCanvasHScrollBar:horizontal {
+                height: 11px;
+                background: transparent;
+                margin: 0 18px 0 6px;
+            }
+            QScrollBar#DashboardCanvasHScrollBar::handle:horizontal {
+                min-width: 44px;
+                border-radius: 5px;
+                border: 1px solid #BFC6D2;
+                background: #C9D0DB;
+            }
+            QScrollBar#DashboardCanvasHScrollBar::handle:horizontal:hover {
+                background: #AEB8C8;
+                border-color: #A7B1C0;
+            }
+            QScrollBar#DashboardCanvasHScrollBar::add-line:horizontal,
+            QScrollBar#DashboardCanvasHScrollBar::sub-line:horizontal {
+                width: 0px;
+                border: none;
+                background: transparent;
+            }
+            QScrollBar#DashboardCanvasHScrollBar::add-page:horizontal,
+            QScrollBar#DashboardCanvasHScrollBar::sub-page:horizontal {
+                background: transparent;
+            }
+            QScrollBar#DashboardCanvasHScrollBar::left-arrow:horizontal,
+            QScrollBar#DashboardCanvasHScrollBar::right-arrow:horizontal {
+                width: 0px;
+                height: 0px;
+                background: transparent;
+            }
+            QScrollBar#DashboardCanvasVScrollBar:vertical {
+                width: 11px;
+                background: transparent;
+                margin: 6px 0 18px 0;
+            }
+            QScrollBar#DashboardCanvasVScrollBar::handle:vertical {
+                min-height: 44px;
+                border-radius: 5px;
+                border: 1px solid #BFC6D2;
+                background: #C9D0DB;
+            }
+            QScrollBar#DashboardCanvasVScrollBar::handle:vertical:hover {
+                background: #AEB8C8;
+                border-color: #A7B1C0;
+            }
+            QScrollBar#DashboardCanvasVScrollBar::add-line:vertical,
+            QScrollBar#DashboardCanvasVScrollBar::sub-line:vertical {
+                height: 0px;
+                border: none;
+                background: transparent;
+            }
+            QScrollBar#DashboardCanvasVScrollBar::add-page:vertical,
+            QScrollBar#DashboardCanvasVScrollBar::sub-page:vertical {
+                background: transparent;
+            }
+            QScrollBar#DashboardCanvasVScrollBar::up-arrow:vertical,
+            QScrollBar#DashboardCanvasVScrollBar::down-arrow:vertical {
+                width: 0px;
+                height: 0px;
+                background: transparent;
             }
             """
         )
@@ -452,6 +536,47 @@ class DashboardCanvas(QWidget):
         for widget in self._widgets.values():
             widget.set_edit_mode(self._edit_mode)
         self.surface.update()
+
+    def set_canvas_style(
+        self,
+        *,
+        background_color: Optional[object] = None,
+        grid_color: Optional[object] = None,
+        show_grid: Optional[bool] = None,
+        grid_size: Optional[object] = None,
+        grid_opacity: Optional[object] = None,
+    ):
+        if background_color is not None:
+            candidate = QColor(str(background_color))
+            if candidate.isValid():
+                self._background_color = candidate
+        if grid_color is not None:
+            candidate = QColor(str(grid_color))
+            if candidate.isValid():
+                self._grid_color = candidate
+        if show_grid is not None:
+            self._show_grid = bool(show_grid)
+        if grid_size is not None:
+            try:
+                parsed_grid_size = int(round(float(grid_size)))
+                self.grid_size = max(4, min(48, parsed_grid_size))
+            except Exception:
+                pass
+        if grid_opacity is not None:
+            try:
+                self._grid_opacity = max(0.1, min(1.0, float(grid_opacity)))
+            except Exception:
+                pass
+        self.surface.update()
+
+    def canvas_style(self) -> Dict[str, object]:
+        return {
+            "background": self._background_color.name().upper(),
+            "grid_color": self._grid_color.name().upper(),
+            "show_grid": bool(self._show_grid),
+            "grid_size": int(self.grid_size),
+            "grid_opacity": float(self._grid_opacity),
+        }
 
     def export_image(self, path: str) -> bool:
         try:

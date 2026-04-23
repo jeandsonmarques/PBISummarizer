@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 from pandas.api import types as ptypes
 from qgis.PyQt.QtCore import QByteArray, QEvent, QItemSelection, QItemSelectionModel, QMimeData, QRect, QRegExp, QSettings, QSize, QTimer, Qt, QSortFilterProxyModel, QVariant
-from qgis.PyQt.QtGui import QCursor, QDrag, QMouseEvent, QColor, QFont, QFontMetrics, QIcon, QPainter, QPalette, QPen, QPixmap, QStandardItem, QStandardItemModel
+from qgis.PyQt.QtGui import QCursor, QDrag, QMouseEvent, QColor, QFont, QFontMetrics, QIcon, QKeySequence, QPainter, QPalette, QPen, QPixmap, QStandardItem, QStandardItemModel
 from qgis.PyQt.QtWidgets import (
     QAbstractItemView,
     QAbstractScrollArea,
@@ -31,6 +31,7 @@ from qgis.PyQt.QtWidgets import (
     QPushButton,
     QLayout,
     QScrollArea,
+    QShortcut,
     QSizePolicy,
     QSplitter,
     QStackedWidget,
@@ -58,7 +59,9 @@ from qgis.core import (
 )
 
 from .palette import TYPOGRAPHY
+from .slim_dialogs import slim_message
 from .utils.i18n_runtime import apply_widget_translations as _apply_i18n_widgets, tr_text as _rt
+from .utils.resources import svg_icon
 from .report_view.pivot import (
     PivotEngine,
     PivotExportService,
@@ -1930,11 +1933,7 @@ class PivotTableWidget(QWidget):
     def _open_spreadsheet_source_menu(self):
         panel = self._integration_panel()
         if panel is None:
-            QMessageBox.information(
-                self,
-                _rt("Resumo"),
-                _rt("O painel de integração ainda não está disponível."),
-            )
+            slim_message(self, _rt("Resumo"), _rt("O painel de integração ainda não está disponível."))
             return
         menu = QMenu(self)
         excel_action = menu.addAction(_rt("Importar Excel (.xlsx / .xls)"))
@@ -1948,11 +1947,7 @@ class PivotTableWidget(QWidget):
     def _open_postgres_source(self):
         panel = self._integration_panel()
         if panel is None or not hasattr(panel, "_handle_sql_database"):
-            QMessageBox.information(
-                self,
-                _rt("Resumo"),
-                _rt("O fluxo de PostgreSQL não está disponível no momento."),
-            )
+            slim_message(self, _rt("Resumo"), _rt("O fluxo de PostgreSQL não está disponível no momento."))
             return
         panel._handle_sql_database()
 
@@ -1963,11 +1958,7 @@ class PivotTableWidget(QWidget):
 
             open_cloud_dialog(host or self)
         except Exception as exc:
-            QMessageBox.information(
-                self,
-                _rt("Cloud Beta"),
-                _rt("Não foi possível abrir a integração cloud.\n{exc}", exc=exc),
-            )
+            slim_message(self, _rt("Cloud Beta"), _rt("Não foi possível abrir a integração cloud.\n{exc}", exc=exc))
         self._apply_runtime_i18n()
 
     def show_welcome_prompt(self):
@@ -4875,9 +4866,7 @@ class PivotTableWidget(QWidget):
 
     def _export_pivot_table(self):
         if self.pivot_df is None or self.pivot_df.empty:
-            QMessageBox.information(
-                self, _rt("Exportar tabela dinâmica"), _rt("Não há dados para exportar.")
-            )
+            slim_message(self, _rt("Exportar tabela dinâmica"), _rt("Não há dados para exportar."))
             return
 
         path, selected_filter = QFileDialog.getSaveFileName(
@@ -4922,14 +4911,14 @@ class PivotTableWidget(QWidget):
                     path += ".gpkg"
                 self._export_to_gpkg(path)
         except Exception as exc:
-            QMessageBox.critical(
+            slim_message(
                 self,
                 _rt("Exportar tabela dinâmica"),
                 _rt("Falha ao exportar a tabela dinâmica: {exc}", exc=exc),
             )
             return
 
-        QMessageBox.information(
+        slim_message(
             self,
             _rt("Exportar tabela dinâmica"),
             _rt("Tabela dinâmica exportada para:\n{path}{success_note}", path=path, success_note=success_note),

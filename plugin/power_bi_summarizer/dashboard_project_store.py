@@ -57,6 +57,18 @@ class DashboardProjectStore:
         with open(final_path, "r", encoding="utf-8") as handler:
             payload = json.load(handler)
         project = DashboardProject.from_dict(payload)
+        for page in list(project.pages or []):
+            try:
+                normalized_page = page.normalized()
+                page.page_id = normalized_page.page_id
+                page.title = normalized_page.title
+                page.items = [item.clone() for item in list(normalized_page.items or [])]
+                page.visual_links = [item for item in list(normalized_page.visual_links or [])]
+                page.chart_relations = [item for item in list(normalized_page.chart_relations or [])]
+                page.zoom = float(normalized_page.zoom or 1.0)
+                page.filters = dict(normalized_page.filters or {})
+            except Exception:
+                continue
         for item in list(project.items or []):
             try:
                 binding = item.binding.normalized()

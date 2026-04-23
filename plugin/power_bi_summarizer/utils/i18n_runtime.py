@@ -61,6 +61,13 @@ _FALLBACK = {
         "O campo de metrica nao existe na camada selecionada.": "The metric field does not exist in the selected layer.",
         "Fechar projeto e voltar para a tela inicial": "Close project and return to the home screen",
         "O painel atual tem alterações não salvas. Deseja salvar antes de fechar?": "The current panel has unsaved changes. Do you want to save before closing?",
+        "Adicionar pagina": "Add page",
+        "Pagina {index}": "Page {index}",
+        "Renomear pagina": "Rename page",
+        "Novo nome da pagina": "New page name",
+        "Excluir pagina": "Delete page",
+        "O painel precisa manter ao menos uma pagina.": "The panel must keep at least one page.",
+        "Excluir a pagina \"{title}\"?": "Delete the page \"{title}\"?",
     },
     "es": {
         "Idioma": "Idioma",
@@ -90,6 +97,13 @@ _FALLBACK = {
         "O campo de metrica nao existe na camada selecionada.": "El campo de métrica no existe en la capa seleccionada.",
         "Fechar projeto e voltar para a tela inicial": "Cerrar el proyecto y volver a la pantalla inicial",
         "O painel atual tem alterações não salvas. Deseja salvar antes de fechar?": "El panel actual tiene cambios sin guardar. ¿Desea guardar antes de cerrarlo?",
+        "Adicionar pagina": "Agregar página",
+        "Pagina {index}": "Página {index}",
+        "Renomear pagina": "Renombrar página",
+        "Novo nome da pagina": "Nuevo nombre de la página",
+        "Excluir pagina": "Eliminar página",
+        "O painel precisa manter ao menos uma pagina.": "El panel debe conservar al menos una página.",
+        "Excluir a pagina \"{title}\"?": "¿Eliminar la página \"{title}\"?",
     },
 }
 

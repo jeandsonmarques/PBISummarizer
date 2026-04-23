@@ -122,6 +122,16 @@ class ModelInteractionManager(QObject):
         self._active_filters.clear()
         self._apply_all_filters()
 
+    def set_active_filters(self, filters: Optional[Dict[str, Dict[str, Any]]] = None):
+        normalized: Dict[str, Dict[str, Any]] = {}
+        for key, value in dict(filters or {}).items():
+            filter_key = str(key or "").strip()
+            if not filter_key:
+                continue
+            normalized[filter_key] = dict(value or {})
+        self._active_filters = normalized
+        self._apply_all_filters()
+
     # ------------------------------------------------------------------ Queries
     def active_filters(self) -> Dict[str, Dict[str, Any]]:
         return {str(key): dict(value or {}) for key, value in self._active_filters.items()}

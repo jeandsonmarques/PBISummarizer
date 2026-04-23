@@ -296,6 +296,9 @@ class DashboardCanvas(QWidget):
     def reset_zoom(self):
         self._apply_zoom(1.0)
 
+    def zoom_value(self) -> float:
+        return float(self._zoom)
+
     def set_items(
         self,
         items: List[DashboardChartItem],
@@ -437,6 +440,12 @@ class DashboardCanvas(QWidget):
 
     def clear_filters(self):
         self.interaction_manager.clear_filters()
+
+    def active_filters(self) -> Dict[str, Dict[str, object]]:
+        return self.interaction_manager.active_filters()
+
+    def set_active_filters(self, filters: Optional[Dict[str, Dict[str, object]]] = None):
+        self.interaction_manager.set_active_filters(filters)
 
     def set_edit_mode(self, enabled: bool):
         self._edit_mode = bool(enabled)

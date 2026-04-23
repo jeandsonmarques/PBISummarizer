@@ -662,7 +662,7 @@ class DashboardProject:
             return self.pages[0].normalized()
         return DashboardPage(
             page_id=self.active_page_id or uuid.uuid4().hex,
-            title=self.name or "Page 1",
+            title="Page 1",
             items=[item.clone() for item in list(self.items or [])],
             visual_links=[DashboardVisualLink.from_dict(link.to_dict()) for link in list(self.visual_links or [])],
             chart_relations=[DashboardChartRelation.from_dict(rel.to_dict()) for rel in list(self.chart_relations or [])],
@@ -706,6 +706,7 @@ class DashboardProject:
     def from_dict(cls, data: Optional[Dict[str, Any]]) -> "DashboardProject":
         payload = dict(data or {})
         raw_pages = list(payload.get("pages") or [])
+        legacy_single_page = not raw_pages
         pages = [DashboardPage.from_dict(item) for item in raw_pages if isinstance(item, dict)]
         legacy_items = [DashboardChartItem.from_dict(item) for item in list(payload.get("items") or [])]
         legacy_links = [DashboardVisualLink.from_dict(item) for item in list(payload.get("visual_links") or [])]
@@ -715,7 +716,7 @@ class DashboardProject:
             pages = [
                 DashboardPage(
                     page_id=active_page_id or uuid.uuid4().hex,
-                    title=str(payload.get("page_title") or payload.get("name") or "Page 1"),
+                    title=str(payload.get("page_title") or "Page 1"),
                     items=legacy_items,
                     visual_links=legacy_links,
                     chart_relations=legacy_relations,
@@ -739,6 +740,8 @@ class DashboardProject:
             edit_mode=bool(payload.get("edit_mode", True)),
             source_meta=dict(payload.get("source_meta") or {}),
         )
+        if legacy_single_page:
+            project.source_meta["_legacy_single_page"] = True
         project.items.sort(key=lambda item: (item.layout.y, item.layout.x, item.created_at))
         project._normalize_graph_state()
         return project

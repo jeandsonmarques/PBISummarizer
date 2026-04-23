@@ -28,7 +28,9 @@ from qgis.core import QgsProject, QgsVectorLayer
 
 from .dashboard_add_dialog import DashboardAddDialog
 from .dashboard_canvas import DashboardCanvas
-from .dashboard_models import DashboardChartBinding, DashboardChartItem, DashboardProject
+from .dashboard_models import DashboardChartBinding, DashboardChartItem, DashboardPage, DashboardProject
+from .dashboard_page_widget import DashboardPageWidget
+from .dashboard_page_strip import DashboardPageStrip
 from .dashboard_project_store import DashboardProjectStore, PROJECT_EXTENSION
 from .report_view.chart_factory import ChartVisualState
 from .report_view.result_models import ChartPayload
@@ -142,7 +144,11 @@ class ModelTab(QWidget):
         self._dirty = False
         self._syncing_zoom_controls = False
         self._suspend_canvas_events = False
+        self._is_adding_page = False
         self._builder_layers: Dict[str, QgsVectorLayer] = {}
+        self._page_widgets: Dict[str, DashboardPageWidget] = {}
+        self._selected_page_id: str = ""
+        self.canvas: Optional[DashboardCanvas] = None
 
         root = QVBoxLayout(self)
         root.setContentsMargins(18, 18, 18, 18)
@@ -284,8 +290,10 @@ class ModelTab(QWidget):
         canvas_page_layout.setContentsMargins(0, 0, 0, 0)
         canvas_page_layout.setSpacing(10)
 
-        self.canvas = DashboardCanvas(self.canvas_page)
-        canvas_page_layout.addWidget(self.canvas, 1)
+        self.page_stack = QStackedWidget(self.canvas_page)
+        self.page_stack.setObjectName("ModelPageStack")
+        self.page_stack.currentChanged.connect(self._handle_page_stack_current_changed)
+        canvas_page_layout.addWidget(self.page_stack, 1)
 
         self.builder_panel = self._build_chart_builder_panel(self.canvas_page)
         self.builder_panel.setFixedWidth(300)
@@ -297,12 +305,14 @@ class ModelTab(QWidget):
         self.footer_bar = QFrame(self)
         self.footer_bar.setObjectName("ModelFooterBar")
         self.footer_bar.setAttribute(Qt.WA_StyledBackground, True)
-        self.footer_bar.setFixedHeight(30)
+        self.footer_bar.setFixedHeight(42)
         self.footer_bar.setVisible(False)
         footer_layout = QHBoxLayout(self.footer_bar)
-        footer_layout.setContentsMargins(4, 2, 4, 2)
-        footer_layout.setSpacing(4)
-        footer_layout.addStretch(1)
+        footer_layout.setContentsMargins(4, 3, 4, 3)
+        footer_layout.setSpacing(6)
+
+        self.page_strip = DashboardPageStrip(self.footer_bar)
+        footer_layout.addWidget(self.page_strip, 1)
 
         self.zoom_label = QLabel("100%")
         self.zoom_label.setObjectName("ModelZoomLabel")
@@ -342,10 +352,11 @@ class ModelTab(QWidget):
         self.zoom_slider.valueChanged.connect(self._zoom_slider_changed)
         self.edit_mode_btn.toggled.connect(self.set_edit_mode)
         self.close_project_btn.clicked.connect(self.close_project)
-        self.canvas.itemsChanged.connect(self._handle_canvas_changed)
-        self.canvas.filtersChanged.connect(self._handle_canvas_filters_changed)
-        self.canvas.zoomChanged.connect(self._handle_canvas_zoom_changed)
-        self.canvas.emptyCanvasContextMenuRequested.connect(self._open_canvas_context_menu)
+        self.page_strip.pageAddRequested.connect(self._add_page)
+        self.page_strip.pageSelected.connect(self._set_active_page)
+        self.page_strip.pageRenameRequested.connect(self._rename_page_by_id)
+        self.page_strip.pageDeleteRequested.connect(self._delete_page_by_id)
+        self.page_strip.tabMoved.connect(self._handle_page_tabs_moved)
 
         self.setStyleSheet(
             """
@@ -383,8 +394,93 @@ class ModelTab(QWidget):
                 border-radius: 16px;
             }
             QFrame#ModelFooterBar {
-                background: transparent;
+                background: #FFFFFF;
                 border-top: 1px solid #E5E7EB;
+            }
+            QWidget#ModelPageStrip {
+                background: transparent;
+            }
+            QScrollArea#ModelPageStripScrollArea {
+                background: transparent;
+                border: none;
+            }
+            QWidget#ModelPageStripContent {
+                background: transparent;
+            }
+            QWidget#ModelPageStripTab {
+                background: transparent;
+                border-bottom: 2px solid transparent;
+                border-radius: 0px;
+                margin-right: 2px;
+                color: #6B7280;
+                font-size: 12px;
+                font-weight: 500;
+            }
+            QWidget#ModelPageStripTab:hover {
+                background: #F8FAFC;
+                color: #111827;
+            }
+            QWidget#ModelPageStripTab[selected="true"] {
+                color: #111827;
+                font-weight: 600;
+                border-bottom-color: #5B4CF0;
+                background: transparent;
+            }
+            QLabel#ModelPageStripTabTitle {
+                color: #6B7280;
+                background: transparent;
+                font-size: 12px;
+                font-weight: 500;
+            }
+            QLabel#ModelPageStripTabTitle[selected="true"] {
+                color: #111827;
+                font-weight: 600;
+            }
+            QLineEdit#ModelPageStripTabEdit {
+                min-height: 22px;
+                border: 1px solid #818CF8;
+                border-radius: 6px;
+                padding: 0 6px;
+                background: #FFFFFF;
+                color: #111827;
+                font-size: 12px;
+            }
+            QToolButton#ModelPageStripTabMenu,
+            QToolButton#ModelPageStripTabClose,
+            QToolButton#ModelPageStripNavButton {
+                min-width: 16px;
+                min-height: 16px;
+                border: none;
+                background: transparent;
+                color: #6B7280;
+                font-size: 12px;
+                padding: 0px;
+            }
+            QToolButton#ModelPageStripTabMenu:hover,
+            QToolButton#ModelPageStripTabClose:hover,
+            QToolButton#ModelPageStripNavButton:hover {
+                color: #111827;
+                background: #F3F4F6;
+                border-radius: 6px;
+            }
+            QToolButton#ModelPageStripAddButton {
+                min-height: 24px;
+                min-width: 66px;
+                padding: 0 10px;
+                color: #4B5563;
+                background: #FFFFFF;
+                border: 1px solid #D1D5DB;
+                border-radius: 10px;
+                font-size: 12px;
+                font-weight: 500;
+            }
+            QToolButton#ModelPageStripAddButton:hover {
+                background: #F9FAFB;
+                border-color: #9CA3AF;
+                color: #111827;
+            }
+            QToolButton#ModelPageStripAddButton:pressed {
+                background: #E5E7EB;
             }
             QFrame#ModelBuilderPanel {
                 background: #F8FAFC;
@@ -714,6 +810,385 @@ class ModelTab(QWidget):
             pass
         return ""
 
+    def _page_widgets_in_order(self) -> List[DashboardPageWidget]:
+        widgets: List[DashboardPageWidget] = []
+        if not hasattr(self, "page_stack"):
+            return widgets
+        for index in range(self.page_stack.count()):
+            widget = self.page_stack.widget(index)
+            if isinstance(widget, DashboardPageWidget):
+                widgets.append(widget)
+        return widgets
+
+    def _page_widget_for_id(self, page_id: str) -> Optional[DashboardPageWidget]:
+        key = str(page_id or "").strip()
+        if not key:
+            return None
+        widget = self._page_widgets.get(key)
+        if widget is not None:
+            return widget
+        for candidate in self._page_widgets.values():
+            if getattr(candidate, "page_id", "") == key:
+                return candidate
+        for candidate in self._page_widgets.values():
+            try:
+                if candidate.page_id == key:
+                    return candidate
+            except Exception:
+                continue
+        return None
+
+    def _clear_page_tab_buttons(self):
+        if hasattr(self, "page_strip"):
+            self.page_strip.clear_pages()
+
+    def _scroll_page_tabs(self, delta: int):
+        if hasattr(self, "page_strip"):
+            self.page_strip.scroll_by(delta)
+
+    def _ensure_page_button_visible(self, page_id: str):
+        if hasattr(self, "page_strip"):
+            self.page_strip.ensure_page_visible(page_id)
+
+    def _select_page_button(self, page_id: str):
+        target_id = str(page_id or "").strip()
+        self._selected_page_id = target_id
+        if hasattr(self, "page_strip"):
+            self.page_strip.set_active_page(target_id)
+
+    def _handle_page_tabs_moved(self, from_index: int, to_index: int):
+        if self.current_project is None or not hasattr(self, "page_strip"):
+            return
+        order = list(self.page_strip.page_ids() or [])
+        if not order:
+            return
+        if len(order) != len(self._page_widgets):
+            self._rebuild_page_stack(self._current_page_id())
+            return
+        existing_widgets = dict(self._page_widgets)
+        current_id = self._current_page_id() or self.current_project.active_page_id or order[0]
+        self._suspend_canvas_events = True
+        try:
+            if hasattr(self, "page_stack"):
+                while self.page_stack.count():
+                    widget = self.page_stack.widget(0)
+                    self.page_stack.removeWidget(widget)
+            ordered_widgets: Dict[str, DashboardPageWidget] = {}
+            for page_id in order:
+                widget = existing_widgets.pop(page_id, None)
+                if widget is None:
+                    continue
+                self.page_stack.addWidget(widget)
+                ordered_widgets[page_id] = widget
+            for widget in list(existing_widgets.values()):
+                try:
+                    widget.setParent(None)
+                    widget.deleteLater()
+                except Exception:
+                    pass
+            self._page_widgets = ordered_widgets
+            self._selected_page_id = str(current_id or "").strip()
+            self._set_active_page(str(current_id or ""), sync_project=False, update_tabs=True)
+            self._sync_project_from_pages(str(current_id or ""))
+        finally:
+            self._suspend_canvas_events = False
+        self._dirty = True
+        self._refresh_ui_state()
+
+    def _handle_page_stack_current_changed(self, index: int):
+        if self._suspend_canvas_events or index < 0:
+            return
+        widget = self.page_stack.widget(index) if hasattr(self, "page_stack") else None
+        if not isinstance(widget, DashboardPageWidget):
+            return
+        self.canvas = widget.canvas
+        self._selected_page_id = str(widget.page_id or "").strip()
+        if hasattr(self, "page_strip"):
+            self.page_strip.set_active_page(widget.page_id)
+        if self.current_project is not None:
+            self.current_project.active_page_id = str(widget.page_id or "").strip()
+            try:
+                self.current_project.set_active_page(widget.page_id)
+            except Exception:
+                pass
+        try:
+            self._sync_zoom_controls(int(round(float(widget.zoom_value() or 1.0) * 100.0)))
+        except Exception:
+            pass
+        self._update_filters_bar()
+
+    def _page_index_from_id(self, page_id: str) -> int:
+        if self.current_project is None:
+            return -1
+        target_id = str(page_id or "").strip()
+        for index, page in enumerate(list(self.current_project.pages or [])):
+            if str(page.page_id or "").strip() == target_id:
+                return index
+        return -1
+
+    def _current_page_id(self) -> str:
+        if hasattr(self, "page_stack") and self.page_stack.count() > 0:
+            candidate = self.page_stack.currentWidget()
+            if isinstance(candidate, DashboardPageWidget):
+                return str(candidate.page_id or "").strip()
+        if self.current_project is not None:
+            current_id = str(self.current_project.active_page_id or "").strip()
+            if current_id:
+                return current_id
+        if self._selected_page_id:
+            return str(self._selected_page_id).strip()
+        return ""
+
+    def _active_page_widget(self) -> Optional[DashboardPageWidget]:
+        current_id = self._current_page_id()
+        if current_id:
+            widget = self._page_widget_for_id(current_id)
+            if widget is not None:
+                return widget
+        if hasattr(self, "page_stack") and self.page_stack.count() > 0:
+            candidate = self.page_stack.currentWidget()
+            if isinstance(candidate, DashboardPageWidget):
+                return candidate
+        return None
+
+    def _active_canvas(self) -> Optional[DashboardCanvas]:
+        widget = self._active_page_widget()
+        if widget is None:
+            return None
+        return widget.canvas
+
+    def _sync_active_canvas_alias(self):
+        self.canvas = self._active_canvas()
+        widget = self._active_page_widget()
+        if widget is not None:
+            try:
+                self._sync_zoom_controls(int(round(float(widget.zoom_value() or 1.0) * 100.0)))
+            except Exception:
+                pass
+
+    def _page_display_title(self, index: int) -> str:
+        return _rt("Pagina {index}", index=max(1, int(index or 1)))
+
+    def _create_page_widget(self, page: DashboardPage) -> DashboardPageWidget:
+        widget = DashboardPageWidget(page, self.page_stack)
+        widget.itemsChanged.connect(lambda page_id, self=self: self._handle_canvas_changed(page_id))
+        widget.filtersChanged.connect(
+            lambda page_id, summary, self=self: self._handle_canvas_filters_changed(summary, page_id)
+        )
+        widget.zoomChanged.connect(lambda page_id, zoom, self=self: self._handle_canvas_zoom_changed(zoom, page_id))
+        widget.canvas.emptyCanvasContextMenuRequested.connect(
+            lambda pos, page_id=widget.page_id, self=self: self._open_canvas_context_menu(pos, page_id)
+        )
+        return widget
+
+    def _clear_page_widgets(self):
+        if not hasattr(self, "page_stack"):
+            self._page_widgets.clear()
+            return
+        blocked = self.page_stack.blockSignals(True)
+        try:
+            while self.page_stack.count():
+                widget = self.page_stack.widget(0)
+                self.page_stack.removeWidget(widget)
+        finally:
+            self.page_stack.blockSignals(blocked)
+        for widget in list(self._page_widgets.values()):
+            try:
+                widget.setParent(None)
+                widget.deleteLater()
+            except Exception:
+                pass
+        self._page_widgets.clear()
+
+    def _rebuild_page_stack(self, active_page_id: Optional[str] = None):
+        if self.current_project is None:
+            self._clear_page_widgets()
+            return
+        pages = [page.normalized() for page in list(self.current_project.pages or [])]
+        if not pages:
+            pages = [DashboardPage(title=self._page_display_title(1)).normalized()]
+        existing_widgets = dict(self._page_widgets)
+        stack_blocked = False
+        if hasattr(self, "page_stack"):
+            stack_blocked = self.page_stack.blockSignals(True)
+            while self.page_stack.count():
+                widget = self.page_stack.widget(0)
+                self.page_stack.removeWidget(widget)
+        self._page_widgets = {}
+        try:
+            for page in pages:
+                widget = existing_widgets.pop(page.page_id, None)
+                if widget is None:
+                    widget = self._create_page_widget(page)
+                else:
+                    widget.apply_page(page)
+                    widget.set_page_identity(page.page_id, page.title)
+                self._page_widgets[widget.page_id] = widget
+                self.page_stack.addWidget(widget)
+            for widget in list(existing_widgets.values()):
+                try:
+                    widget.setParent(None)
+                    widget.deleteLater()
+                except Exception:
+                    pass
+        finally:
+            if hasattr(self, "page_stack"):
+                self.page_stack.blockSignals(stack_blocked)
+        resolved_active_id = str(active_page_id or self.current_project.active_page_id or pages[0].page_id or "").strip()
+        self._refresh_page_tabs(resolved_active_id)
+        self._set_active_page(resolved_active_id, sync_project=False, update_tabs=False)
+
+    def _refresh_page_tabs(self, active_page_id: Optional[str] = None):
+        if not hasattr(self, "page_strip"):
+            return
+        pages = list(self.current_project.pages or []) if self.current_project is not None else []
+        resolved_active_id = str(active_page_id or self.current_project.active_page_id or "").strip()
+        if not resolved_active_id and pages:
+            resolved_active_id = str(pages[0].page_id or "").strip()
+        page_defs = []
+        for index, page in enumerate(pages, start=1):
+            title = str(page.title or "").strip() or self._page_display_title(index)
+            page_defs.append((str(page.page_id or "").strip(), title))
+        self.page_strip.set_pages(page_defs, resolved_active_id)
+
+    def _sync_project_from_pages(self, active_page_id: Optional[str] = None):
+        if self.current_project is None:
+            return
+        pages: List[DashboardPage] = []
+        for widget in self._page_widgets_in_order():
+            try:
+                pages.append(widget.page_state())
+            except Exception:
+                continue
+        if not pages:
+            pages = [DashboardPage(title=self._page_display_title(1)).normalized()]
+        self.current_project.pages = pages
+        resolved_active_id = str(active_page_id or self.current_project.active_page_id or pages[0].page_id or "").strip()
+        if not resolved_active_id:
+            resolved_active_id = pages[0].page_id
+        self.current_project.active_page_id = resolved_active_id
+        self.current_project.set_active_page(resolved_active_id)
+        self.current_project.edit_mode = bool(self.edit_mode_btn.isChecked())
+
+    def _set_active_page(self, page_id: str, sync_project: bool = True, update_tabs: bool = True):
+        if self.current_project is None:
+            self.canvas = None
+            return
+        target_id = str(page_id or "").strip()
+        widget = self._page_widget_for_id(target_id)
+        if widget is None:
+            widget = self._active_page_widget()
+        if widget is None:
+            return
+        if hasattr(self, "page_stack"):
+            current_index = self.page_stack.indexOf(widget)
+            if current_index >= 0:
+                if self.page_stack.currentIndex() != current_index:
+                    self.page_stack.setCurrentIndex(current_index)
+        self.canvas = widget.canvas
+        self._selected_page_id = str(widget.page_id or "").strip()
+        self.current_project.active_page_id = str(widget.page_id or "").strip()
+        if update_tabs:
+            self._select_page_button(widget.page_id)
+        try:
+            self.current_project.set_active_page(widget.page_id)
+        except Exception:
+            pass
+        if sync_project:
+            self._sync_project_from_pages(widget.page_id)
+        try:
+            self._sync_zoom_controls(int(round(float(widget.zoom_value() or 1.0) * 100.0)))
+        except Exception:
+            pass
+
+    def _page_state_by_id(self, page_id: str) -> Optional[DashboardPage]:
+        key = str(page_id or "").strip()
+        if not key or self.current_project is None:
+            return None
+        for page in list(self.current_project.pages or []):
+            if str(page.page_id or "").strip() == key:
+                return page
+        return None
+
+    def _add_page(self, checked: bool = False, title: Optional[str] = None, activate: bool = True):
+        if self._is_adding_page:
+            return
+        self._is_adding_page = True
+        try:
+            if self.current_project is None:
+                # Creating the first page must stop here; otherwise we create
+                # one blank project page and immediately add a second one.
+                self._create_blank_project(_rt("Novo painel"))
+                return
+            if self.current_project is None:
+                return
+            current_count = len(list(self.current_project.pages or []))
+            page_title = str(title or "").strip() or self._page_display_title(current_count + 1)
+            page = DashboardPage(title=page_title).normalized()
+            widget = self._create_page_widget(page)
+            self._page_widgets[widget.page_id] = widget
+            self.page_stack.addWidget(widget)
+            self.current_project.pages = list(self.current_project.pages or []) + [page]
+            self.current_project.active_page_id = page.page_id
+            if activate:
+                self._refresh_page_tabs(page.page_id)
+                self._set_active_page(page.page_id, sync_project=True, update_tabs=False)
+            else:
+                self._refresh_page_tabs(self.current_project.active_page_id)
+                self._sync_project_from_pages(self.current_project.active_page_id)
+            self._dirty = True
+            self._refresh_ui_state()
+        finally:
+            self._is_adding_page = False
+
+    def _delete_current_page(self):
+        self._delete_page_by_id(self._current_page_id())
+
+    def _delete_page_by_id(self, page_id: str):
+        page_index = self._page_index_from_id(page_id)
+        if page_index < 0 and hasattr(self, "page_strip"):
+            try:
+                order = list(self.page_strip.page_ids() or [])
+            except Exception:
+                order = []
+            if order and self.current_project is not None and len(order) == len(list(self.current_project.pages or [])):
+                try:
+                    page_index = order.index(str(page_id or "").strip())
+                except Exception:
+                    page_index = -1
+        if page_index < 0 or self.current_project is None:
+            return
+        pages = list(self.current_project.pages or [])
+        if len(pages) <= 1:
+            QMessageBox.information(self, _rt("Model"), _rt("O painel precisa manter ao menos uma pagina."))
+            return
+        pages.pop(page_index)
+        self.current_project.pages = pages
+        next_index = min(page_index, len(pages) - 1)
+        next_page = pages[next_index]
+        self.current_project.active_page_id = next_page.page_id
+        self._selected_page_id = next_page.page_id
+        self._dirty = True
+        self._rebuild_page_stack(next_page.page_id)
+        self._refresh_ui_state()
+
+    def _rename_page_by_id(self, page_id: str, title: str):
+        if self.current_project is None:
+            return
+        page = self._page_state_by_id(page_id)
+        new_title = str(title or "").strip()
+        if page is None or not new_title:
+            return
+        page.title = new_title
+        widget = self._page_widget_for_id(page.page_id)
+        if widget is not None:
+            widget.set_page_identity(page.page_id, new_title)
+        if hasattr(self, "page_strip"):
+            self.page_strip.update_page_title(page.page_id, new_title)
+        self._sync_project_from_pages(self._current_page_id() or page.page_id)
+        self._dirty = True
+        self._refresh_ui_state()
+
     def _build_model_chart_item_from_builder(self) -> Optional[DashboardChartItem]:
         layer_id = str(self.builder_layer_combo.currentData() or "")
         layer = self._builder_layers.get(layer_id)
@@ -885,13 +1360,16 @@ class ModelTab(QWidget):
             self._create_blank_project(_rt("Novo painel"))
         if self.current_project is None:
             return
-        self.current_project.items.append(item)
-        self.current_project.edit_mode = bool(self.edit_mode_btn.isChecked())
-        self.canvas.add_item(item)
+        active_canvas = self._active_canvas()
+        active_widget = self._active_page_widget()
+        if active_canvas is None or active_widget is None:
+            return
+        active_canvas.add_item(item)
+        self._sync_project_from_pages(active_widget.page_id)
         self._dirty = True
         self._refresh_ui_state()
 
-    def _open_canvas_context_menu(self, global_pos):
+    def _open_canvas_context_menu(self, global_pos, page_id: Optional[str] = None):
         menu = QMenu(self)
         add_chart_action = menu.addAction(_rt("Adicionar grafico em branco"))
         open_panel_action = menu.addAction(_rt("Abrir painel de camada"))
@@ -951,9 +1429,12 @@ class ModelTab(QWidget):
         if self.current_project is None:
             return
         item = DashboardChartItem.from_chart_snapshot(snapshot)
-        self.current_project.items.append(item)
-        self.current_project.edit_mode = bool(self.edit_mode_btn.isChecked())
-        self.canvas.add_item(item)
+        active_canvas = self._active_canvas()
+        active_widget = self._active_page_widget()
+        if active_canvas is None or active_widget is None:
+            return
+        active_canvas.add_item(item)
+        self._sync_project_from_pages(active_widget.page_id)
         self._dirty = True
         self._refresh_ui_state()
 
@@ -978,9 +1459,12 @@ class ModelTab(QWidget):
         self.current_project = None
         self.current_path = ""
         self._dirty = False
+        self._selected_page_id = ""
         self._suspend_canvas_events = True
         try:
-            self.canvas.set_items([], [], [])
+            self._clear_page_widgets()
+            self._clear_page_tab_buttons()
+            self.canvas = None
         finally:
             self._suspend_canvas_events = False
         self._refresh_builder_layers()
@@ -988,15 +1472,18 @@ class ModelTab(QWidget):
         self._refresh_ui_state()
 
     def _create_blank_project(self, name: str):
-        self.current_project = DashboardProject(name=str(name or _rt("Novo painel")))
+        page = DashboardPage(title=self._page_display_title(1)).normalized()
+        self.current_project = DashboardProject(
+            name=str(name or _rt("Novo painel")),
+            pages=[page],
+            active_page_id=page.page_id,
+        )
         self.current_project.edit_mode = bool(self.edit_mode_btn.isChecked())
         self.current_path = ""
         self._dirty = False
-        self._suspend_canvas_events = True
-        try:
-            self.canvas.set_items([], [], [])
-        finally:
-            self._suspend_canvas_events = False
+        self._rebuild_page_stack(page.page_id)
+        self._set_active_page(page.page_id, sync_project=False, update_tabs=False)
+        self.set_edit_mode(bool(self.edit_mode_btn.isChecked()))
         self._refresh_builder_layers()
         self._refresh_ui_state()
 
@@ -1015,11 +1502,29 @@ class ModelTab(QWidget):
         except Exception as exc:
             QMessageBox.warning(self, _rt("Model"), _rt("Nao foi possivel abrir o painel: {error}", error=exc))
             return
+        try:
+            if bool(project.source_meta.get("_legacy_single_page")) and len(list(project.pages or [])) == 1:
+                legacy_page = list(project.pages or [])[0].normalized()
+                project_name = str(project.name or "").strip().lower()
+                page_title = str(legacy_page.title or "").strip().lower()
+                if not page_title or page_title == project_name:
+                    legacy_page.title = self._page_display_title(1)
+                    project.pages = [legacy_page]
+                    project.active_page_id = legacy_page.page_id
+                    project.set_active_page(legacy_page.page_id)
+        except Exception:
+            pass
         self.current_project = project
         self.current_path = self.store.normalize_path(path)
         self._dirty = False
-        self.edit_mode_btn.setChecked(bool(project.edit_mode))
-        self.canvas.set_items(project.items, project.visual_links, project.chart_relations)
+        self._selected_page_id = ""
+        self._rebuild_page_stack(project.active_page_id or (project.pages[0].page_id if project.pages else ""))
+        self.edit_mode_btn.blockSignals(True)
+        try:
+            self.edit_mode_btn.setChecked(bool(project.edit_mode))
+        finally:
+            self.edit_mode_btn.blockSignals(False)
+        self.set_edit_mode(bool(project.edit_mode))
         self._refresh_builder_layers()
         self._refresh_recents()
         self._refresh_ui_state()
@@ -1032,10 +1537,9 @@ class ModelTab(QWidget):
             self._create_blank_project(_rt("Novo painel"))
         if self.current_project is None:
             return
-        self.current_project.items = self.canvas.items()
-        self.current_project.visual_links = self.canvas.visual_links()
-        self.current_project.chart_relations = self.canvas.chart_relations()
-        self.current_project.edit_mode = bool(self.edit_mode_btn.isChecked())
+        active_widget = self._active_page_widget()
+        if active_widget is not None:
+            self._sync_project_from_pages(active_widget.page_id)
         target_path = self.current_path
         if save_as or not target_path:
             suggested_name = (self.current_project.name or _rt("painel")).strip().replace(" ", "_")
@@ -1058,7 +1562,8 @@ class ModelTab(QWidget):
         self._refresh_ui_state()
 
     def export_project(self):
-        if not self.canvas.has_items():
+        active_canvas = self._active_canvas()
+        if active_canvas is None or not active_canvas.has_items():
             QMessageBox.information(self, _rt("Model"), _rt("Adicione ao menos um grafico antes de exportar."))
             return
         suggested_name = (self.current_project_name() or _rt("painel_model")).strip().replace(" ", "_")
@@ -1066,38 +1571,47 @@ class ModelTab(QWidget):
         path, _ = QFileDialog.getSaveFileName(self, _rt("Exportar painel"), suggested_path, "PNG (*.png)")
         if not path:
             return
-        if not self.canvas.export_image(path):
+        if not active_canvas.export_image(path):
             QMessageBox.warning(self, _rt("Model"), _rt("Nao foi possivel exportar a imagem do painel."))
             return
         QMessageBox.information(self, _rt("Model"), _rt("Painel exportado para:\n{path}", path=path))
 
     def set_edit_mode(self, enabled: bool):
-        self.canvas.set_edit_mode(enabled)
+        for widget in self._page_widgets_in_order():
+            try:
+                widget.set_edit_mode(enabled)
+            except Exception:
+                continue
         self.create_chart_btn.setVisible(bool(enabled) and self.current_project is not None)
         self.builder_panel.setVisible(bool(enabled) and self.body_stack.currentWidget() is self.canvas_page)
         if self.current_project is not None:
             self.current_project.edit_mode = bool(enabled)
-        self._dirty = True if self.current_project is not None else self._dirty
         self._refresh_ui_state()
 
     def _zoom_canvas_in(self):
-        if hasattr(self.canvas, "zoom_in"):
-            self.canvas.zoom_in()
+        active_canvas = self._active_canvas()
+        if hasattr(active_canvas, "zoom_in"):
+            active_canvas.zoom_in()
 
     def _zoom_canvas_out(self):
-        if hasattr(self.canvas, "zoom_out"):
-            self.canvas.zoom_out()
+        active_canvas = self._active_canvas()
+        if hasattr(active_canvas, "zoom_out"):
+            active_canvas.zoom_out()
 
     def _zoom_canvas_reset(self):
-        if hasattr(self.canvas, "reset_zoom"):
-            self.canvas.reset_zoom()
+        active_canvas = self._active_canvas()
+        if hasattr(active_canvas, "reset_zoom"):
+            active_canvas.reset_zoom()
 
-    def _handle_canvas_zoom_changed(self, zoom: float):
+    def _handle_canvas_zoom_changed(self, zoom: float, page_id: Optional[str] = None):
+        if self.current_project is not None and page_id:
+            self._sync_project_from_pages(page_id)
         try:
             percent = int(round(float(zoom) * 100.0))
         except Exception:
             percent = 100
-        self._sync_zoom_controls(percent)
+        if not page_id or page_id == self._current_page_id():
+            self._sync_zoom_controls(percent)
 
     def _zoom_slider_changed(self, value: int):
         if self._syncing_zoom_controls:
@@ -1106,8 +1620,9 @@ class ModelTab(QWidget):
             zoom_value = max(0.6, min(2.0, float(value) / 100.0))
         except Exception:
             zoom_value = 1.0
-        if hasattr(self.canvas, "set_zoom"):
-            self.canvas.set_zoom(zoom_value)
+        active_canvas = self._active_canvas()
+        if hasattr(active_canvas, "set_zoom"):
+            active_canvas.set_zoom(zoom_value)
     def _sync_zoom_controls(self, percent: int):
         self._syncing_zoom_controls = True
         try:
@@ -1119,7 +1634,7 @@ class ModelTab(QWidget):
             self._syncing_zoom_controls = False
 
     def _update_footer_visibility(self):
-        self.footer_bar.setVisible(self.body_stack.currentWidget() is self.canvas_page)
+        self.footer_bar.setVisible(self.current_project is not None)
 
     def _update_toolbar_visibility(self):
         has_project = self.current_project is not None
@@ -1134,22 +1649,26 @@ class ModelTab(QWidget):
         ):
             button.setVisible(show_project_actions)
 
-    def _handle_canvas_changed(self):
+    def _handle_canvas_changed(self, page_id: Optional[str] = None):
         if self._suspend_canvas_events:
             return
         if self.current_project is not None:
-            self.current_project.items = self.canvas.items()
-            self.current_project.visual_links = self.canvas.visual_links()
-            self.current_project.chart_relations = self.canvas.chart_relations()
-            self.current_project.edit_mode = bool(self.edit_mode_btn.isChecked())
+            self._sync_project_from_pages(page_id or self._current_page_id())
         self._dirty = True
         self._refresh_ui_state()
 
-    def _handle_canvas_filters_changed(self, summary: Dict[str, object]):
-        self._update_filters_bar(summary)
+    def _handle_canvas_filters_changed(self, summary: Dict[str, object], page_id: Optional[str] = None):
+        if self.current_project is not None:
+            self._sync_project_from_pages(page_id or self._current_page_id())
+        if not page_id or page_id == self._current_page_id():
+            self._update_filters_bar(summary)
+        self._dirty = True
 
     def _update_filters_bar(self, summary: Optional[Dict[str, object]] = None):
-        summary = summary or self.canvas.interaction_manager.active_filters_summary()
+        active_canvas = self._active_canvas()
+        if summary is None and active_canvas is not None:
+            summary = active_canvas.interaction_manager.active_filters_summary()
+        summary = summary or {"items": [], "count": 0}
         items = list(summary.get("items") or [])
         if not self.edit_mode_btn.isChecked() or not items:
             self.filters_label.setText(_rt("Filtros ativos: nenhum"))
@@ -1173,7 +1692,9 @@ class ModelTab(QWidget):
 
     def _clear_model_filters(self):
         try:
-            self.canvas.clear_filters()
+            active_canvas = self._active_canvas()
+            if active_canvas is not None:
+                active_canvas.clear_filters()
         except Exception:
             pass
 
@@ -1209,6 +1730,20 @@ class ModelTab(QWidget):
         has_project = self.current_project is not None
         self.body_stack.setCurrentWidget(self.canvas_page if has_project else self.empty_page)
         in_canvas_page = self.body_stack.currentWidget() is self.canvas_page
+        if has_project:
+            active_id = self.current_project.active_page_id or (self.current_project.pages[0].page_id if self.current_project.pages else "")
+            active_widget = self._active_page_widget()
+            if active_widget is None or str(active_widget.page_id or "").strip() != str(active_id or "").strip():
+                self._set_active_page(active_id, sync_project=False, update_tabs=True)
+            else:
+                self.canvas = active_widget.canvas
+                self._select_page_button(active_id)
+                try:
+                    self._sync_zoom_controls(int(round(float(active_widget.zoom_value() or 1.0) * 100.0)))
+                except Exception:
+                    pass
+        else:
+            self.canvas = None
         self.new_btn.setVisible(True)
         self.open_btn.setVisible(True)
         self._update_toolbar_visibility()

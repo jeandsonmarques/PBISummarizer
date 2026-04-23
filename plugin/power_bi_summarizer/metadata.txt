@@ -2,23 +2,23 @@
 name=Summarizer
 qgisMinimumVersion=3.34
 qgisMaximumVersion=3.99
-description=Summarize QGIS layers and prepare report-ready outputs.
+description=Summarize QGIS layers and prepare report-ready analytical outputs.
 about=Summarizer helps analysts explore project layers, build summaries,
-    prepare dashboard-ready tables, and export results for downstream reporting.
+    prepare dashboard-ready tables, and export structured results for downstream reporting.
     Core workflows run locally inside QGIS.
-    Optional cloud workflows require a separately deployed backend service,
-    reachable API endpoints, and a user account configured by the deployment owner.
-    Optional AI-assisted interpretation features may also require extra local or remote services.
+    Optional cloud workflows may require a separately deployed backend service,
+    reachable API endpoints, and user-specific configuration by the deployment owner.
+    Optional AI-assisted interpretation features may also depend on additional local or remote services.
 version=0.1.0
 author=Jeandson Marques
 email=jeandsonnunes@icloud.com
-repository=https://github.com/jeandsonmarques/PowerBISummarizer
-homepage=https://github.com/jeandsonmarques/PowerBISummarizer
-tracker=https://github.com/jeandsonmarques/PowerBISummarizer/issues
-changelog=0.1.0 - Initial publication hardening pass for future QGIS upload.
-    Reworked packaging boundaries, publication metadata, cloud safety notes and client network handling.
+repository=https://github.com/jeandsonmarques/Summarizer
+homepage=https://github.com/jeandsonmarques/Summarizer
+tracker=https://github.com/jeandsonmarques/Summarizer/issues
+changelog=0.1.0 - Initial public repository release.
+    Repository structure, packaging boundaries, and publication metadata refined for future QGIS distribution.
 category=Database
-tags=reporting, analytics, dashboard, database, postgis, cloud
+tags=qgis, reporting, analytics, dashboard, summarization, spatial-analysis
 icon=resources/icon.svg
 experimental=True
 deprecated=False

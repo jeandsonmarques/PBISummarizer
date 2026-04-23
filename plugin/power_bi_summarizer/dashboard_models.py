@@ -580,6 +580,58 @@ class DashboardChartRelation:
 
 
 @dataclass
+class DashboardPage:
+    page_id: str = field(default_factory=lambda: uuid.uuid4().hex)
+    title: str = "Page 1"
+    items: List[DashboardChartItem] = field(default_factory=list)
+    visual_links: List[DashboardVisualLink] = field(default_factory=list)
+    chart_relations: List[DashboardChartRelation] = field(default_factory=list)
+    zoom: float = 1.0
+    filters: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+
+    def normalized(self) -> "DashboardPage":
+        normalized_items = [item.clone() for item in list(self.items or [])]
+        normalized_items.sort(key=lambda item: (item.layout.y, item.layout.x, item.created_at))
+        return DashboardPage(
+            page_id=str(self.page_id or uuid.uuid4().hex).strip(),
+            title=str(self.title or "Page 1").strip() or "Page 1",
+            items=normalized_items,
+            visual_links=[DashboardVisualLink.from_dict(link.to_dict()) for link in list(self.visual_links or [])],
+            chart_relations=[DashboardChartRelation.from_dict(rel.to_dict()) for rel in list(self.chart_relations or [])],
+            zoom=max(0.6, min(2.0, float(self.zoom or 1.0))),
+            filters={str(key): dict(value or {}) for key, value in dict(self.filters or {}).items()},
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        normalized = self.normalized()
+        return {
+            "page_id": normalized.page_id,
+            "title": normalized.title,
+            "zoom": float(normalized.zoom),
+            "filters": _json_safe(normalized.filters),
+            "items": [item.to_dict() for item in normalized.items],
+            "visual_links": [link.to_dict() for link in normalized.visual_links],
+            "chart_relations": [relation.to_dict() for relation in normalized.chart_relations],
+        }
+
+    @classmethod
+    def from_dict(cls, data: Optional[Dict[str, Any]]) -> "DashboardPage":
+        payload = dict(data or {})
+        filters = payload.get("filters")
+        if filters is None:
+            filters = payload.get("active_filters") or {}
+        return cls(
+            page_id=str(payload.get("page_id") or payload.get("id") or uuid.uuid4().hex).strip(),
+            title=str(payload.get("title") or payload.get("name") or "Page 1"),
+            items=[DashboardChartItem.from_dict(item) for item in list(payload.get("items") or [])],
+            visual_links=[DashboardVisualLink.from_dict(item) for item in list(payload.get("visual_links") or [])],
+            chart_relations=[DashboardChartRelation.from_dict(item) for item in list(payload.get("chart_relations") or [])],
+            zoom=float(payload.get("zoom", 1.0) or 1.0),
+            filters={str(key): dict(value or {}) for key, value in dict(filters or {}).items()},
+        ).normalized()
+
+
+@dataclass
 class DashboardProject:
     name: str = "Novo painel"
     project_id: str = field(default_factory=lambda: uuid.uuid4().hex)
@@ -587,6 +639,8 @@ class DashboardProject:
     items: List[DashboardChartItem] = field(default_factory=list)
     visual_links: List[DashboardVisualLink] = field(default_factory=list)
     chart_relations: List[DashboardChartRelation] = field(default_factory=list)
+    pages: List[DashboardPage] = field(default_factory=list)
+    active_page_id: str = ""
     created_at: str = field(default_factory=_timestamp_now)
     updated_at: str = field(default_factory=_timestamp_now)
     edit_mode: bool = True
@@ -595,10 +649,44 @@ class DashboardProject:
     def touch(self):
         self.updated_at = _timestamp_now()
 
+    def has_pages(self) -> bool:
+        return bool(self.pages)
+
+    def active_page(self) -> DashboardPage:
+        if self.pages:
+            current_id = str(self.active_page_id or "").strip()
+            if current_id:
+                for page in self.pages:
+                    if str(page.page_id or "").strip() == current_id:
+                        return page.normalized()
+            return self.pages[0].normalized()
+        return DashboardPage(
+            page_id=self.active_page_id or uuid.uuid4().hex,
+            title=self.name or "Page 1",
+            items=[item.clone() for item in list(self.items or [])],
+            visual_links=[DashboardVisualLink.from_dict(link.to_dict()) for link in list(self.visual_links or [])],
+            chart_relations=[DashboardChartRelation.from_dict(rel.to_dict()) for rel in list(self.chart_relations or [])],
+        ).normalized()
+
+    def set_active_page(self, page_id: str):
+        self.active_page_id = str(page_id or "").strip()
+        page = self.active_page()
+        self.items = [item.clone() for item in list(page.items or [])]
+        self.visual_links = [DashboardVisualLink.from_dict(link.to_dict()) for link in list(page.visual_links or [])]
+        self.chart_relations = [DashboardChartRelation.from_dict(rel.to_dict()) for rel in list(page.chart_relations or [])]
+
     def to_dict(self) -> Dict[str, Any]:
         self._normalize_graph_state()
         self.version = max(2, int(self.version or 2))
         self.touch()
+        page = self.active_page()
+        pages_payload = [page_item.to_dict() for page_item in list(self.pages or [])]
+        if not pages_payload:
+            pages_payload = [page.to_dict()]
+        self.active_page_id = page.page_id
+        self.items = [item.clone() for item in list(page.items or [])]
+        self.visual_links = [DashboardVisualLink.from_dict(link.to_dict()) for link in list(page.visual_links or [])]
+        self.chart_relations = [DashboardChartRelation.from_dict(rel.to_dict()) for rel in list(page.chart_relations or [])]
         return {
             "version": int(self.version),
             "project_id": self.project_id,
@@ -607,6 +695,8 @@ class DashboardProject:
             "updated_at": self.updated_at,
             "edit_mode": bool(self.edit_mode),
             "source_meta": _json_safe(self.source_meta),
+            "active_page_id": self.active_page_id,
+            "pages": pages_payload,
             "items": [item.to_dict() for item in self.items],
             "visual_links": [link.to_dict() for link in self.visual_links],
             "chart_relations": [relation.to_dict() for relation in self.chart_relations],
@@ -615,13 +705,35 @@ class DashboardProject:
     @classmethod
     def from_dict(cls, data: Optional[Dict[str, Any]]) -> "DashboardProject":
         payload = dict(data or {})
+        raw_pages = list(payload.get("pages") or [])
+        pages = [DashboardPage.from_dict(item) for item in raw_pages if isinstance(item, dict)]
+        legacy_items = [DashboardChartItem.from_dict(item) for item in list(payload.get("items") or [])]
+        legacy_links = [DashboardVisualLink.from_dict(item) for item in list(payload.get("visual_links") or [])]
+        legacy_relations = [DashboardChartRelation.from_dict(item) for item in list(payload.get("chart_relations") or [])]
+        active_page_id = str(payload.get("active_page_id") or "").strip()
+        if not pages:
+            pages = [
+                DashboardPage(
+                    page_id=active_page_id or uuid.uuid4().hex,
+                    title=str(payload.get("page_title") or payload.get("name") or "Page 1"),
+                    items=legacy_items,
+                    visual_links=legacy_links,
+                    chart_relations=legacy_relations,
+                    zoom=float(payload.get("zoom", 1.0) or 1.0),
+                    filters=dict(payload.get("filters") or payload.get("active_filters") or {}),
+                ).normalized()
+            ]
+        if not active_page_id and pages:
+            active_page_id = pages[0].page_id
         project = cls(
             name=str(payload.get("name") or "Painel"),
             project_id=str(payload.get("project_id") or uuid.uuid4().hex),
             version=int(payload.get("version", 1) or 1),
-            items=[DashboardChartItem.from_dict(item) for item in list(payload.get("items") or [])],
-            visual_links=[DashboardVisualLink.from_dict(item) for item in list(payload.get("visual_links") or [])],
-            chart_relations=[DashboardChartRelation.from_dict(item) for item in list(payload.get("chart_relations") or [])],
+            items=[item.clone() for item in list((pages[0].items if pages else legacy_items) or [])],
+            visual_links=[DashboardVisualLink.from_dict(item.to_dict()) for item in list((pages[0].visual_links if pages else legacy_links) or [])],
+            chart_relations=[DashboardChartRelation.from_dict(item.to_dict()) for item in list((pages[0].chart_relations if pages else legacy_relations) or [])],
+            pages=pages,
+            active_page_id=active_page_id,
             created_at=str(payload.get("created_at") or _timestamp_now()),
             updated_at=str(payload.get("updated_at") or _timestamp_now()),
             edit_mode=bool(payload.get("edit_mode", True)),
@@ -635,6 +747,17 @@ class DashboardProject:
         return DashboardProject.from_dict(copy.deepcopy(self.to_dict()))
 
     def _normalize_graph_state(self):
+        if self.pages:
+            normalized_pages: List[DashboardPage] = []
+            for page in list(self.pages or []):
+                normalized_page = page.normalized()
+                normalized_pages.append(normalized_page)
+            self.pages = normalized_pages
+            active_page = self.active_page()
+            self.items = [item.clone() for item in list(active_page.items or [])]
+            self.visual_links = [DashboardVisualLink.from_dict(link.to_dict()) for link in list(active_page.visual_links or [])]
+            self.chart_relations = [DashboardChartRelation.from_dict(rel.to_dict()) for rel in list(active_page.chart_relations or [])]
+            return
         valid_ids = {item.item_id for item in self.items}
 
         unique_relations: List[DashboardChartRelation] = []

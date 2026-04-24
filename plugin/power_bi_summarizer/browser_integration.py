@@ -250,7 +250,7 @@ class SummarizerRootItem(QgsDataCollectionItem):
         cloud_action.triggered.connect(_open_cloud_dialog)
         actions.append(cloud_action)
 
-        pg_action = QAction(_rt("Nova conexÃ£o PostgreSQL..."), widget)
+        pg_action = QAction(_rt("Nova conexão PostgreSQL..."), widget)
         pg_action.triggered.connect(lambda: self._open_quick_postgres(widget))
         actions.append(pg_action)
 
@@ -272,11 +272,11 @@ class SummarizerRootItem(QgsDataCollectionItem):
         saved = [conn for conn in connection_registry.saved_connections() if conn.get("fingerprint") != payload["fingerprint"]]
         saved.insert(0, payload)
         connection_registry.replace_saved_connections(saved, persist=True)
-        log_info("ConexÃ£o PostgreSQL adicionada via Navegador.")
+        log_info("Conexão PostgreSQL adicionada via Navegador.")
         QMessageBox.information(
             parent,
             _rt("Summarizer"),
-            _rt("ConexÃ£o '{name}' salva. Expanda o nÃ³ novamente para ver as tabelas.", name=payload.get("name")),
+            _rt("Conexão '{name}' salva. Expanda o nó novamente para ver as tabelas.", name=payload.get("name")),
         )
 
 
@@ -296,7 +296,7 @@ class SummarizerCloudRootItem(QgsDataCollectionItem):
         cloud_session.layersChanged.connect(self.refresh)
         global _CLOUD_NODE_LOGGED
         if not _CLOUD_NODE_LOGGED:
-            log_info("NÃ³ Summarizer Cloud carregado no Navegador.")
+            log_info("Nó Summarizer Cloud carregado no Navegador.")
             _CLOUD_NODE_LOGGED = True
 
     def createChildren(self) -> List[QgsDataItem]:
@@ -324,7 +324,7 @@ class SummarizerCloudLoginItem(QgsDataCollectionItem):
     def __init__(self, parent: QgsDataItem):
         super().__init__(
             parent,
-            _rt("FaÃ§a login na aba IntegraÃ§Ã£o."),
+            _rt("Faça login na aba Integração."),
             f"{parent.path()}/login",
             SummarizerBrowserProvider.PROVIDER_NAME,
         )
@@ -342,7 +342,7 @@ class SummarizerCloudPlaceholderItem(QgsDataCollectionItem):
     def __init__(self, parent: QgsDataItem):
         super().__init__(
             parent,
-            _rt("Nenhuma camada Cloud disponÃ­vel."),
+            _rt("Nenhuma camada Cloud disponível."),
             f"{parent.path()}/placeholder",
             SummarizerBrowserProvider.PROVIDER_NAME,
         )
@@ -406,7 +406,7 @@ class SummarizerCloudLayerItem(QgsLayerItem):
         actions.append(warn_action)
 
         if self._can_delete_layer():
-            delete_action = QAction(_rt("Gerenciar â†’ Deletar Camada"), widget)
+            delete_action = QAction(_rt("Gerenciar → Deletar Camada"), widget)
             delete_action.triggered.connect(self._delete_layer)
             actions.append(delete_action)
 
@@ -414,9 +414,9 @@ class SummarizerCloudLayerItem(QgsLayerItem):
 
     def _warn_real_access(self):
         if cloud_session.hosting_ready():
-            message = _rt("As camadas do Summarizer Cloud sÃ£o abertas diretamente do servidor configurado no plugin.")
+            message = _rt("As camadas do Summarizer Cloud são abertas diretamente do servidor configurado no plugin.")
         else:
-            message = _rt("Ative 'Hospedagem ativa' nas ConfiguraÃ§Ãµes Cloud para usar apenas camadas reais do servidor.")
+            message = _rt("Ative 'Hospedagem ativa' nas Configurações Cloud para usar apenas camadas reais do servidor.")
         QMessageBox.information(None, _rt("Summarizer Cloud"), message)
 
     def _can_delete_layer(self) -> bool:
@@ -430,7 +430,7 @@ class SummarizerCloudLayerItem(QgsLayerItem):
     def _delete_layer(self):
         layer_id = self.meta.get("id")
         if not layer_id:
-            QMessageBox.warning(None, _rt("Summarizer Cloud"), _rt("Identificador da camada invÃ¡lido."))
+            QMessageBox.warning(None, _rt("Summarizer Cloud"), _rt("Identificador da camada inválido."))
             return
         layer_name = self.meta.get("name") or str(layer_id)
         confirm = QMessageBox.question(
@@ -443,7 +443,7 @@ class SummarizerCloudLayerItem(QgsLayerItem):
         if confirm != QMessageBox.Yes:
             return
         QgsMessageLog.logMessage(
-            _rt("Summarizer Cloud solicitando exclusÃ£o da camada {layer_name} (id={layer_id})", layer_name=layer_name, layer_id=layer_id),
+            _rt("Summarizer Cloud solicitando exclusão da camada {layer_name} (id={layer_id})", layer_name=layer_name, layer_id=layer_id),
             _rt("Summarizer"),
             Qgis.Info,
         )
@@ -512,7 +512,7 @@ class SummarizerConnectionItem(QgsDataCollectionItem):
 
     def createChildren(self) -> List[QgsDataItem]:
         if not self._provider_key:
-            self._last_error = _rt("Provedor nÃ£o suportado para esta conexÃ£o.")
+            self._last_error = _rt("Provedor não suportado para esta conexão.")
             return []
         self._tables_cache = self._load_tables()
         items: List[QgsDataItem] = []
@@ -529,7 +529,7 @@ class SummarizerConnectionItem(QgsDataCollectionItem):
         refresh_action.triggered.connect(self.refresh)
         actions.append(refresh_action)
 
-        props_action = QAction(_rt("Propriedades da conexÃ£o"), widget)
+        props_action = QAction(_rt("Propriedades da conexão"), widget)
         props_action.triggered.connect(self._show_properties)
         actions.append(props_action)
 
@@ -545,10 +545,10 @@ class SummarizerConnectionItem(QgsDataCollectionItem):
             _rt("Servidor: {server}", server=self.meta.get("host") or self.meta.get("service")),
             _rt("Porta: {port}", port=self.meta.get("port")),
             _rt("Banco: {database}", database=self.meta.get("database")),
-            _rt("UsuÃ¡rio: {user}", user=self.meta.get("user")),
+            _rt("Usuário: {user}", user=self.meta.get("user")),
         ]
         if self._last_error:
-            details.append(_rt("Ãšltimo erro: {error}", error=self._last_error))
+            details.append(_rt("Último erro: {error}", error=self._last_error))
         QMessageBox.information(
             None,
             _rt("Summarizer"),
@@ -561,7 +561,7 @@ class SummarizerConnectionItem(QgsDataCollectionItem):
             return
         confirm = QMessageBox.question(
             None,
-            _rt("Remover conexÃ£o"),
+            _rt("Remover conexão"),
             _rt("Remover '{name}' da lista?", name=self.meta.get("name") or fingerprint),
         )
         if confirm == QMessageBox.Yes:
@@ -572,11 +572,11 @@ class SummarizerConnectionItem(QgsDataCollectionItem):
         grouped: Dict[str, List[TableEntry]] = {}
         metadata = QgsProviderRegistry.instance().providerMetadata(self._provider_key)
         if metadata is None:
-            self._last_error = _rt("Provedor '{provider}' nÃ£o encontrado.", provider=self._provider_key)
+            self._last_error = _rt("Provedor '{provider}' não encontrado.", provider=self._provider_key)
             return grouped
         uri = self._build_uri()
         if not uri:
-            self._last_error = _rt("ParÃ¢metros da conexÃ£o incompletos.")
+            self._last_error = _rt("Parâmetros da conexão incompletos.")
             return grouped
         try:
             connection = metadata.createConnection(uri.connectionInfo(), {})
@@ -585,7 +585,7 @@ class SummarizerConnectionItem(QgsDataCollectionItem):
             self.setIcon(OFFLINE_ICON)
             return grouped
         if not isinstance(connection, QgsAbstractDatabaseProviderConnection):
-            self._last_error = _rt("Provedor nÃ£o suporta navegaÃ§Ã£o no navegador.")
+            self._last_error = _rt("Provedor não suporta navegação no navegador.")
             return grouped
 
         try:
@@ -643,7 +643,7 @@ class SummarizerSchemaItem(QgsDataCollectionItem):
         provider_key: str,
     ):
         path = f"{parent.path()}/{schema or 'public'}"
-        display = schema or _rt("(padrÃ£o)")
+        display = schema or _rt("(padrão)")
         super().__init__(parent, display, path, SummarizerBrowserProvider.PROVIDER_NAME)
         self._tables = tables
         self._meta = connection_meta
@@ -671,7 +671,7 @@ class SummarizerTableItem(QgsLayerItem):
         path = f"{parent.path()}/{table.name}"
         super().__init__(parent, table.name, path, uri, layer_type, provider_key)
         self.setIcon(TABLE_ICON if table.is_vector else QgsLayerItem.iconTable())
-        tooltip_parts = [_rt("Schema: {schema}", schema=table.schema or _rt("(padrÃ£o)"))]
+        tooltip_parts = [_rt("Schema: {schema}", schema=table.schema or _rt("(padrão)"))]
         if table.geometry_column:
             tooltip_parts.append(_rt("Geom: {geom}", geom=table.geometry_column))
         if table.comment:
@@ -734,7 +734,7 @@ def reload_cloud_catalog(force_remote_only: Optional[bool] = None) -> None:
     try:
         cloud_session.reload_cloud_layers(force_remote_only=force_remote)
     except Exception as exc:
-        log_warning(f"Summarizer Cloud falhou ao recarregar catÃ¡logo: {exc}")
+        log_warning(f"Summarizer Cloud falhou ao recarregar catálogo: {exc}")
     _refresh_browser_model()
 
 
@@ -742,7 +742,7 @@ def register_browser_provider() -> SummarizerBrowserProvider:
     """Adds the provider to QGIS' data item registry."""
     registry = _provider_registry()
     if registry is None:
-        raise RuntimeError("NÃ£o foi possÃ­vel acessar o registro de providers do Navegador.")
+        raise RuntimeError("Não foi possível acessar o registro de providers do Navegador.")
     provider = SummarizerBrowserProvider()
     registry.addProvider(provider)
     _refresh_browser_model()

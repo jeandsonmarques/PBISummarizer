@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional
+﻿from typing import Dict, List, Optional
 
 from qgis.PyQt.QtCore import QPointF, QRectF, Qt
 from qgis.PyQt.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPen
@@ -239,7 +239,7 @@ class TableCardItem(QGraphicsRectItem):
         header_rect = QRectF(self.rect().left(), self.rect().top(), self.rect().width(), self.header_height)
         if header_rect.contains(event.pos()):
             QgsMessageLog.logMessage(
-                f"Abrindo menu de exportacao para tabela {self.table_name}", "PowerBI Summarizer"
+                f"Abrindo menu de exportacao para tabela {self.table_name}", "Summarizer Summarizer"
             )
             menu = QMenu()
             export_action = menu.addAction("Exportar camada (preview herdado)")
@@ -262,3 +262,4 @@ class TableCardItem(QGraphicsRectItem):
             self.pos() + QPointF(self.padding, self.header_height + self.padding),
             self.rect().size(),
         )
+

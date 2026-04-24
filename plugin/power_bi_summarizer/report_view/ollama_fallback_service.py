@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import os
@@ -25,15 +25,15 @@ except ImportError:  # pragma: no cover - supports running report_view as a top-
     from text_utils import normalize_text
 
 
-DEFAULT_OLLAMA_URL = os.getenv("POWERBISUMMARIZER_OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
-DEFAULT_OLLAMA_MODEL = os.getenv("POWERBISUMMARIZER_OLLAMA_MODEL", "mistral")
-DEFAULT_OLLAMA_THRESHOLD = float(os.getenv("POWERBISUMMARIZER_OLLAMA_THRESHOLD", "0.65") or 0.65)
-DEFAULT_OLLAMA_TIMEOUT_S = float(os.getenv("POWERBISUMMARIZER_OLLAMA_TIMEOUT_S", "1.6") or 1.6)
+DEFAULT_OLLAMA_URL = os.getenv("Summarizer_OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
+DEFAULT_OLLAMA_MODEL = os.getenv("Summarizer_OLLAMA_MODEL", "mistral")
+DEFAULT_OLLAMA_THRESHOLD = float(os.getenv("Summarizer_OLLAMA_THRESHOLD", "0.65") or 0.65)
+DEFAULT_OLLAMA_TIMEOUT_S = float(os.getenv("Summarizer_OLLAMA_TIMEOUT_S", "1.6") or 1.6)
 
-ENABLE_OLLAMA_KEY = "PowerBISummarizer/reports/enable_ollama"
-OLLAMA_URL_KEY = "PowerBISummarizer/reports/ollama_url"
-OLLAMA_MODEL_KEY = "PowerBISummarizer/reports/ollama_model"
-OLLAMA_THRESHOLD_KEY = "PowerBISummarizer/reports/ollama_threshold"
+ENABLE_OLLAMA_KEY = "Summarizer/reports/enable_ollama"
+OLLAMA_URL_KEY = "Summarizer/reports/ollama_url"
+OLLAMA_MODEL_KEY = "Summarizer/reports/ollama_model"
+OLLAMA_THRESHOLD_KEY = "Summarizer/reports/ollama_threshold"
 
 OLLAMA_RESPONSE_SCHEMA = {
     "type": "object",
@@ -363,28 +363,28 @@ class OllamaFallbackService:
         enable_ollama = self._coerce_bool(
             self._settings_value(
                 ENABLE_OLLAMA_KEY,
-                os.getenv("POWERBISUMMARIZER_OLLAMA_ENABLED", "true"),
+                os.getenv("Summarizer_OLLAMA_ENABLED", "true"),
             ),
             default=True,
         )
         ollama_url = str(
             self._settings_value(
                 OLLAMA_URL_KEY,
-                os.getenv("POWERBISUMMARIZER_OLLAMA_URL", DEFAULT_OLLAMA_URL),
+                os.getenv("Summarizer_OLLAMA_URL", DEFAULT_OLLAMA_URL),
             )
             or DEFAULT_OLLAMA_URL
         ).strip().rstrip("/")
         ollama_model = str(
             self._settings_value(
                 OLLAMA_MODEL_KEY,
-                os.getenv("POWERBISUMMARIZER_OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL),
+                os.getenv("Summarizer_OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL),
             )
             or DEFAULT_OLLAMA_MODEL
         ).strip()
         ollama_threshold = self._coerce_float(
             self._settings_value(
                 OLLAMA_THRESHOLD_KEY,
-                os.getenv("POWERBISUMMARIZER_OLLAMA_THRESHOLD", str(DEFAULT_OLLAMA_THRESHOLD)),
+                os.getenv("Summarizer_OLLAMA_THRESHOLD", str(DEFAULT_OLLAMA_THRESHOLD)),
             ),
             DEFAULT_OLLAMA_THRESHOLD,
         )
@@ -809,7 +809,7 @@ class OllamaFallbackService:
         text = str(value).strip().lower()
         if text in {"1", "true", "yes", "sim", "on"}:
             return True
-        if text in {"0", "false", "no", "nao", "não", "off"}:
+        if text in {"0", "false", "no", "nao", "nÃ£o", "off"}:
             return False
         return default
 
@@ -851,3 +851,4 @@ class OllamaFallbackService:
         if current.startswith(configured_model + ":"):
             return True
         return current.split(":", 1)[0] == configured_model.split(":", 1)[0]
+

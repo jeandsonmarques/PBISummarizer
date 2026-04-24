@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import base64
 import hashlib
@@ -23,9 +23,9 @@ from .utils.plugin_logging import log_info, log_warning
 _HERE = os.path.dirname(__file__)
 _CLOUD_SAMPLES_DIR = os.path.join(_HERE, "resources", "cloud_samples")
 REQUEST_TIMEOUT = 15
-ACTIVE_CONNECTION_KEY = "PowerBISummarizer/cloud/active_connection"
-MOCK_ADMIN_EMAIL = (os.getenv("POWERBISUMMARIZER_MOCK_ADMIN_EMAIL", "") or "").strip().lower()
-AUTHCFG_SETTINGS_KEY = "PowerBISummarizer/cloud/authcfg_id"
+ACTIVE_CONNECTION_KEY = "Summarizer/cloud/active_connection"
+MOCK_ADMIN_EMAIL = (os.getenv("Summarizer_MOCK_ADMIN_EMAIL", "") or "").strip().lower()
+AUTHCFG_SETTINGS_KEY = "Summarizer/cloud/authcfg_id"
 TOKEN_REFRESH_THRESHOLD = 300  # seconds
 
 
@@ -115,11 +115,11 @@ def build_gpkg_vsicurl_path(
     clean_endpoint = sanitize_layers_endpoint(layers_endpoint)
     identifier = str(layer_id)
     if not clean_base_url:
-        raise ValueError("Base URL do Summarizer Cloud não está configurada.")
+        raise ValueError("Base URL do Summarizer Cloud nÃ£o estÃ¡ configurada.")
     if not (clean_base_url.startswith("http://") or clean_base_url.startswith("https://")):
         raise ValueError("Base URL do Summarizer Cloud deve comecar com http:// ou https://.")
     if not identifier:
-        raise ValueError("ID da camada inválido para download GPKG.")
+        raise ValueError("ID da camada invÃ¡lido para download GPKG.")
     download_url = f"{clean_base_url.rstrip('/')}/{clean_endpoint}/{identifier}/download-gpkg"
     if token:
         download_url = append_query_params(download_url, {"token": token})
@@ -162,15 +162,15 @@ def _decode_jwt_payload(token: str) -> Dict[str, Any]:
         return {}
 
 
-class PowerBICloudSession(QObject):
+class SummarizerCloudSession(QObject):
     """Keeps track of the fake Cloud session, config and layer catalog."""
 
     sessionChanged = pyqtSignal(dict)
     configChanged = pyqtSignal(dict)
     layersChanged = pyqtSignal(list)
 
-    SESSION_KEY = "PowerBISummarizer/cloud/session"
-    CONFIG_KEY = "PowerBISummarizer/cloud/config"
+    SESSION_KEY = "Summarizer/cloud/session"
+    CONFIG_KEY = "Summarizer/cloud/config"
 
     def __init__(self):
         super().__init__()
@@ -278,7 +278,7 @@ class PowerBICloudSession(QObject):
             expiry_dt = QDateTime.fromSecsSinceEpoch(exp_int, Qt.UTC)
             session["expires_at"] = expiry_dt.toString(Qt.ISODate)
             QgsMessageLog.logMessage(
-                f"Summarizer Cloud token válido até {session['expires_at']}.",
+                f"Summarizer Cloud token vÃ¡lido atÃ© {session['expires_at']}.",
                 "Summarizer",
                 Qgis.Info,
             )
@@ -305,7 +305,7 @@ class PowerBICloudSession(QObject):
         seconds = self._seconds_until_expiry()
         if not token or (seconds is not None and seconds <= 0):
             QgsMessageLog.logMessage(
-                "Summarizer Cloud token expirado — renovando...",
+                "Summarizer Cloud token expirado â€” renovando...",
                 "Summarizer",
                 Qgis.Info,
             )
@@ -315,7 +315,7 @@ class PowerBICloudSession(QObject):
             return
         if seconds is not None and seconds < TOKEN_REFRESH_THRESHOLD:
             QgsMessageLog.logMessage(
-                "Summarizer Cloud token proximo do vencimento — renovando...",
+                "Summarizer Cloud token proximo do vencimento â€” renovando...",
                 "Summarizer",
                 Qgis.Info,
             )
@@ -379,10 +379,10 @@ class PowerBICloudSession(QObject):
         if self._authcfg_id:
             config.setId(self._authcfg_id)
             if not manager.updateAuthenticationConfig(config):
-                raise RuntimeError("Não foi possível atualizar as credenciais salvas no QGIS.")
+                raise RuntimeError("NÃ£o foi possÃ­vel atualizar as credenciais salvas no QGIS.")
         else:
             if not manager.storeAuthenticationConfig(config):
-                raise RuntimeError("Não foi possível salvar as credenciais no QGIS.")
+                raise RuntimeError("NÃ£o foi possÃ­vel salvar as credenciais no QGIS.")
             self._authcfg_id = config.id()
             self._settings.setValue(AUTHCFG_SETTINGS_KEY, self._authcfg_id)
 
@@ -431,7 +431,7 @@ class PowerBICloudSession(QObject):
             {
                 "id": "mock_corporativo",
                 "name": "Painel corporativo (mock)",
-                "description": "Coleção de camadas locais para testes.",
+                "description": "ColeÃ§Ã£o de camadas locais para testes.",
                 "status": "online",
                 "layers": [
                     CloudLayer(
@@ -457,7 +457,7 @@ class PowerBICloudSession(QObject):
     def _sanitize_connection(self, raw: Dict) -> Dict:
         raw = dict(raw or {})
         raw.setdefault("id", f"conn_{uuid.uuid4().hex[:8]}")
-        raw.setdefault("name", "Conexão sem nome")
+        raw.setdefault("name", "ConexÃ£o sem nome")
         raw.setdefault("status", "offline")
         raw.setdefault("description", "")
         layers = []
@@ -477,7 +477,7 @@ class PowerBICloudSession(QObject):
         return raw
 
     def _cloud_connection_meta(self) -> Optional[Dict]:
-        """Recupera a conexão ativa/salva para montar camadas PostGIS reais."""
+        """Recupera a conexÃ£o ativa/salva para montar camadas PostGIS reais."""
         try:
             from .browser_integration import connection_registry
         except Exception:
@@ -492,9 +492,9 @@ class PowerBICloudSession(QObject):
         return connections[0] if connections else None
 
     def _build_postgis_source(self, conn: Optional[Dict], layer_payload: Dict) -> Optional[str]:
-        """Monta a string de conexão PostGIS a partir da conexão salva."""
+        """Monta a string de conexÃ£o PostGIS a partir da conexÃ£o salva."""
         if not conn:
-            log_warning("Nenhuma conexão ativa configurada para PostGIS.")
+            log_warning("Nenhuma conexÃ£o ativa configurada para PostGIS.")
             return None
 
         uri = QgsDataSourceUri()
@@ -529,11 +529,11 @@ class PowerBICloudSession(QObject):
             return endpoint
         base_url = sanitize_base_url(self._config.get("base_url"))
         if not base_url:
-            raise ValueError("Configure a Base URL válida nas configurações do Cloud.")
+            raise ValueError("Configure a Base URL vÃ¡lida nas configuraÃ§Ãµes do Cloud.")
         if not (base_url.startswith("http://") or base_url.startswith("https://")):
             raise ValueError("Configure a Base URL iniciando com http:// ou https://.")
         if not endpoint:
-            raise ValueError("Endpoint Cloud inválido.")
+            raise ValueError("Endpoint Cloud invÃ¡lido.")
         if not endpoint.startswith("/"):
             endpoint = f"/{endpoint}"
         return f"{base_url}{endpoint}"
@@ -560,7 +560,7 @@ class PowerBICloudSession(QObject):
         try:
             return response.json()
         except ValueError as exc:
-            raise RuntimeError("Resposta inválida recebida do Summarizer Cloud.") from exc
+            raise RuntimeError("Resposta invÃ¡lida recebida do Summarizer Cloud.") from exc
 
     def _fetch_profile(self, token: str, token_type: str) -> Dict:
         """Fetches /me to enrich session with role/id info. Best effort; ignores failures."""
@@ -601,7 +601,7 @@ class PowerBICloudSession(QObject):
         data = self._request_json("POST", self._config.get("login_endpoint"), payload=payload)
         token = data.get("access_token")
         if not token:
-            raise RuntimeError("A API não retornou um token de acesso.")
+            raise RuntimeError("A API nÃ£o retornou um token de acesso.")
         issued = QDateTime.currentDateTimeUtc()
         session = {
             "username": username,
@@ -639,7 +639,7 @@ class PowerBICloudSession(QObject):
         self._ensure_valid_remote_token(interactive=False)
         token = self._session.get("token")
         if not token:
-            raise RuntimeError("Sessão Cloud não autenticada.")
+            raise RuntimeError("SessÃ£o Cloud nÃ£o autenticada.")
         token_type = (self._session.get("token_type") or "bearer").lower()
         prefix = "Bearer" if token_type == "bearer" else token_type.capitalize()
         return {"Authorization": f"{prefix} {token}"}
@@ -727,7 +727,7 @@ class PowerBICloudSession(QObject):
             headers=self._auth_headers(),
         )
         if not isinstance(payload, list):
-            raise RuntimeError("Resposta inválida do endpoint de camadas.")
+            raise RuntimeError("Resposta invÃ¡lida do endpoint de camadas.")
         layers: List[Dict] = []
         conn_meta = self._cloud_connection_meta()
         layers_endpoint = sanitize_layers_endpoint(self._config.get("layers_endpoint"))
@@ -767,7 +767,7 @@ class PowerBICloudSession(QObject):
                 provider_key = item.get("provider") or "ogr"
 
             if not source:
-                log_warning(f"Ignorando camada {name}: origem não resolvida (provider={raw_provider}).")
+                log_warning(f"Ignorando camada {name}: origem nÃ£o resolvida (provider={raw_provider}).")
                 continue
 
             layer = CloudLayer(
@@ -792,7 +792,7 @@ class PowerBICloudSession(QObject):
                 layer["group_name"] = group_name_value
             layers.append(layer)
         connection = {
-            "id": "powerbi_cloud_remote",
+            "id": "Summarizer_cloud_remote",
             "name": "Summarizer Cloud",
             "status": "online" if layers else "offline",
             "description": (
@@ -811,7 +811,7 @@ class PowerBICloudSession(QObject):
             raise RuntimeError("Exclusao remota disponivel apenas quando conectado ao Cloud real.")
         identifier = str(layer_id).strip()
         if not identifier:
-            raise ValueError("Identificador da camada inválido.")
+            raise ValueError("Identificador da camada invÃ¡lido.")
         endpoint = f"/layers/{identifier}"
         payload = self._request_json("DELETE", endpoint, headers=self._auth_headers())
         return payload if isinstance(payload, dict) else {}
@@ -862,7 +862,7 @@ class PowerBICloudSession(QObject):
     def login(self, username: str, password: str) -> Dict:
         username = (username or "").strip()
         if not username or not password:
-            raise ValueError("Usuário e senha são obrigatórios.")
+            raise ValueError("UsuÃ¡rio e senha sÃ£o obrigatÃ³rios.")
         if self.hosting_ready():
             session = self._remote_login(username, password)
         else:
@@ -870,19 +870,19 @@ class PowerBICloudSession(QObject):
         self._apply_session(session)
         mode = self._session.get("mode") or "mock"
         if mode == "remote":
-            log_info(f"Sessão remota autenticada para {username}.")
+            log_info(f"SessÃ£o remota autenticada para {username}.")
         else:
-            log_info(f"Sessão mock autenticada para {username}.")
+            log_info(f"SessÃ£o mock autenticada para {username}.")
         return dict(self._session)
 
     def logout(self):
         if not self._session:
             return
-        username = self._session.get("username") or "usuário"
+        username = self._session.get("username") or "usuÃ¡rio"
         self._session = {}
         self._persist_session()
         self._clear_connections(notify=True)
-        log_info(f"Sessão encerrada para {username}.")
+        log_info(f"SessÃ£o encerrada para {username}.")
         self.sessionChanged.emit({})
 
     def update_config(
@@ -920,7 +920,7 @@ class PowerBICloudSession(QObject):
             should_clear_catalog = bool(hosting_ready)
         if updated:
             self._persist_config()
-            log_info("Configurações do Cloud atualizadas.")
+            log_info("ConfiguraÃ§Ãµes do Cloud atualizadas.")
             self.configChanged.emit(dict(self._config))
             if should_clear_catalog:
                 self._clear_connections(notify=True)
@@ -935,21 +935,21 @@ class PowerBICloudSession(QObject):
             try:
                 if self._should_use_remote_layers():
                     self._connections = self._fetch_remote_layers()
-                    log_info("Catálogo remoto atualizado.")
+                    log_info("CatÃ¡logo remoto atualizado.")
                 elif force_remote:
                     self._connections = []
-                    log_info("Hospedagem ativa: aguardando catálogo remoto.")
+                    log_info("Hospedagem ativa: aguardando catÃ¡logo remoto.")
                 else:
                     self._connections = self._load_mock_connections()
-                    log_info("Catálogo mock atualizado.")
+                    log_info("CatÃ¡logo mock atualizado.")
             except Exception as exc:  # pragma: no cover - runtime safeguard
                 if force_remote:
                     log_warning(
-                        f"Falha ao atualizar catálogo remoto: {exc}. Mantendo catálogo vazio (somente real)."
+                        f"Falha ao atualizar catÃ¡logo remoto: {exc}. Mantendo catÃ¡logo vazio (somente real)."
                     )
                     self._connections = []
                 else:
-                    log_warning(f"Falha ao atualizar catálogo remoto: {exc}. Voltando ao mock.")
+                    log_warning(f"Falha ao atualizar catÃ¡logo remoto: {exc}. Voltando ao mock.")
                     self._connections = self._load_mock_connections()
             self.layersChanged.emit(self.cloud_connections())
         finally:
@@ -977,18 +977,20 @@ class PowerBICloudSession(QObject):
         return {"text": text, "level": level, "issued": issued}
 
     def active_connection_fingerprint(self) -> str:
-        """Retorna o fingerprint da conexão marcada como atual para o Cloud."""
+        """Retorna o fingerprint da conexÃ£o marcada como atual para o Cloud."""
         value = self._settings.value(ACTIVE_CONNECTION_KEY, "")
         return str(value) if value else ""
 
     def set_active_connection_fingerprint(self, fingerprint: Optional[str]):
-        """Atualiza a conexão atual usada para preencher o login padrão."""
+        """Atualiza a conexÃ£o atual usada para preencher o login padrÃ£o."""
         if fingerprint:
             self._settings.setValue(ACTIVE_CONNECTION_KEY, fingerprint)
         else:
             self._settings.remove(ACTIVE_CONNECTION_KEY)
 
 
-cloud_session = PowerBICloudSession()
+cloud_session = SummarizerCloudSession()
 
-__all__ = ["cloud_session", "PowerBICloudSession"]
+__all__ = ["cloud_session", "SummarizerCloudSession"]
+
+

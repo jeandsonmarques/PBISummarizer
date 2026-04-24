@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import os
@@ -10,8 +10,8 @@ from qgis.PyQt.QtCore import QSettings
 from .dashboard_models import DashboardProject
 
 
-RECENTS_SETTINGS_KEY = "PowerBISummarizer/model/recent_projects"
-LAST_DIR_SETTINGS_KEY = "PowerBISummarizer/model/last_dir"
+RECENTS_SETTINGS_KEY = "Summarizer/model/recent_projects"
+LAST_DIR_SETTINGS_KEY = "Summarizer/model/last_dir"
 PROJECT_EXTENSION = ".pbsdash"
 MAX_RECENTS = 8
 
@@ -130,3 +130,4 @@ class DashboardProjectStore:
             self.settings.setValue(RECENTS_SETTINGS_KEY, json.dumps(items, ensure_ascii=False))
         except Exception:
             self.settings.setValue(RECENTS_SETTINGS_KEY, "[]")
+

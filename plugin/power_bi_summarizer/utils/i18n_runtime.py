@@ -420,7 +420,7 @@ def _normalize_locale(locale_code: str) -> str:
 
 def current_locale() -> str:
     try:
-        forced = str(QSettings().value("PowerBISummarizer/uiLocale", "auto") or "auto").strip()
+        forced = str(QSettings().value("Summarizer/uiLocale", "auto") or "auto").strip()
     except Exception:
         forced = "auto"
     return _normalize_locale(forced)
@@ -757,4 +757,5 @@ def apply_widget_translations(root: QWidget, locale_code: str = ""):
                 continue
     except Exception:
         pass
+
 

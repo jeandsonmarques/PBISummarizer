@@ -1,1 +1,1 @@
-"""Utility helpers for PowerBISummarizer."""
+"""Utility helpers for Summarizer."""

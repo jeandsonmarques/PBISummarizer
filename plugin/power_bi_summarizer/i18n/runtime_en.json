@@ -134,7 +134,7 @@
   "Endpoint de camadas": "Tier endpoint",
   "Endpoint de login": "Login endpoint",
   "Enviar camada para o Cloud (GPKG)": "Send layer to the Cloud (GPKG)",
-  "Enviar camadas para o PowerBI Cloud (apenas admin)": "Submit layers to PowerBI Cloud (admin only)",
+  "Enviar camadas para o Summarizer Cloud (apenas admin)": "Submit layers to Summarizer Cloud (admin only)",
   "Escolha a fonte de dados (PostgreSQL ou Summarizer Cloud). As tabelas selecionadas serão adicionadas ao modelo sem abrir camadas no mapa.": "Choose the data source (PostgreSQL or Summarizer Cloud). The selected tables will be added to the model without opening layers on the map.",
   "Escolha os agrupamentos no painel Campos da Tabela Dinamica para montar a tabela dinamica.": "Choose the groupings in the PivotTable Fields panel to assemble the pivot table.",
   "Escolha uma fonte para começar. Os dados carregados serão exibidos no painel Resumo.": "Choose a font to get started. The uploaded data will be displayed in the Summary panel.",

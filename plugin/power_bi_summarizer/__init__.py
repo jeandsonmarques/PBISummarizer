@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 
 
@@ -48,6 +48,6 @@ def _prioritize_qgis_binary_packages():
 
 def classFactory(iface):
     _prioritize_qgis_binary_packages()
-    from .data_summarizer import PowerBISummarizer
+    from .data_summarizer import Summarizer
 
-    return PowerBISummarizer(iface)
+    return Summarizer(iface)

@@ -191,7 +191,7 @@ class DashboardAddDialog(QDialog):
             self,
             _rt("Escolher painel salvo"),
             initial_dir,
-            _rt("Power BI Dashboard (*.pbsdash);;JSON (*.json)"),
+            _rt("Summarizer Dashboard (*.pbsdash);;JSON (*.json)"),
         )
         self._selected_recent_path = path
         if self._selected_recent_path:

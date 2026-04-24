@@ -67,9 +67,9 @@ except ImportError:  # pragma: no cover
 
 
 PREVIEW_ROW_LIMIT = 120
-RECENTS_SETTINGS_KEY = "PowerBISummarizer/integration/recent_sources"
-SAVED_CONNECTIONS_KEY = "PowerBISummarizer/integration/saved_connections"
-LAST_DB_PARAMS_KEY = "PowerBISummarizer/integration/last_db_params"
+RECENTS_SETTINGS_KEY = "Summarizer/integration/recent_sources"
+SAVED_CONNECTIONS_KEY = "Summarizer/integration/saved_connections"
+LAST_DB_PARAMS_KEY = "Summarizer/integration/last_db_params"
 
 
 @dataclass
@@ -755,7 +755,7 @@ class IntegrationPanel(QWidget):
             return
         conn_name = self._normalize_connection_name(
             connection.get("name")
-            or f"{connection.get('database', 'powerbi')}_{connection.get('user', '').strip() or 'user'}"
+            or f"{connection.get('database', 'Summarizer')}_{connection.get('user', '').strip() or 'user'}"
         )
         base = f"{prefix}/{conn_name}"
         password = connection.get("password", "")
@@ -811,7 +811,7 @@ class IntegrationPanel(QWidget):
 
     def open_connections_manager(self):
         dialog = SlimDialogBase(
-            self, geometry_key="PowerBISummarizer/integration/savedConnections"
+            self, geometry_key="Summarizer/integration/savedConnections"
         )
         dialog.setWindowTitle(_rt("Gerenciar conexões salvas"))
         dialog.resize(520, 320)
@@ -1196,7 +1196,7 @@ class IntegrationPanel(QWidget):
 # ---------------------------------------------------------------------- Dialogs
 class ExcelImportDialog(SlimDialogBase):
     def __init__(self, parent: QWidget, last_dir: str):
-        super().__init__(parent, geometry_key="PowerBISummarizer/integration/excelDialog")
+        super().__init__(parent, geometry_key="Summarizer/integration/excelDialog")
         self._df: Optional[pd.DataFrame] = None
         self._metadata: Dict = {}
         self.last_dir = last_dir or ""
@@ -1306,7 +1306,7 @@ class ExcelImportDialog(SlimDialogBase):
 
 class DelimitedFileDialog(SlimDialogBase):
     def __init__(self, parent: QWidget, last_dir: str):
-        super().__init__(parent, geometry_key="PowerBISummarizer/integration/delimitedDialog")
+        super().__init__(parent, geometry_key="Summarizer/integration/delimitedDialog")
         self._df: Optional[pd.DataFrame] = None
         self._metadata: Dict = {}
         self.last_dir = last_dir or ""
@@ -1451,7 +1451,7 @@ class DelimitedFileDialog(SlimDialogBase):
 
 class ClipboardImportDialog(SlimDialogBase):
     def __init__(self, parent: QWidget):
-        super().__init__(parent, geometry_key="PowerBISummarizer/integration/clipboardDialog")
+        super().__init__(parent, geometry_key="Summarizer/integration/clipboardDialog")
         self._df: Optional[pd.DataFrame] = None
         self._metadata: Dict = {}
         self.setWindowTitle(_rt("Colar dados"))
@@ -1551,7 +1551,7 @@ class DatabaseImportDialog(SlimDialogBase):
         saved_connections: List[Dict],
         browser_sync_callback: Optional[Callable[[Dict], None]] = None,
     ):
-        super().__init__(parent, geometry_key="PowerBISummarizer/integration/databaseDialog")
+        super().__init__(parent, geometry_key="Summarizer/integration/databaseDialog")
         self.settings = QSettings()
         self.saved_connections = saved_connections or []
         self._df: Optional[pd.DataFrame] = None
@@ -1943,7 +1943,7 @@ class DatabaseImportDialog(SlimDialogBase):
 
 class GoogleSheetsDialog(SlimDialogBase):
     def __init__(self, parent: QWidget):
-        super().__init__(parent, geometry_key="PowerBISummarizer/integration/googleSheetsDialog")
+        super().__init__(parent, geometry_key="Summarizer/integration/googleSheetsDialog")
         self._df: Optional[pd.DataFrame] = None
         self._metadata: Dict = {}
         self.setWindowTitle(_rt("Importar dados do Google Sheets"))
@@ -2028,7 +2028,7 @@ class GoogleSheetsDialog(SlimDialogBase):
 
 class ExtendedConnectorsDialog(SlimDialogBase):
     def __init__(self, connectors: Dict[str, ConnectorConfig], parent: QWidget):
-        super().__init__(parent, geometry_key="PowerBISummarizer/integration/extendedConnectors")
+        super().__init__(parent, geometry_key="Summarizer/integration/extendedConnectors")
         self.setWindowTitle("Conectores disponíveis")
         self.resize(520, 360)
         layout = QVBoxLayout(self)
@@ -2053,4 +2053,6 @@ class ExtendedConnectorsDialog(SlimDialogBase):
         close_btn.rejected.connect(self.reject)
         layout.addWidget(close_btn)
         _apply_i18n_widgets(self)
+
+
 

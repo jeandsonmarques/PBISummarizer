@@ -1,4 +1,4 @@
-/* Power BI Desktop inspired style for PowerBISummarizer */
+﻿/* Power BI Desktop inspired style for Summarizer */
 
 * {
     font-family: ${font_ui_stack};
@@ -431,3 +431,4 @@ QStatusBar {
     background-color: ${color_surface};
     border-top: 1px solid ${color_border};
 }
+

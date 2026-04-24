@@ -1,5 +1,5 @@
 """
-Centralized color and typography definitions for the PowerBISummarizer plugin.
+Centralized color and typography definitions for the Summarizer plugin.
 
 The palette closely follows Power BI / Excel styling guidelines so the rest
 of the codebase can import consistent tokens instead of hardcoding values.
@@ -29,7 +29,7 @@ COLORS = {
 
 TYPOGRAPHY = {
     "font_family": "Segoe UI",
-    "font_ui_stack": '"Segoe UI Variable Text", "Segoe UI", "SF Pro Text", "Helvetica Neue", Arial, sans-serif',
+    "font_ui_stack": '"Segoe UI", "Segoe UI Variable Text", "SF Pro Text", "Helvetica Neue", Arial, sans-serif',
     "font_mono_stack": '"Cascadia Mono", "SF Mono", Consolas, "Liberation Mono", monospace',
     "font_base_size": 11,
     "font_title_size": 18,

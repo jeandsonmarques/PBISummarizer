@@ -1,4 +1,4 @@
-from qgis.PyQt.QtCore import Qt, QSortFilterProxyModel, QRegExp
+﻿from qgis.PyQt.QtCore import Qt, QSortFilterProxyModel, QRegExp
 from qgis.PyQt.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -50,7 +50,7 @@ class InteractiveTable(QWidget):
         top = QHBoxLayout()
         top.addWidget(QLabel("Filtro:"))
         self.search = QLineEdit()
-        self.search.setPlaceholderText("Digite para filtrar em todas as colunas…")
+        self.search.setPlaceholderText("Digite para filtrar em todas as colunasâ€¦")
         top.addWidget(self.search)
         self.status = QLabel("")
         top.addWidget(self.status)
@@ -68,7 +68,7 @@ class InteractiveTable(QWidget):
 
     def update_data(self, headers, rows, highlight_cols=None):
         QgsMessageLog.logMessage(
-            "InteractiveTable: rebuilding model", "PowerBISummarizer", Qgis.Info
+            "InteractiveTable: rebuilding model", "Summarizer", Qgis.Info
         )
         self._headers = list(headers)
 
@@ -111,7 +111,7 @@ class InteractiveTable(QWidget):
         self.view.resizeColumnsToContents()
         QgsMessageLog.logMessage(
             f"InteractiveTable: model ready with {self.model.rowCount()} rows",
-            "PowerBISummarizer",
+            "Summarizer",
             Qgis.Info,
         )
 
@@ -123,3 +123,4 @@ class InteractiveTable(QWidget):
     def _refresh_status(self):
         vis = self.proxy.rowCount()
         self.status.setText(f"Mostrando {vis}/{self._rowcount}")
+

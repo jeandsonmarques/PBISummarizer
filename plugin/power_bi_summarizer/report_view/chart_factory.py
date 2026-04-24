@@ -1,4 +1,4 @@
-import math
+﻿import math
 import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
@@ -85,7 +85,7 @@ class ChartFactory:
                 selection_layer_name = plan.boundary_layer_name or ""
         return ChartPayload.build(
             chart_type=self._choose_chart_type(result),
-            title=result.plan.chart.title if result.plan is not None else "Relatório",
+            title=result.plan.chart.title if result.plan is not None else "RelatÃ³rio",
             categories=[row.category for row in rows],
             values=[row.value for row in rows],
             value_label=result.value_label,
@@ -120,7 +120,7 @@ class ReportChartWidget(QWidget):
         "pie": "Pizza",
         "donut": "Rosca",
         "line": "Linha",
-        "area": "Área",
+        "area": "Ãrea",
         "card": "Card",
         "matrix": "Matrix",
         "slicer": "Slicer",
@@ -137,17 +137,17 @@ class ReportChartWidget(QWidget):
     }
 
     TYPE_GROUPS = [
-        ("Comparação", ["barh", "column_stacked", "bar100_stacked"]),
-        ("Tendência", ["line", "area"]),
-        ("Composição", ["pie", "donut", "treemap", "waterfall"]),
+        ("ComparaÃ§Ã£o", ["barh", "column_stacked", "bar100_stacked"]),
+        ("TendÃªncia", ["line", "area"]),
+        ("ComposiÃ§Ã£o", ["pie", "donut", "treemap", "waterfall"]),
         ("Indicadores", ["kpi", "gauge"]),
-        ("Análise", ["funnel"]),
+        ("AnÃ¡lise", ["funnel"]),
     ]
     TYPE_PRIORITY = ["card", "matrix", "slicer", "column_clustered", "combo", "scatter"]
 
     PALETTE_LABELS: Dict[str, str] = {
-        "default": "Paleta padrão",
-        "single": "Cor única",
+        "default": "Paleta padrÃ£o",
+        "single": "Cor Ãºnica",
         "category": "Cores por categoria",
         "purple": "Paleta roxa",
         "blue": "Paleta azul",
@@ -157,7 +157,7 @@ class ReportChartWidget(QWidget):
     }
 
     SORT_LABELS: Dict[str, str] = {
-        "default": "Ordem padrão",
+        "default": "Ordem padrÃ£o",
         "asc": "Ordenar crescente",
         "desc": "Ordenar decrescente",
     }
@@ -516,7 +516,7 @@ class ReportChartWidget(QWidget):
             return
         self._last_render_error_key = issue_key
         try:
-            QgsMessageLog.logMessage(issue_key, "PowerBISummarizer", Qgis.Warning)
+            QgsMessageLog.logMessage(issue_key, "Summarizer", Qgis.Warning)
         except Exception:
             pass
 
@@ -1151,11 +1151,11 @@ class ReportChartWidget(QWidget):
             return
 
         menu = QMenu(self)
-        type_menu = menu.addMenu(_rt("Mudar tipo de gráfico"))
-        personalize_menu = menu.addMenu(_rt("Personalizar gráfico"))
+        type_menu = menu.addMenu(_rt("Mudar tipo de grÃ¡fico"))
+        personalize_menu = menu.addMenu(_rt("Personalizar grÃ¡fico"))
         font_menu = personalize_menu.addMenu(_rt("Tamanho da fonte"))
         palette_menu = personalize_menu.addMenu(_rt("Paleta"))
-        sort_menu = personalize_menu.addMenu(_rt("Ordenação"))
+        sort_menu = personalize_menu.addMenu(_rt("OrdenaÃ§Ã£o"))
         corners_menu = personalize_menu.addMenu(_rt("Cantos"))
 
         self._ensure_visual_state_compatibility()
@@ -1252,20 +1252,20 @@ class ReportChartWidget(QWidget):
         menu.addSeparator()
 
         if self._filtered_category_key:
-            clear_filter_action = QAction(_rt("Limpar filtro do gráfico"), menu)
+            clear_filter_action = QAction(_rt("Limpar filtro do grÃ¡fico"), menu)
             clear_filter_action.triggered.connect(self._clear_chart_filter)
             menu.addAction(clear_filter_action)
 
         if self._active_category_keys:
-            clear_selection_action = QAction(_rt("Limpar destaque do gráfico"), menu)
+            clear_selection_action = QAction(_rt("Limpar destaque do grÃ¡fico"), menu)
             clear_selection_action.triggered.connect(self._clear_chart_selection_feedback)
             menu.addAction(clear_selection_action)
 
-        reset_action = QAction(_rt("Restaurar visual padrão"), menu)
+        reset_action = QAction(_rt("Restaurar visual padrÃ£o"), menu)
         reset_action.triggered.connect(self._reset_chart_style)
         menu.addAction(reset_action)
 
-        export_action = QAction(_rt("Exportar gráfico"), menu)
+        export_action = QAction(_rt("Exportar grÃ¡fico"), menu)
         export_action.setEnabled(self._payload is not None)
         export_action.triggered.connect(self._export_chart)
         menu.addAction(export_action)
@@ -1392,17 +1392,17 @@ class ReportChartWidget(QWidget):
         }
         normalized = [
             label.lower()
-            .replace("ç", "c")
-            .replace("ã", "a")
-            .replace("á", "a")
-            .replace("â", "a")
-            .replace("é", "e")
-            .replace("ê", "e")
-            .replace("í", "i")
-            .replace("ó", "o")
-            .replace("ô", "o")
-            .replace("õ", "o")
-            .replace("ú", "u")
+            .replace("Ã§", "c")
+            .replace("Ã£", "a")
+            .replace("Ã¡", "a")
+            .replace("Ã¢", "a")
+            .replace("Ã©", "e")
+            .replace("Ãª", "e")
+            .replace("Ã­", "i")
+            .replace("Ã³", "o")
+            .replace("Ã´", "o")
+            .replace("Ãµ", "o")
+            .replace("Ãº", "u")
             for label in labels
         ]
         return all(label in month_tokens for label in normalized)
@@ -1507,7 +1507,7 @@ class ReportChartWidget(QWidget):
         try:
             file_path, _ = QFileDialog.getSaveFileName(
                 self,
-                _rt("Exportar gráfico"),
+                _rt("Exportar grÃ¡fico"),
                 "grafico_relatorio.png",
                 "PNG (*.png)",
             )
@@ -1864,9 +1864,9 @@ class ReportChartWidget(QWidget):
         super().leaveEvent(event)
 
     def _prompt_for_text(self, dialog_title: str, field_label: str, current_text: str) -> Optional[str]:
-        helper_text = _rt("Atualize apenas o texto exibido neste gráfico.")
+        helper_text = _rt("Atualize apenas o texto exibido neste grÃ¡fico.")
         if _rt("Legenda") in field_label or "Legenda" in field_label:
-            helper_text = _rt("Atualize apenas o texto exibido na legenda deste gráfico.")
+            helper_text = _rt("Atualize apenas o texto exibido na legenda deste grÃ¡fico.")
         try:
             new_text, accepted = slim_get_text(
                 parent=self,
@@ -1890,7 +1890,7 @@ class ReportChartWidget(QWidget):
         current_text = str(target.get("current_text") or "")
 
         if target_type == "title":
-            new_text = self._prompt_for_text(_rt("Editar título do gráfico"), _rt("Título:"), current_text)
+            new_text = self._prompt_for_text(_rt("Editar tÃ­tulo do grÃ¡fico"), _rt("TÃ­tulo:"), current_text)
             if new_text is None:
                 return
             self.chart_state.title_override = new_text
@@ -2022,11 +2022,11 @@ class ReportChartWidget(QWidget):
             return
         try:
             if level == "warning":
-                bar.pushWarning(_rt("Relatórios"), message)
+                bar.pushWarning(_rt("RelatÃ³rios"), message)
             elif level == "success":
-                bar.pushSuccess(_rt("Relatórios"), message)
+                bar.pushSuccess(_rt("RelatÃ³rios"), message)
             else:
-                bar.pushInfo(_rt("Relatórios"), message)
+                bar.pushInfo(_rt("RelatÃ³rios"), message)
         except Exception:
             self.setToolTip(str(message or ""))
 
@@ -2058,14 +2058,14 @@ class ReportChartWidget(QWidget):
         layer = self._selection_layer()
         if layer is None:
             layer_name = getattr(self._payload, "selection_layer_name", "") or _rt("camada analisada")
-            self._push_feedback(_rt("Não encontrei a camada usada neste gráfico: {layer_name}.", layer_name=layer_name), level="warning")
+            self._push_feedback(_rt("NÃ£o encontrei a camada usada neste grÃ¡fico: {layer_name}.", layer_name=layer_name), level="warning")
             return False
 
         feature_ids = self._resolve_target_feature_ids(target, layer=layer)
         if not feature_ids:
             category_label = str(target.get("display_label") or target.get("current_text") or target.get("raw_category") or "")
             self._push_feedback(
-                _rt("Não foi possível localizar feições para a categoria {category_label}.", category_label=category_label),
+                _rt("NÃ£o foi possÃ­vel localizar feiÃ§Ãµes para a categoria {category_label}.", category_label=category_label),
                 level="warning",
             )
             return False
@@ -2079,7 +2079,7 @@ class ReportChartWidget(QWidget):
         try:
             layer.selectByIds(selected_ids)
         except Exception:
-            self._push_feedback(_rt("Não foi possível atualizar a seleção no mapa."), level="warning")
+            self._push_feedback(_rt("NÃ£o foi possÃ­vel atualizar a seleÃ§Ã£o no mapa."), level="warning")
             return False
 
         try:
@@ -2187,7 +2187,7 @@ class ReportChartWidget(QWidget):
         select_action.triggered.connect(lambda checked=False: self._activate_category_target(target, zoom=False))
         menu.addAction(select_action)
 
-        zoom_action = QAction(_rt("Zoom na seleção"), menu)
+        zoom_action = QAction(_rt("Zoom na seleÃ§Ã£o"), menu)
         zoom_action.setEnabled(can_select)
         zoom_action.triggered.connect(lambda checked=False: self._activate_category_target(target, zoom=True))
         menu.addAction(zoom_action)
@@ -2201,12 +2201,12 @@ class ReportChartWidget(QWidget):
         menu.addAction(copy_action)
 
         if self._filtered_category_key:
-            clear_filter_action = QAction(_rt("Limpar filtro do gráfico"), menu)
+            clear_filter_action = QAction(_rt("Limpar filtro do grÃ¡fico"), menu)
             clear_filter_action.triggered.connect(self._clear_chart_filter)
             menu.addAction(clear_filter_action)
 
         if self._active_category_keys or self._selected_category_key:
-            clear_selection_action = QAction(_rt("Limpar destaque do gráfico"), menu)
+            clear_selection_action = QAction(_rt("Limpar destaque do grÃ¡fico"), menu)
             clear_selection_action.triggered.connect(lambda checked=False: self._clear_chart_selection_feedback(emit_signal=True))
             menu.addAction(clear_selection_action)
 
@@ -3101,7 +3101,7 @@ class ReportChartWidget(QWidget):
 
         subtitle = ""
         if len(values) > 1:
-            subtitle = f"Variação: {self._format_value(current - float(values[1]))}"
+            subtitle = f"VariaÃ§Ã£o: {self._format_value(current - float(values[1]))}"
         elif values:
             subtitle = f"{self._format_value(current)} selecionado"
         painter.setFont(label_font)
@@ -4111,4 +4111,5 @@ class ReportChartWidget(QWidget):
         if math.isclose(value, round(value), rel_tol=0.0, abs_tol=1e-6):
             return f"{int(round(value)):,}".replace(",", ".")
         return f"{value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
 

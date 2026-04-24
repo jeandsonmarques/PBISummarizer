@@ -848,7 +848,7 @@ class SlimLayerSelectionDialog(SlimChecklistDialog):
         items: Sequence[str],
         parent: Optional[QWidget] = None,
         checked_items: Optional[Iterable[str]] = None,
-        geometry_key: str = "PowerBISummarizer/dialogs/layerSelection",
+        geometry_key: str = "Summarizer/dialogs/layerSelection",
         **kwargs,
     ):
         super().__init__(
@@ -896,7 +896,7 @@ def slim_get_item(
     items: Sequence[str],
     current: int = 0,
     editable: bool = False,
-    geometry_key: str = "PowerBISummarizer/dialogs/getItem",
+    geometry_key: str = "Summarizer/dialogs/getItem",
 ) -> Tuple[str, bool]:
     dialog, layout, buttons = _build_form_dialog(parent, title, geometry_key)
 
@@ -934,7 +934,7 @@ def slim_get_text(
     label_text: str,
     text: str = "",
     placeholder: str = "",
-    geometry_key: str = "PowerBISummarizer/dialogs/getText",
+    geometry_key: str = "Summarizer/dialogs/getText",
     helper_text: str = "",
     accept_label: str = "Salvar",
     icon: Optional[QIcon] = None,
@@ -1008,7 +1008,7 @@ def slim_get_int(
     minimum: int,
     maximum: int,
     step: int = 1,
-    geometry_key: str = "PowerBISummarizer/dialogs/getInt",
+    geometry_key: str = "Summarizer/dialogs/getInt",
 ) -> Tuple[int, bool]:
     dialog, layout, buttons = _build_form_dialog(parent, title, geometry_key)
 
@@ -1037,4 +1037,5 @@ def slim_get_int(
 
     accepted = dialog.exec_() == QDialog.Accepted and result["accepted"]
     return result["value"], accepted
+
 

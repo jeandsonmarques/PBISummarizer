@@ -124,9 +124,9 @@ class _PivotFilterProxy(QSortFilterProxyModel):
         self.invalidateFilter()
 
 
-_PIVOT_FIELD_MIME = "application/x-powerbisummarizer-pivot-field"
-_SIDEBAR_COLLAPSED_KEY = "PowerBISummarizer/pivot/sidebarCollapsed"
-_SIDEBAR_WIDTH_KEY = "PowerBISummarizer/pivot/sidebarWidth"
+_PIVOT_FIELD_MIME = "application/x-Summarizer-pivot-field"
+_SIDEBAR_COLLAPSED_KEY = "Summarizer/pivot/sidebarCollapsed"
+_SIDEBAR_WIDTH_KEY = "Summarizer/pivot/sidebarWidth"
 _SIDEBAR_COLLAPSED_WIDTH = 52
 _SIDEBAR_MIN_WIDTH = 304
 _SIDEBAR_DEFAULT_WIDTH = 320
@@ -3613,7 +3613,7 @@ class PivotTableWidget(QWidget):
 
     def _populate_table(self):
         QgsMessageLog.logMessage(
-            "PivotTableWidget: rebuilding table model", "PowerBISummarizer", Qgis.Info
+            "PivotTableWidget: rebuilding table model", "Summarizer", Qgis.Info
         )
         self.proxy_model.setSourceModel(None)
         new_model = QStandardItemModel(self)
@@ -3644,7 +3644,7 @@ class PivotTableWidget(QWidget):
             self._update_selection_summary()
             QgsMessageLog.logMessage(
                 "PivotTableWidget: model rebuilt (empty)",
-                "PowerBISummarizer",
+                "Summarizer",
                 Qgis.Info,
             )
             return
@@ -3714,7 +3714,7 @@ class PivotTableWidget(QWidget):
         self._update_selection_summary()
         QgsMessageLog.logMessage(
             f"PivotTableWidget: model rebuilt with {self.table_model.rowCount()} rows",
-            "PowerBISummarizer",
+            "Summarizer",
             Qgis.Info,
         )
 
@@ -3922,7 +3922,7 @@ class PivotTableWidget(QWidget):
         except Exception as exc:
             QgsMessageLog.logMessage(
                 f"PivotTableWidget: falha ao atualizar resumo de selecao: {exc}",
-                "PowerBISummarizer",
+                "Summarizer",
                 Qgis.Warning,
             )
             if hasattr(self, "selection_summary_label"):
@@ -3934,7 +3934,7 @@ class PivotTableWidget(QWidget):
         except Exception as exc:
             QgsMessageLog.logMessage(
                 f"PivotTableWidget: falha ao sincronizar selecao no mapa: {exc}",
-                "PowerBISummarizer",
+                "Summarizer",
                 Qgis.Warning,
             )
 
@@ -5481,4 +5481,5 @@ class PivotTableWidget(QWidget):
         if ptypes.is_bool_dtype(series):
             return QVariant.Bool
         return QVariant.String
+
 

@@ -1,4 +1,4 @@
-import copy
+﻿import copy
 import os
 from typing import Dict, List, Optional, Sequence
 
@@ -22,7 +22,7 @@ except Exception:  # pragma: no cover - optional dependency
 
 
 PLANNER_SCHEMA = {
-    "title": "PowerBISummarizerPlan",
+    "title": "SummarizerPlan",
     "type": "object",
     "properties": {
         "intent": {
@@ -153,10 +153,10 @@ Regras:
 
 class LangChainQueryInterpreter:
     def __init__(self):
-        self.model_name = os.getenv("POWERBISUMMARIZER_LLM_MODEL", "gpt-4.1-mini")
+        self.model_name = os.getenv("Summarizer_LLM_MODEL", "gpt-4.1-mini")
 
     def is_configured(self) -> bool:
-        api_key = os.getenv("OPENAI_API_KEY") or os.getenv("POWERBISUMMARIZER_OPENAI_API_KEY")
+        api_key = os.getenv("OPENAI_API_KEY") or os.getenv("Summarizer_OPENAI_API_KEY")
         return ChatOpenAI is not None and bool(api_key)
 
     def availability_message(self) -> str:
@@ -184,7 +184,7 @@ class LangChainQueryInterpreter:
             llm = ChatOpenAI(
                 model=self.model_name,
                 temperature=0,
-                api_key=os.getenv("OPENAI_API_KEY") or os.getenv("POWERBISUMMARIZER_OPENAI_API_KEY"),
+                api_key=os.getenv("OPENAI_API_KEY") or os.getenv("Summarizer_OPENAI_API_KEY"),
             )
             planner = llm.with_structured_output(PLANNER_SCHEMA)
             payload = planner.invoke(self._build_prompt(question, schema, context_payload or {}))
@@ -678,3 +678,4 @@ class LangChainQueryInterpreter:
         if isinstance(value, str):
             return value
         return ""
+

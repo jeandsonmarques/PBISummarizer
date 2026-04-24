@@ -24,7 +24,7 @@ from .utils.i18n_runtime import tr_text as _rt
 from .utils.resources import svg_icon
 
 
-class Ui_PowerBISummarizerDialog(object):
+class Ui_SummarizerDialog(object):
     def setupUi(self, Dialog):
         Dialog.setObjectName("Dialog")
         Dialog.resize(1200, 800)
@@ -297,5 +297,6 @@ class Ui_PowerBISummarizerDialog(object):
         self.verticalLayout.addWidget(self.footer_bar)
 
         self.stackedWidget.setCurrentWidget(self.pageResultados)
+
 
 

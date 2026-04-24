@@ -134,7 +134,7 @@
   "Endpoint de camadas": "Punto final de nivel",
   "Endpoint de login": "Punto final de inicio de sesión",
   "Enviar camada para o Cloud (GPKG)": "Enviar capa a la Nube (GPKG)",
-  "Enviar camadas para o PowerBI Cloud (apenas admin)": "Enviar capas a PowerBI Cloud (solo administrador)",
+  "Enviar camadas para o Summarizer Cloud (apenas admin)": "Enviar capas a Summarizer Cloud (solo administrador)",
   "Escolha a fonte de dados (PostgreSQL ou Summarizer Cloud). As tabelas selecionadas serão adicionadas ao modelo sem abrir camadas no mapa.": "Elija la fuente de datos (PostgreSQL o Summarizer Cloud). Las tablas seleccionadas se agregarán al modelo sin abrir capas en el mapa.",
   "Escolha os agrupamentos no painel Campos da Tabela Dinamica para montar a tabela dinamica.": "Elija las agrupaciones en el panel Campos de tabla dinámica para ensamblar la tabla dinámica.",
   "Escolha uma fonte para começar. Os dados carregados serão exibidos no painel Resumo.": "Elija una fuente para comenzar. Los datos cargados se mostrarán en el panel Resumen.",

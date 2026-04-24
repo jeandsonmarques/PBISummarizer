@@ -50,7 +50,7 @@ from .dashboard_widget import DashboardWidget
 from .model_tab import ModelTab
 from .export_manager import ExportManager
 from .result_style import apply_result_style
-from .ui_main_dialog import Ui_PowerBISummarizerDialog
+from .ui_main_dialog import Ui_SummarizerDialog
 from .layout_nav import SidebarController
 from .integration_panel import IntegrationPanel, DatabaseImportDialog
 from .interactive_table import InteractiveTable
@@ -92,7 +92,7 @@ def __apply_theme_once(target):
         pass
 
 
-class PowerBISummarizer:
+class Summarizer:
     def __init__(self, iface):
         try:
             __apply_theme_once(self)
@@ -111,7 +111,7 @@ class PowerBISummarizer:
         self._browser_provider = None
 
     def tr(self, message):
-        return QCoreApplication.translate("PowerBISummarizer", message)
+        return QCoreApplication.translate("Summarizer", message)
 
     def _translation_dir(self) -> str:
         return os.path.join(self.plugin_dir, "i18n")
@@ -123,9 +123,9 @@ class PowerBISummarizer:
             if not os.path.isdir(directory):
                 return locales
             for filename in os.listdir(directory):
-                if not filename.startswith("PowerBISummarizer_") or not filename.endswith(".qm"):
+                if not filename.startswith("Summarizer_") or not filename.endswith(".qm"):
                     continue
-                locale = filename[len("PowerBISummarizer_") : -3].strip()
+                locale = filename[len("Summarizer_") : -3].strip()
                 if not locale:
                     continue
                 locales[locale] = os.path.join(directory, filename)
@@ -135,7 +135,7 @@ class PowerBISummarizer:
 
     def _preferred_locale(self) -> str:
         settings = QSettings()
-        forced_locale = str(settings.value("PowerBISummarizer/uiLocale", "") or "").strip()
+        forced_locale = str(settings.value("Summarizer/uiLocale", "") or "").strip()
         if forced_locale and forced_locale.lower() != "auto":
             short = forced_locale.split("_", 1)[0].split("-", 1)[0].lower()
             return forced_locale if short in {"pt", "en", "es"} else "en"
@@ -191,7 +191,7 @@ class PowerBISummarizer:
             if loaded:
                 QCoreApplication.installTranslator(translator)
                 self.translator = translator
-                locale_name = os.path.basename(path)[len("PowerBISummarizer_") : -3]
+                locale_name = os.path.basename(path)[len("Summarizer_") : -3]
                 self._active_locale = locale_name
                 break
 
@@ -220,7 +220,7 @@ class PowerBISummarizer:
                 pass
             self.dlg = None
         if self.dlg is None:
-            self.dlg = PowerBISummarizerDialog(
+            self.dlg = SummarizerDialog(
                 self.iface,
                 plugin_host=self,
                 active_locale=self._active_locale,
@@ -259,7 +259,7 @@ class PowerBISummarizer:
         except Exception as exc:
             self._browser_provider = None
             message = f"Falha ao registrar nó Summarizer no Navegador: {exc}"
-            QgsMessageLog.logMessage(message, "PowerBISummarizer", Qgis.Critical)
+            QgsMessageLog.logMessage(message, "Summarizer", Qgis.Critical)
             log_error(message)
 
     def unload(self):
@@ -319,15 +319,15 @@ class PowerBISummarizer:
         return matches[0] if matches else None
 
 
-class PowerBISummarizerDialog(QDialog):
+class SummarizerDialog(QDialog):
     def __init__(self, iface, plugin_host=None, active_locale: str = "", has_translation: bool = False):
         super().__init__(iface.mainWindow())
         self.iface = iface
         self._plugin_host = plugin_host
         self._active_locale = str(active_locale or "")
         self._has_translation = bool(has_translation)
-        self._language_settings_key = "PowerBISummarizer/uiLocale"
-        self.ui = Ui_PowerBISummarizerDialog()
+        self._language_settings_key = "Summarizer/uiLocale"
+        self.ui = Ui_SummarizerDialog()
         self.ui.setupUi(self)
         self._square_scopes = []
         for attr in ("pageResultados",):
@@ -347,7 +347,7 @@ class PowerBISummarizerDialog(QDialog):
 
         # External integration state (not used in main dialog anymore)
         self.external_df = None
-        self.external_last_path_key = "PowerBISummarizer/external/lastPath"
+        self.external_last_path_key = "Summarizer/external/lastPath"
 
         self.setWindowIcon(svg_icon("PowerPages.svg"))
 
@@ -434,7 +434,7 @@ class PowerBISummarizerDialog(QDialog):
         except Exception as exc:
             QgsMessageLog.logMessage(
                 f"Falha ao construir a aba de tabela dinamica: {exc}",
-                "PowerBISummarizer",
+                "Summarizer",
                 Qgis.Critical,
             )
             self.pivot_widget = None
@@ -2135,7 +2135,7 @@ class PowerBISummarizerDialog(QDialog):
 
     def _prompt_layers_export_directory(self):
         settings = QSettings()
-        last_dir = settings.value("PowerBISummarizer/export/gpkgDir", "")
+        last_dir = settings.value("Summarizer/export/gpkgDir", "")
         fallback_dir = self.export_manager.export_dir
         initial_dir = last_dir if last_dir and os.path.isdir(last_dir) else fallback_dir
 
@@ -2158,7 +2158,7 @@ class PowerBISummarizerDialog(QDialog):
             )
             return None
 
-        settings.setValue("PowerBISummarizer/export/gpkgDir", directory)
+        settings.setValue("Summarizer/export/gpkgDir", directory)
         return directory
 
     def choose_export_path(self):
@@ -2444,7 +2444,7 @@ class PowerBISummarizerDialog(QDialog):
         self.dashboard_widget.raise_()
 
     def show_about_dialog(self):
-        dialog = SlimDialogBase(self, geometry_key="PowerBISummarizer/dialogs/about")
+        dialog = SlimDialogBase(self, geometry_key="Summarizer/dialogs/about")
         dialog.setWindowTitle(_rt_runtime("Sobre"))
         layout = QVBoxLayout(dialog)
         layout.setContentsMargins(14, 14, 14, 14)
@@ -2648,6 +2648,7 @@ class GetDataDialog(QDialog):
     # ------------------------------------------------------------------ API
     def results(self) -> List:
         return list(self._datasets)
+
 
 
 

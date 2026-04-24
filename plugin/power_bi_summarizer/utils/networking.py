@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import uuid
@@ -160,7 +160,7 @@ def post_multipart(
 ) -> HttpResponse:
     request_headers = dict(headers or {})
     if QNetworkRequest is not None and QgsBlockingNetworkRequest is not None and QUrl is not None:
-        boundary = f"----PowerBISummarizer{uuid.uuid4().hex}"
+        boundary = f"----Summarizer{uuid.uuid4().hex}"
         request_headers["Content-Type"] = f"multipart/form-data; boundary={boundary}"
         body = _encode_multipart_body(
             boundary=boundary,
@@ -326,3 +326,4 @@ def _encode_multipart_body(
     chunks.append(b"\r\n")
     chunks.append(f"--{boundary}--\r\n".encode("utf-8"))
     return b"".join(chunks)
+

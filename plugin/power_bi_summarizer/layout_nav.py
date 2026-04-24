@@ -10,7 +10,7 @@ from .utils.resources import svg_icon
 
 
 class SidebarController:
-    """Slim icon-only navigation for the Power BI Summarizer dialog."""
+    """Slim icon-only navigation for the Summarizer dialog."""
 
     ICON_MAP = {
         "relatorios": ("Relatorios", "icone_chat_exato_cropped.png"),
@@ -88,7 +88,7 @@ class SidebarController:
 
         self.upload_button = QPushButton("")
         self.upload_button.setCursor(Qt.PointingHandCursor)
-        self.upload_button.setToolTip("Enviar camadas para o PowerBI Cloud (apenas admin)")
+        self.upload_button.setToolTip("Enviar camadas para o Summarizer Cloud (apenas admin)")
         self.upload_button.setFixedSize(36, 36)
         self.upload_button.setIconSize(QSize(20, 20))
         self.upload_button.setProperty("navIcon", "true")

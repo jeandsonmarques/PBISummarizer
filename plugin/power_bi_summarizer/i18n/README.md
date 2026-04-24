@@ -1,17 +1,17 @@
-PowerBISummarizer i18n
+Summarizer i18n
 ======================
 
 This folder stores language packs for the plugin.
 
 Current setup:
 - Runtime translation pack (PT/EN/ES) in `utils/i18n_runtime.py`.
-- Global language selection persisted in `QSettings` key `PowerBISummarizer/uiLocale`.
+- Global language selection persisted in `QSettings` key `Summarizer/uiLocale`.
 - Reports page texts are translated immediately when language is changed.
 
-Optional Qt Linguist workflow (future):
-1. Generate/update `.ts` files with `pylupdate5`.
+Optional Qt Linguist workflow:
+1. Generate or update `.ts` files with `pylupdate5`.
 2. Compile `.ts` to `.qm` with `lrelease`.
 3. Keep `.qm` files in this folder:
-   - `PowerBISummarizer_en.qm`
-   - `PowerBISummarizer_es.qm`
-4. Plugin loader will pick `.qm` automatically when available.
+   - `Summarizer_en.qm`
+   - `Summarizer_es.qm`
+4. The plugin loader will pick `.qm` files automatically when available.

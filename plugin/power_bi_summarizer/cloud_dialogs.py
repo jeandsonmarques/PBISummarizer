@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import os
 import shutil
@@ -40,11 +40,11 @@ def _cloud_popup_icon() -> QIcon:
 
 
 
-class PowerBICloudDialog(SlimDialogBase):
+class SummarizerCloudDialog(SlimDialogBase):
     """Popup used both in the Integration tab and Browser shortcuts."""
 
     def __init__(self, parent: Optional[QWidget] = None, initial_tab: Optional[str] = None):
-        super().__init__(parent, geometry_key="PowerBISummarizer/cloud/dialog")
+        super().__init__(parent, geometry_key="Summarizer/cloud/dialog")
         self.setWindowTitle(_rt("Summarizer Cloud (beta)"))
         self.resize(640, 420)
         self._upload_layers: List[QgsVectorLayer] = []
@@ -76,7 +76,7 @@ class PowerBICloudDialog(SlimDialogBase):
 
         header = QHBoxLayout()
         header.setSpacing(8)
-        title = QLabel("Gerenciar sessão Summarizer Cloud", self)
+        title = QLabel("Gerenciar sessÃ£o Summarizer Cloud", self)
         title.setStyleSheet("font-size: 15px; font-weight: 500;")
         header.addWidget(title)
         header.addStretch(1)
@@ -101,13 +101,13 @@ class PowerBICloudDialog(SlimDialogBase):
         self.password_edit = QLineEdit(session_tab)
         self.password_edit.setEchoMode(QLineEdit.Password)
         self.password_edit.setPlaceholderText("********")
-        self.remember_checkbox = QCheckBox("Salvar login no gerenciador de conexões QGIS", session_tab)
+        self.remember_checkbox = QCheckBox("Salvar login no gerenciador de conexÃµes QGIS", session_tab)
         self.remember_checkbox.setToolTip(
-            "Armazena usuário e senha no AuthManager do QGIS para renovar tokens automaticamente."
+            "Armazena usuÃ¡rio e senha no AuthManager do QGIS para renovar tokens automaticamente."
         )
         self.remember_checkbox.setChecked(cloud_session.has_saved_credentials())
 
-        session_layout.addWidget(QLabel("Usuário", session_tab), 0, 0)
+        session_layout.addWidget(QLabel("UsuÃ¡rio", session_tab), 0, 0)
         session_layout.addWidget(self.user_edit, 0, 1)
         session_layout.addWidget(QLabel("Senha", session_tab), 1, 0)
         session_layout.addWidget(self.password_edit, 1, 1)
@@ -118,7 +118,7 @@ class PowerBICloudDialog(SlimDialogBase):
         self.login_btn = QPushButton("Entrar", session_tab)
         self.logout_btn = QPushButton("Sair", session_tab)
         self.logout_btn.setProperty("variant", "secondary")
-        self.refresh_btn = QPushButton("Atualizar catálogo", session_tab)
+        self.refresh_btn = QPushButton("Atualizar catÃ¡logo", session_tab)
         self.refresh_btn.setProperty("variant", "ghost")
         self.browser_btn = QPushButton("Abrir no Navegador", session_tab)
         self.browser_btn.setProperty("variant", "ghost")
@@ -134,21 +134,21 @@ class PowerBICloudDialog(SlimDialogBase):
         session_layout.addWidget(self.session_detail, 4, 0, 1, 2)
 
         sync_layout = QHBoxLayout()
-        sync_layout.addWidget(QLabel("Última sincronização do catálogo:", session_tab))
+        sync_layout.addWidget(QLabel("Ãšltima sincronizaÃ§Ã£o do catÃ¡logo:", session_tab))
         self.last_sync_label = QLabel("-", session_tab)
         sync_layout.addWidget(self.last_sync_label)
         sync_layout.addStretch(1)
         session_layout.addLayout(sync_layout, 5, 0, 1, 2)
 
         self.warning_label = QLabel(
-            "Cloud em preparação. Camadas reais serão liberadas quando a hospedagem estiver ativa.",
+            "Cloud em preparaÃ§Ã£o. Camadas reais serÃ£o liberadas quando a hospedagem estiver ativa.",
             session_tab,
         )
         self.warning_label.setWordWrap(True)
         self.warning_label.setProperty("role", "helper")
         session_layout.addWidget(self.warning_label, 6, 0, 1, 2)
 
-        self.session_tab_index = self.tabs.addTab(session_tab, "Sessão")
+        self.session_tab_index = self.tabs.addTab(session_tab, "SessÃ£o")
 
         # Config tab -----------------------------------------------------
         config_tab = QWidget(self.tabs)
@@ -172,7 +172,7 @@ class PowerBICloudDialog(SlimDialogBase):
 
         config_buttons = QHBoxLayout()
         config_buttons.setSpacing(8)
-        self.save_config_btn = QPushButton("Salvar configurações", config_tab)
+        self.save_config_btn = QPushButton("Salvar configuraÃ§Ãµes", config_tab)
         self.test_real_btn = QPushButton("Testar camadas reais", config_tab)
         self.test_real_btn.setProperty("variant", "ghost")
         config_buttons.addWidget(self.save_config_btn)
@@ -190,7 +190,7 @@ class PowerBICloudDialog(SlimDialogBase):
         config_hint.setProperty("role", "helper")
         config_layout.addWidget(config_hint, 5, 0, 1, 2)
 
-        self.config_tab_index = self.tabs.addTab(config_tab, "Configurações Cloud")
+        self.config_tab_index = self.tabs.addTab(config_tab, "ConfiguraÃ§Ãµes Cloud")
 
         # Aba Admin para o cadastro de usuarios Cloud
         admin_tab = QWidget(self.tabs)
@@ -199,7 +199,7 @@ class PowerBICloudDialog(SlimDialogBase):
         admin_layout.setSpacing(12)
 
         admin_info = QLabel(
-            "Apenas o usuário administrador pode criar contas Cloud para outras pessoas.", admin_tab
+            "Apenas o usuÃ¡rio administrador pode criar contas Cloud para outras pessoas.", admin_tab
         )
         admin_info.setWordWrap(True)
         admin_layout.addWidget(admin_info)
@@ -207,8 +207,8 @@ class PowerBICloudDialog(SlimDialogBase):
         admin_form = QFormLayout()
         admin_form.setLabelAlignment(Qt.AlignLeft)
         self.adminEmailLineEdit = QLineEdit(admin_tab)
-        self.adminEmailLineEdit.setPlaceholderText("email do novo usuário (login)")
-        admin_form.addRow("E-mail do novo usuário", self.adminEmailLineEdit)
+        self.adminEmailLineEdit.setPlaceholderText("email do novo usuÃ¡rio (login)")
+        admin_form.addRow("E-mail do novo usuÃ¡rio", self.adminEmailLineEdit)
 
         self.adminPasswordLineEdit = QLineEdit(admin_tab)
         self.adminPasswordLineEdit.setEchoMode(QLineEdit.Password)
@@ -217,7 +217,7 @@ class PowerBICloudDialog(SlimDialogBase):
 
         admin_layout.addLayout(admin_form)
 
-        self.createUserButton = QPushButton("Criar usuário Cloud", admin_tab)
+        self.createUserButton = QPushButton("Criar usuÃ¡rio Cloud", admin_tab)
         self.createUserButton.setMinimumHeight(40)
         admin_layout.addWidget(self.createUserButton)
         admin_layout.addStretch(1)
@@ -240,8 +240,8 @@ class PowerBICloudDialog(SlimDialogBase):
         upload_form.addRow("Nome no Cloud", self.upload_name_edit)
 
         self.upload_desc_edit = QLineEdit(upload_tab)
-        self.upload_desc_edit.setPlaceholderText("Descrição curta (opcional)")
-        upload_form.addRow("Descrição (opcional)", self.upload_desc_edit)
+        self.upload_desc_edit.setPlaceholderText("DescriÃ§Ã£o curta (opcional)")
+        upload_form.addRow("DescriÃ§Ã£o (opcional)", self.upload_desc_edit)
         self.upload_group_combo = QComboBox(upload_tab)
         self.upload_group_combo.setEditable(True)
         self.upload_group_combo.setInsertPolicy(QComboBox.NoInsert)
@@ -251,7 +251,7 @@ class PowerBICloudDialog(SlimDialogBase):
 
         upload_hint = QLabel(
             "Sera criado um arquivo GPKG temporario com a camada selecionada e enviado para o servidor. "
-            "Função disponível apenas para administrador.",
+            "FunÃ§Ã£o disponÃ­vel apenas para administrador.",
             upload_tab,
         )
         upload_hint.setWordWrap(True)
@@ -311,23 +311,23 @@ class PowerBICloudDialog(SlimDialogBase):
         username = self.user_edit.text().strip()
         password = self.password_edit.text()
         if not username or not password:
-            self._show_cloud_message("Summarizer Cloud", "Informe usuário e senha.")
+            self._show_cloud_message("Summarizer Cloud", "Informe usuÃ¡rio e senha.")
             return
         try:
             session_payload = cloud_session.login(username, password)
             mode = session_payload.get("mode") or "mock"
             if mode == "remote":
                 message = (
-                    f"Sessão Cloud autenticada para {username}.\n"
-                    "Catálogo carregado a partir da API configurada."
+                    f"SessÃ£o Cloud autenticada para {username}.\n"
+                    "CatÃ¡logo carregado a partir da API configurada."
                 )
             else:
                 message = (
-                    f"Sessão mock ativa para {username}.\n"
-                    "Ative 'Hospedagem ativa' quando o backend estiver disponível para usar o catálogo remoto."
+                    f"SessÃ£o mock ativa para {username}.\n"
+                    "Ative 'Hospedagem ativa' quando o backend estiver disponÃ­vel para usar o catÃ¡logo remoto."
                 )
             self._show_cloud_message("Summarizer Cloud", message)
-            # Após login bem-sucedido, atualizamos o e-mail padrão vinculado à conexão ativa.
+            # ApÃ³s login bem-sucedido, atualizamos o e-mail padrÃ£o vinculado Ã  conexÃ£o ativa.
             self._persist_cloud_user_from_login(username)
             cloud_session.update_saved_credentials(username, password, self.remember_checkbox.isChecked())
         except ValueError as exc:
@@ -346,18 +346,18 @@ class PowerBICloudDialog(SlimDialogBase):
         reload_cloud_catalog()
         self._on_layers_changed()
         if cloud_session.hosting_ready():
-            message = "Catálogo Cloud atualizado a partir do servidor configurado."
+            message = "CatÃ¡logo Cloud atualizado a partir do servidor configurado."
         elif cloud_session.session().get("mode") == "remote":
-            message = "Catálogo Cloud atualizado."
+            message = "CatÃ¡logo Cloud atualizado."
         else:
-            message = "Catálogo mock atualizado."
+            message = "CatÃ¡logo mock atualizado."
         self._show_cloud_message("Summarizer Cloud", message)
 
     def _open_browser_hint(self):
         self._show_cloud_message(
             "Summarizer Cloud",
             "Abra o painel Navegador do QGIS e expanda Summarizer -> Summarizer Cloud "
-            "para carregar as camadas disponíveis.",
+            "para carregar as camadas disponÃ­veis.",
         )
 
     def _save_config(self):
@@ -367,7 +367,7 @@ class PowerBICloudDialog(SlimDialogBase):
             layers_endpoint=self.layers_endpoint_edit.text().strip(),
             hosting_ready=self.hosting_checkbox.isChecked(),
         )
-        self._show_cloud_message("Summarizer Cloud", "Configurações salvas.")
+        self._show_cloud_message("Summarizer Cloud", "ConfiguraÃ§Ãµes salvas.")
 
     def _handle_real_access_attempt(self):
         if not cloud_session.hosting_ready():
@@ -378,7 +378,7 @@ class PowerBICloudDialog(SlimDialogBase):
             return
         self._show_cloud_message(
             "Summarizer Cloud",
-            "Com 'Hospedagem ativa' marcada, o plugin já usa apenas o catálogo real informado.",
+            "Com 'Hospedagem ativa' marcada, o plugin jÃ¡ usa apenas o catÃ¡logo real informado.",
         )
 
     # ------------------------------------------------------------------ Admin actions
@@ -387,7 +387,7 @@ class PowerBICloudDialog(SlimDialogBase):
         if not cloud_session.is_admin():
             self._show_cloud_message(
                 "Permissao negada",
-                "Apenas usuários admin podem criar novos usuários Cloud.",
+                "Apenas usuÃ¡rios admin podem criar novos usuÃ¡rios Cloud.",
             )
             return
 
@@ -395,15 +395,15 @@ class PowerBICloudDialog(SlimDialogBase):
         password = self.adminPasswordLineEdit.text().strip()
         if not email or not password:
             self._show_cloud_message(
-                "Dados inválidos",
-                "Informe o e-mail e a senha do novo usuário.",
+                "Dados invÃ¡lidos",
+                "Informe o e-mail e a senha do novo usuÃ¡rio.",
             )
             return
 
         if not cloud_session.is_authenticated() or not cloud_session.session().get("token"):
             self._show_cloud_message(
-                "Sessão inválida",
-                "Você precisa estar autenticado com uma conta administradora do Cloud para criar usuários.",
+                "SessÃ£o invÃ¡lida",
+                "VocÃª precisa estar autenticado com uma conta administradora do Cloud para criar usuÃ¡rios.",
             )
             return
 
@@ -411,8 +411,8 @@ class PowerBICloudDialog(SlimDialogBase):
             status_code, payload = cloud_session.create_cloud_user(email=email, password=password)
         except RuntimeError:
             self._show_cloud_message(
-                "Erro de conexão",
-                "Não foi possível comunicar com a API Cloud para criar o usuário. Verifique a conexão e tente novamente.",
+                "Erro de conexÃ£o",
+                "NÃ£o foi possÃ­vel comunicar com a API Cloud para criar o usuÃ¡rio. Verifique a conexÃ£o e tente novamente.",
             )
             return
 
@@ -422,27 +422,27 @@ class PowerBICloudDialog(SlimDialogBase):
 
         if status_code in (200, 201):
             self._show_cloud_message(
-                "Usuário criado",
-                f"Usuário Cloud {email} criado com sucesso.",
+                "UsuÃ¡rio criado",
+                f"UsuÃ¡rio Cloud {email} criado com sucesso.",
             )
             self.adminEmailLineEdit.clear()
             self.adminPasswordLineEdit.clear()
             return
 
         if status_code in (400, 409):
-            message = detail or "Servidor recusou a criação do usuário Cloud."
-            self._show_cloud_message("Erro ao criar usuário", message)
+            message = detail or "Servidor recusou a criaÃ§Ã£o do usuÃ¡rio Cloud."
+            self._show_cloud_message("Erro ao criar usuÃ¡rio", message)
             return
 
         if status_code in (401, 403):
             self._show_cloud_message(
-                "Sem permissão",
-                "Sessão expirada ou sem permissão. Faça login novamente com uma conta administradora do Cloud.",
+                "Sem permissÃ£o",
+                "SessÃ£o expirada ou sem permissÃ£o. FaÃ§a login novamente com uma conta administradora do Cloud.",
             )
             return
 
-        fallback = detail or "Falha inesperada ao criar o usuário Cloud."
-        self._show_cloud_message("Erro ao criar usuário", fallback)
+        fallback = detail or "Falha inesperada ao criar o usuÃ¡rio Cloud."
+        self._show_cloud_message("Erro ao criar usuÃ¡rio", fallback)
 
     # ------------------------------------------------------------------ Upload actions
     def _refresh_upload_layers(self):
@@ -676,13 +676,13 @@ class PowerBICloudDialog(SlimDialogBase):
                     session_details.append(f"Token expira em {self._format_timestamp(expires_at)}.")
                 session_details.append("Conectado ao banco remoto configurado.")
             else:
-                session_details.append("Modo mock usando catálogo local de exemplo.")
+                session_details.append("Modo mock usando catÃ¡logo local de exemplo.")
         else:
             session_details.append("Status: aguardando login.")
         self.session_detail.setText(_rt("\n".join(session_details)))
         self.warning_label.setVisible(not cloud_session.hosting_ready())
         if not is_auth:
-            # Carregamos o e-mail padrão salvo por conexão para sugerir o login.
+            # Carregamos o e-mail padrÃ£o salvo por conexÃ£o para sugerir o login.
             self._prefill_user_from_connection()
         self._update_admin_tab_visibility()
         self._apply_runtime_i18n()
@@ -723,13 +723,13 @@ class PowerBICloudDialog(SlimDialogBase):
         return ""
 
     def _prefill_user_from_connection(self):
-        """Carrega o login padrão salvo para a conexão ativa e preenche o campo."""
+        """Carrega o login padrÃ£o salvo para a conexÃ£o ativa e preenche o campo."""
         default_user = self._current_connection_default_user()
         if default_user:
             self.user_edit.setText(default_user)
 
     def _persist_cloud_user_from_login(self, email: str):
-        """Atualiza a conexão ativa com o login usado no último acesso Cloud."""
+        """Atualiza a conexÃ£o ativa com o login usado no Ãºltimo acesso Cloud."""
         fingerprint = cloud_session.active_connection_fingerprint()
         if not fingerprint or not email:
             return
@@ -747,7 +747,7 @@ class PowerBICloudDialog(SlimDialogBase):
                 updated = True
                 break
         if updated:
-            # Persistimos o login padrão no mesmo storage de conexões usados pelo QSettings.
+            # Persistimos o login padrÃ£o no mesmo storage de conexÃµes usados pelo QSettings.
             registry.replace_saved_connections(saved, persist=True)
 
     def _is_admin_user(self) -> bool:
@@ -799,9 +799,9 @@ class PowerBICloudDialog(SlimDialogBase):
             self.tabs.setCurrentIndex(target)
 
 
-def open_cloud_dialog(parent: Optional[QWidget] = None, initial_tab: Optional[str] = None) -> PowerBICloudDialog:
+def open_cloud_dialog(parent: Optional[QWidget] = None, initial_tab: Optional[str] = None) -> SummarizerCloudDialog:
     """Helper used by different entry points."""
-    dialog = PowerBICloudDialog(parent, initial_tab=initial_tab)
+    dialog = SummarizerCloudDialog(parent, initial_tab=initial_tab)
     try:
         _apply_i18n_widgets(dialog)
     except Exception:
@@ -810,4 +810,6 @@ def open_cloud_dialog(parent: Optional[QWidget] = None, initial_tab: Optional[st
     return dialog
 
 
-__all__ = ["PowerBICloudDialog", "open_cloud_dialog"]
+__all__ = ["SummarizerCloudDialog", "open_cloud_dialog"]
+
+

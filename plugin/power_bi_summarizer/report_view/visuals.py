@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+﻿from dataclasses import dataclass
 from typing import List, Optional
 
 from qgis.PyQt.QtCore import QPointF, QRectF, Qt, QSize, pyqtSignal
@@ -259,7 +259,7 @@ class LineChartRenderer(_BaseChartRenderer):
         return point_meta
 
 
-class PowerBIVisualWidget(QWidget):
+class SummarizerVisualWidget(QWidget):
     """Card that renders a visual using QPainter with a Power BI like theme."""
 
     dataPointClicked = pyqtSignal(str, object)
@@ -314,7 +314,7 @@ class PowerBIVisualWidget(QWidget):
             return
         color_value = chosen.data()
         if chosen == custom:
-            color = QColorDialog.getColor(QColor(self.definition.opcoes.get("color") if self.definition.opcoes else "#4472C4"), self, "Escolher cor da série")
+            color = QColorDialog.getColor(QColor(self.definition.opcoes.get("color") if self.definition.opcoes else "#4472C4"), self, "Escolher cor da sÃ©rie")
             if color.isValid():
                 color_value = color.name()
         if color_value:
@@ -325,7 +325,7 @@ class PowerBIVisualWidget(QWidget):
 
     def contextMenuEvent(self, event):
         menu = QMenu(self)
-        color_action = menu.addAction("Cor da série...")
+        color_action = menu.addAction("Cor da sÃ©rie...")
         chosen = menu.exec_(event.globalPos())
         if chosen == color_action:
             self._pick_series_color()
@@ -428,3 +428,4 @@ class PowerBIVisualWidget(QWidget):
             self.renderer.render(painter, rect, self.definition, self.theme)
         painter.end()
         return image
+

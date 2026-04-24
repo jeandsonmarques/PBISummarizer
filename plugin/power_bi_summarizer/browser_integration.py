@@ -29,7 +29,7 @@ from .quick_connect_dialogs import PostgresQuickConnectDialog
 from .utils.plugin_logging import log_info, log_warning
 from .utils.i18n_runtime import tr_text as _rt
 from .utils.resources import svg_icon
-SAVED_CONNECTIONS_KEY = "PowerBISummarizer/integration/saved_connections"
+SAVED_CONNECTIONS_KEY = "Summarizer/integration/saved_connections"
 SUPPORTED_DRIVERS = {
     "postgres",
     "postgresql",
@@ -186,10 +186,10 @@ class IntegrationConnectionRegistry(QObject):
 connection_registry = IntegrationConnectionRegistry()
 
 
-class PowerBISummarizerBrowserProvider(QgsDataItemProvider):
+class SummarizerBrowserProvider(QgsDataItemProvider):
     """Registers the Summarizer node inside the QGIS Browser."""
 
-    PROVIDER_NAME = "powerbi_summarizer"
+    PROVIDER_NAME = "Summarizer_summarizer"
 
     def __init__(self):
         super().__init__()
@@ -205,11 +205,11 @@ class PowerBISummarizerBrowserProvider(QgsDataItemProvider):
 
     def createDataItem(self, path: str, parentItem: Optional[QgsDataItem]) -> Optional[QgsDataItem]:
         if parentItem is None:
-            return PowerBIRootItem(None)
+            return SummarizerRootItem(None)
         return None
 
 
-class PowerBIRootItem(QgsDataCollectionItem):
+class SummarizerRootItem(QgsDataCollectionItem):
     """Top-level node that mirrors saved connections."""
 
     def __init__(self, parent: Optional[QgsDataItem]):
@@ -217,23 +217,23 @@ class PowerBIRootItem(QgsDataCollectionItem):
             parent,
             "Summarizer",
             ROOT_PATH,
-            PowerBISummarizerBrowserProvider.PROVIDER_NAME,
+            SummarizerBrowserProvider.PROVIDER_NAME,
         )
         self.setIcon(ROOT_ICON)
         self.setState(Qgis.BrowserItemState.Populated)
         connection_registry.connectionsChanged.connect(self.refresh)
 
     def createChildren(self) -> List[QgsDataItem]:
-        items: List[QgsDataItem] = [PowerBICloudRootItem(self)]
+        items: List[QgsDataItem] = [SummarizerCloudRootItem(self)]
         local_items: List[QgsDataItem] = []
         for conn in connection_registry.all_connections():
             if not _is_supported_driver(conn.get("driver", "")):
                 continue
-            local_items.append(PowerBIConnectionItem(self, conn))
+            local_items.append(SummarizerConnectionItem(self, conn))
         if local_items:
             items.extend(local_items)
         else:
-            items.append(PowerBIPlaceholderItem(self))
+            items.append(SummarizerPlaceholderItem(self))
         return items
 
     def actions(self, parent: Optional[QWidget]) -> List[QAction]:  # type: ignore[override]
@@ -280,7 +280,7 @@ class PowerBIRootItem(QgsDataCollectionItem):
         )
 
 
-class PowerBICloudRootItem(QgsDataCollectionItem):
+class SummarizerCloudRootItem(QgsDataCollectionItem):
     """Top node for the Summarizer Cloud hierarchy."""
 
     def __init__(self, parent: Optional[QgsDataItem]):
@@ -288,7 +288,7 @@ class PowerBICloudRootItem(QgsDataCollectionItem):
             parent,
             _rt("Summarizer Cloud (beta)"),
             f"{ROOT_PATH}/cloud",
-            PowerBISummarizerBrowserProvider.PROVIDER_NAME,
+            SummarizerBrowserProvider.PROVIDER_NAME,
         )
         self.setIcon(CLOUD_ICON)
         self.setState(Qgis.BrowserItemState.Populated)
@@ -301,24 +301,24 @@ class PowerBICloudRootItem(QgsDataCollectionItem):
 
     def createChildren(self) -> List[QgsDataItem]:
         if not cloud_session.is_authenticated():
-            return [PowerBICloudLoginItem(self)]
+            return [SummarizerCloudLoginItem(self)]
         connections = cloud_session.cloud_connections()
         layers: List[Dict] = []
         for connection in connections:
             layers.extend(connection.get("layers") or [])
         if not layers:
-            return [PowerBICloudPlaceholderItem(self)]
+            return [SummarizerCloudPlaceholderItem(self)]
         grouped: Dict[str, List[Dict]] = defaultdict(list)
         for layer in layers:
             key = (layer.get("group_name") or "").strip()
             grouped[key].append(layer)
         items: List[QgsDataItem] = []
         for group_key in sorted(grouped.keys(), key=lambda value: (value == "", value.lower())):
-            items.append(PowerBICloudGroupItem(self, group_key, grouped[group_key]))
+            items.append(SummarizerCloudGroupItem(self, group_key, grouped[group_key]))
         return items
 
 
-class PowerBICloudLoginItem(QgsDataCollectionItem):
+class SummarizerCloudLoginItem(QgsDataCollectionItem):
     """Guides the user to log-in through the integration panel."""
 
     def __init__(self, parent: QgsDataItem):
@@ -326,7 +326,7 @@ class PowerBICloudLoginItem(QgsDataCollectionItem):
             parent,
             _rt("FaÃ§a login na aba IntegraÃ§Ã£o."),
             f"{parent.path()}/login",
-            PowerBISummarizerBrowserProvider.PROVIDER_NAME,
+            SummarizerBrowserProvider.PROVIDER_NAME,
         )
         self.setState(Qgis.BrowserItemState.Populated)
         self.setCapabilities(int(Qgis.BrowserItemCapability.NoCapabilities))
@@ -336,7 +336,7 @@ class PowerBICloudLoginItem(QgsDataCollectionItem):
         return []
 
 
-class PowerBICloudPlaceholderItem(QgsDataCollectionItem):
+class SummarizerCloudPlaceholderItem(QgsDataCollectionItem):
     """Displayed when there are no mock layers to show yet."""
 
     def __init__(self, parent: QgsDataItem):
@@ -344,7 +344,7 @@ class PowerBICloudPlaceholderItem(QgsDataCollectionItem):
             parent,
             _rt("Nenhuma camada Cloud disponÃ­vel."),
             f"{parent.path()}/placeholder",
-            PowerBISummarizerBrowserProvider.PROVIDER_NAME,
+            SummarizerBrowserProvider.PROVIDER_NAME,
         )
         self.setState(Qgis.BrowserItemState.Populated)
         self.setCapabilities(int(Qgis.BrowserItemCapability.NoCapabilities))
@@ -353,27 +353,27 @@ class PowerBICloudPlaceholderItem(QgsDataCollectionItem):
         return []
 
 
-class PowerBICloudGroupItem(QgsDataCollectionItem):
+class SummarizerCloudGroupItem(QgsDataCollectionItem):
     """Represents a logical group/folder for Cloud layers."""
 
     def __init__(self, parent: QgsDataItem, group_name: str, layers: List[Dict]):
         display = group_name or _rt("Sem Grupo")
         safe_segment = re.sub(r"[^A-Za-z0-9_.-]+", "_", display).strip("_") or "sem_grupo"
         path = f"{parent.path()}/{safe_segment}"
-        super().__init__(parent, display, path, PowerBISummarizerBrowserProvider.PROVIDER_NAME)
+        super().__init__(parent, display, path, SummarizerBrowserProvider.PROVIDER_NAME)
         self._layers = list(layers)
         self.setIcon(GROUP_ICON)
 
     def createChildren(self) -> List[QgsDataItem]:
         items: List[QgsDataItem] = []
         for layer in sorted(self._layers, key=lambda payload: (payload.get("name") or "").lower()):
-            items.append(PowerBICloudLayerItem(self, layer))
+            items.append(SummarizerCloudLayerItem(self, layer))
         if not items:
-            return [PowerBICloudPlaceholderItem(self)]
+            return [SummarizerCloudPlaceholderItem(self)]
         return items
 
 
-class PowerBICloudLayerItem(QgsLayerItem):
+class SummarizerCloudLayerItem(QgsLayerItem):
     """Layer entry that references local mock datasets."""
 
     def __init__(self, parent: QgsDataItem, layer_meta: Dict):
@@ -471,7 +471,7 @@ class PowerBICloudLayerItem(QgsLayerItem):
         )
         QMessageBox.information(None, _rt("Summarizer Cloud"), _rt("Camada '{layer_name}' foi excluída com sucesso.", layer_name=layer_name))
 
-class PowerBIPlaceholderItem(QgsDataCollectionItem):
+class SummarizerPlaceholderItem(QgsDataCollectionItem):
     """Displayed when there are no saved connections."""
 
     def __init__(self, parent: QgsDataItem):
@@ -479,7 +479,7 @@ class PowerBIPlaceholderItem(QgsDataCollectionItem):
             parent,
             _rt("Nenhuma conexão local disponível."),
             f"{ROOT_PATH}/placeholder",
-            PowerBISummarizerBrowserProvider.PROVIDER_NAME,
+            SummarizerBrowserProvider.PROVIDER_NAME,
         )
         self.setState(Qgis.BrowserItemState.Populated)
         self.setCapabilities(int(Qgis.BrowserItemCapability.NoCapabilities))
@@ -497,14 +497,14 @@ class TableEntry:
     is_vector: bool = False
 
 
-class PowerBIConnectionItem(QgsDataCollectionItem):
+class SummarizerConnectionItem(QgsDataCollectionItem):
     """Represents a single database connection saved by the integration panel."""
 
     def __init__(self, parent: QgsDataItem, connection: Dict):
         self.meta = dict(connection)
         name = connection.get("name") or f"{connection.get('database')} ({connection.get('driver')})"
         path = f"{ROOT_PATH}/{self.meta.get('fingerprint')}"
-        super().__init__(parent, name, path, PowerBISummarizerBrowserProvider.PROVIDER_NAME)
+        super().__init__(parent, name, path, SummarizerBrowserProvider.PROVIDER_NAME)
         self._provider_key = _provider_key(self.meta.get("driver", ""))
         self._last_error = ""
         self._tables_cache: Dict[str, List[TableEntry]] = {}
@@ -517,7 +517,7 @@ class PowerBIConnectionItem(QgsDataCollectionItem):
         self._tables_cache = self._load_tables()
         items: List[QgsDataItem] = []
         for schema, tables in sorted(self._tables_cache.items()):
-            items.append(PowerBISchemaItem(self, schema, tables, self.meta, self._provider_key))
+            items.append(SummarizerSchemaItem(self, schema, tables, self.meta, self._provider_key))
         return items
 
     # ------------------------------------------------------------------ Actions / menu
@@ -631,7 +631,7 @@ class PowerBIConnectionItem(QgsDataCollectionItem):
         return uri
 
 
-class PowerBISchemaItem(QgsDataCollectionItem):
+class SummarizerSchemaItem(QgsDataCollectionItem):
     """Represents a schema within a saved connection."""
 
     def __init__(
@@ -644,7 +644,7 @@ class PowerBISchemaItem(QgsDataCollectionItem):
     ):
         path = f"{parent.path()}/{schema or 'public'}"
         display = schema or _rt("(padrÃ£o)")
-        super().__init__(parent, display, path, PowerBISummarizerBrowserProvider.PROVIDER_NAME)
+        super().__init__(parent, display, path, SummarizerBrowserProvider.PROVIDER_NAME)
         self._tables = tables
         self._meta = connection_meta
         self._provider_key = provider_key
@@ -652,11 +652,11 @@ class PowerBISchemaItem(QgsDataCollectionItem):
     def createChildren(self) -> List[QgsDataItem]:
         items: List[QgsDataItem] = []
         for table in sorted(self._tables, key=lambda t: t.name):
-            items.append(PowerBITableItem(self, table, self._meta, self._provider_key))
+            items.append(SummarizerTableItem(self, table, self._meta, self._provider_key))
         return items
 
 
-class PowerBITableItem(QgsLayerItem):
+class SummarizerTableItem(QgsLayerItem):
     """Layer/table entry that can be double-clicked to load into the project."""
 
     def __init__(
@@ -667,7 +667,7 @@ class PowerBITableItem(QgsLayerItem):
         provider_key: str,
     ):
         layer_type = Qgis.BrowserLayerType.Vector if table.is_vector else Qgis.BrowserLayerType.Table
-        uri = PowerBITableItem._build_uri(connection_meta, table)
+        uri = SummarizerTableItem._build_uri(connection_meta, table)
         path = f"{parent.path()}/{table.name}"
         super().__init__(parent, table.name, path, uri, layer_type, provider_key)
         self.setIcon(TABLE_ICON if table.is_vector else QgsLayerItem.iconTable())
@@ -738,18 +738,18 @@ def reload_cloud_catalog(force_remote_only: Optional[bool] = None) -> None:
     _refresh_browser_model()
 
 
-def register_browser_provider() -> PowerBISummarizerBrowserProvider:
+def register_browser_provider() -> SummarizerBrowserProvider:
     """Adds the provider to QGIS' data item registry."""
     registry = _provider_registry()
     if registry is None:
         raise RuntimeError("NÃ£o foi possÃ­vel acessar o registro de providers do Navegador.")
-    provider = PowerBISummarizerBrowserProvider()
+    provider = SummarizerBrowserProvider()
     registry.addProvider(provider)
     _refresh_browser_model()
     return provider
 
 
-def unregister_browser_provider(provider: Optional[PowerBISummarizerBrowserProvider]) -> None:
+def unregister_browser_provider(provider: Optional[SummarizerBrowserProvider]) -> None:
     """Removes the provider when the plugin is unloaded."""
     if provider is None:
         return
@@ -765,4 +765,6 @@ Notes:
   - This module registers the Summarizer Browser node and keeps saved/runtime connections synced.
   - The plugin host should call register_browser_provider() on initGui() and unregister_browser_provider() on unload().
 """
+
+
 

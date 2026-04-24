@@ -405,7 +405,7 @@ def _reports_style_context() -> Dict[str, str]:
         "scrollbar_handle": "rgba(100, 116, 139, 0.28)",
         "font_ui_stack": TYPOGRAPHY.get(
             "font_ui_stack",
-            '"Segoe UI Variable Text", "Segoe UI", Arial, sans-serif',
+            '"Segoe UI", "Segoe UI Variable Text", Arial, sans-serif',
         ),
         "font_page_title_px": _scaled_font(TYPOGRAPHY.get("font_page_title_px", 24)),
         "font_section_title_px": _scaled_font(TYPOGRAPHY.get("font_section_title_px", 16)),

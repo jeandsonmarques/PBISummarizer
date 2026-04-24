@@ -3,12 +3,11 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
-from qgis.PyQt.QtCore import QSize, Qt
+from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtGui import QFont
 from qgis.PyQt.QtWidgets import (
     QFileDialog,
     QFrame,
-    QGridLayout,
     QHBoxLayout,
     QHeaderView,
     QLabel,

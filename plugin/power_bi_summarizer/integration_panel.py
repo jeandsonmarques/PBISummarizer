@@ -43,7 +43,7 @@ from qgis.PyQt.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from qgis.core import QgsFeature, QgsField, QgsFields, QgsVectorLayer
+from qgis.core import QgsVectorLayer
 
 from .slim_dialogs import SlimDialogBase, slim_message
 from .browser_integration import connection_registry

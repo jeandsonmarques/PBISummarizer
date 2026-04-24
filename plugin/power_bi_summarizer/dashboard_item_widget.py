@@ -5,7 +5,7 @@ import os
 from typing import Optional
 
 from qgis.PyQt.QtCore import QEvent, QPoint, QRect, QSize, Qt, pyqtSignal
-from qgis.PyQt.QtGui import QColor, QIcon, QPainter, QPen
+from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import (
     QAction,
     QActionGroup,

@@ -8,7 +8,7 @@ The package is intentionally client-side only. It includes the plugin code, reso
 
 ## Distribution rules
 
-- Ship only the `power_bi_summarizer/` folder at the root of the ZIP archive.
+- Ship only the `Summarizer/` folder at the root of the ZIP archive.
 - Keep development-only assets, test fixtures, and backend components out of the release package.
 - Make sure `metadata.txt` is updated before publishing.
 
@@ -24,5 +24,5 @@ The package is intentionally client-side only. It includes the plugin code, reso
 
 - confirm version and compatibility in `metadata.txt`
 - confirm repository and issue tracker URLs
-- verify the archive structure before release
+- verify the archive structure before release, with `Summarizer/` at the ZIP root
 - remove temporary files and build artifacts

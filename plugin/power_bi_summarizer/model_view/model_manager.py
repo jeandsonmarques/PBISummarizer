@@ -1,5 +1,4 @@
 import json
-import math
 import uuid
 from collections import deque
 from typing import Dict, List, Optional, Tuple
@@ -10,19 +9,12 @@ from qgis.PyQt.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
-    QFormLayout,
-    QGridLayout,
-    QGroupBox,
-    QHBoxLayout,
     QLabel,
     QLineEdit,
-    QListWidget,
-    QListWidgetItem,
     QMessageBox,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
-    QVBoxLayout,
     QHeaderView,
     QAbstractItemView,
 )

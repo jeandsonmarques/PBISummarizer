@@ -52,7 +52,7 @@ The repository already contains the plugin package structure, publication metada
 
 ## Compatibility
 
-- **QGIS 3.34 or later**
+- QGIS 3.34 or later
 - Standard QGIS Python environment
 
 This project is not currently positioned as QGIS 4 or Qt6 ready.
@@ -69,20 +69,18 @@ This project is not currently positioned as QGIS 4 or Qt6 ready.
 
 ### From Source
 
-The plugin package is located in:
+The release package is assembled into a single `Summarizer/` folder for distribution.
 
-`plugin/power_bi_summarizer/`
-
-For QGIS packaging, the final distributable archive should contain only the plugin folder at the root of the ZIP file.
+For QGIS packaging, the final distributable archive must contain only the `Summarizer/` folder at the root of the ZIP file.
 
 ---
 
 ## Project Structure
 
-- `plugin/power_bi_summarizer/` — distributable QGIS plugin package
-- `plugin/power_bi_summarizer/metadata.txt` — QGIS plugin metadata
-- `plugin/power_bi_summarizer/__init__.py` — plugin entry point
-- `plugin/power_bi_summarizer/README.md` — package-level technical notes
+- `Summarizer/` - distributable QGIS plugin package
+- `Summarizer/metadata.txt` - QGIS plugin metadata
+- `Summarizer/__init__.py` - plugin entry point
+- `Summarizer/README.md` - package-level technical notes
 
 ---
 
@@ -116,7 +114,7 @@ These are not required for the core plugin concept.
 Before publishing an official plugin package, make sure that:
 
 - metadata links point to the final public repository
-- the release ZIP contains only the plugin folder at its root
+- the release ZIP contains only the `Summarizer/` folder at its root
 - cache, build, and temporary files are excluded
 - the declared version matches the release version
 - the package installs correctly through **Install from ZIP** in QGIS

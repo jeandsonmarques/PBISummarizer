@@ -38,7 +38,6 @@ DEFAULT_SEMANTIC_ALIASES = (
     ("200 mm", "dn200", "diameter", 1.00, "seed", "diametro equivalente"),
     ("300 mm", "dn300", "diameter", 1.00, "seed", "diametro equivalente"),
     ("400 mm", "dn400", "diameter", 1.00, "seed", "diametro equivalente"),
-    ("agua brnca", "agua branca", "location", 0.85, "seed", "erro comum"),
     ("cidade", "municipio", "location", 0.75, "seed", "sinonimo de agrupamento"),
     ("municipio", "cidade", "location", 0.75, "seed", "sinonimo de agrupamento"),
 )

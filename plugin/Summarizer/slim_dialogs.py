@@ -24,6 +24,8 @@ from qgis.PyQt.QtWidgets import (
     QWidget,
 )
 
+from .utils.fonts import ui_font
+
 SLIM_DIALOG_STYLE = """
 QDialog#SlimDialog {
     background-color: #FFFFFF;
@@ -235,9 +237,7 @@ QToolButton#SlimPopoverCloseButton:hover {
 
 
 def _build_dialog_font() -> QFont:
-    font = QFont("Segoe UI", 10)
-    if not font.exactMatch():
-        font = QFont("Arial", 10)
+    font = ui_font(10)
     try:
         base_size = font.pointSizeF()
         if base_size <= 0:

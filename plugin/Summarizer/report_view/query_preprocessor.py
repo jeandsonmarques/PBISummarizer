@@ -38,14 +38,46 @@ LOCATION_STOP_WORDS = set(DEFAULT_DOMAIN_PACK.location_stop_words)
 REPLACEMENTS = (
     (r"\bcont\.?ses?\b", "quantidade"),
     (r"\bcount\s*ifs?\b", "quantidade"),
+    (r"\bhow\s+many\b", "quantidade"),
+    (r"\bnumber\s+of\b", "quantidade"),
+    (r"\bcount\b", "quantidade"),
     (r"\bsomases\b", "total"),
     (r"\bsomase\b", "total"),
     (r"\bsoma\.?ses?\b", "total"),
     (r"\bsum\s*ifs?\b", "total"),
+    (r"\bsum\b", "total"),
     (r"\bmediase\b", "media"),
     (r"\bmediases\b", "media"),
     (r"\bmedia\.?ses?\b", "media"),
     (r"\baverage\s*ifs?\b", "media"),
+    (r"\baverage\b", "media"),
+    (r"\bavg\b", "media"),
+    (r"\bmean\b", "media"),
+    (r"\bmaximum\b", "maximo"),
+    (r"\bmax\b", "maximo"),
+    (r"\bhighest\b", "maximo"),
+    (r"\blargest\b", "maximo"),
+    (r"\bminimum\b", "minimo"),
+    (r"\bmin\b", "minimo"),
+    (r"\blowest\b", "minimo"),
+    (r"\bsmallest\b", "minimo"),
+    (r"\blength\b", "extensao"),
+    (r"\bextension\b", "extensao"),
+    (r"\bdiameter\b", "diametro"),
+    (r"\bmunicipality\b", "municipio"),
+    (r"\bcity\b", "cidade"),
+    (r"\bneighbou?rhood\b", "bairro"),
+    (r"\bdistrict\b", "bairro"),
+    (r"\blocality\b", "localidade"),
+    (r"\bfilters?\b", "filtro"),
+    (r"\bare\s+there\b", ""),
+    (r"\bare\b", ""),
+    (r"\bis\b", ""),
+    (r"\bby\b", "por"),
+    (r"\bin\b", "em"),
+    (r"\bat\b", "em"),
+    (r"\bwith\b", "com"),
+    (r"\bof\b", "de"),
     (r"\bparticipacao no total\b", "percentual"),
     (r"\bparticipacao\b", "percentual"),
     (r"\bshare\b", "percentual"),
@@ -242,11 +274,7 @@ class QueryPreprocessor:
             "avg": "metric:avg",
             "sum": "metric:sum",
         }
-        subject_map = {
-            "rede": "subject:network",
-            "ligacao": "subject:connection",
-            "lote": "subject:lot",
-        }
+        subject_map = {}
         attribute_map = {
             "diameter": "attribute:diameter",
             "material": "attribute:material",
@@ -338,12 +366,12 @@ class QueryPreprocessor:
         if self._is_ratio_query(text):
             normalized_text = normalize_text(text)
             if self._has_any_term(normalized_text, self.connection_terms) and re.search(r"\bpor\s+(metro|metros|km|quilometro|quilometros)\b", normalized_text):
-                base = self._template_text("ratio_count_per_length", "razao entre quantidade de ligacoes e extensao da rede")
+                base = self._template_text("ratio_count_per_length", "razao entre quantidade e medida")
                 if filters:
                     base = f"{base} {filters}"
                 return re.sub(r"\s+", " ", base).strip()
             if self._has_connection_denominator(normalized_text) and self._has_any_term(normalized_text, self.length_terms):
-                base = self._template_text("ratio_length_per_connection", "media de extensao da rede por ligacao")
+                base = self._template_text("ratio_length_per_connection", "media de medida por registro")
                 if filters:
                     base = f"{base} {filters}"
                 return re.sub(r"\s+", " ", base).strip()
@@ -458,22 +486,14 @@ class QueryPreprocessor:
             return "area"
         if "media" in tokens:
             return "avg"
-        if any(token in tokens for token in ("ligacao", "ligacoes", "lote", "lotes", "ponto", "pontos", "hidrante", "hidrantes")):
-            if any(token in tokens for token in ("total", "soma", "somatorio", "quantidade", "quantos", "quantas")):
-                return "count"
         if any(token in tokens for token in ("total", "soma")):
             return "sum"
         return "count"
 
     def _subject_hint(self, text: str) -> str:
-        if any(token in text for token in self.subject_hints.get("rede", ())):
-            return "rede"
-        if "trecho" in text:
-            return "trecho"
-        if any(token in text for token in self.subject_hints.get("ligacao", ())):
-            return "ligacao"
-        if any(token in text for token in ("ponto", "pontos", "hidrante", "hidrantes")):
-            return "ponto"
+        for canonical, aliases in self.subject_hints.items():
+            if any(token in text for token in aliases):
+                return canonical
         return ""
 
     def _group_hint(self, text: str) -> str:
@@ -691,16 +711,6 @@ class QueryPreprocessor:
             if self._is_probable_location_fragment(candidate):
                 return candidate
 
-        if not any(token in normalized.split() for token in ("maior", "menor", "mais", "menos", "cidade", "municipio", "bairro", "localidade")):
-            bare_tail = re.search(
-                r"\b(?:rede|trecho|trechos|tubulacao|adutora|ramal|ramais|ligacao|ligacoes)\s+([a-z0-9][a-z0-9\s]+)$",
-                normalized,
-            )
-            if bare_tail:
-                candidate = self._clean_location_fragment(bare_tail.group(1))
-                candidate = self._strip_location_qualifiers(candidate)
-                if self._is_probable_location_fragment(candidate):
-                    return candidate
         return ""
 
     def _clean_location_fragment(self, text: str) -> str:

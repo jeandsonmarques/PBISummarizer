@@ -21,7 +21,7 @@ from .report_logging import log_error, log_info, log_warning
 from .result_models import InterpretationResult, ProjectSchemaContext, QueryPlan, QueryResult
 from .schema_context_builder import SchemaContextBuilder
 from .schema_linker_service import SchemaLinkResult, SchemaLinkerService
-from .text_utils import normalize_text
+from .text_utils import normalize_compact, normalize_text
 
 
 @dataclass
@@ -98,34 +98,45 @@ class ReportAIEngine:
         question: str,
         overrides: Optional[Dict[str, str]] = None,
         memory_handle=None,
+        layer_ids: Optional[Sequence[str]] = None,
         status_callback: Optional[Callable[[str], None]] = None,
     ) -> EngineInterpretationPayload:
         started_at = perf_counter()
         interface_mode = str(self.interface_mode or "auto").strip().lower()
-        use_deep_validation = interface_mode == "analytic"
+        raw_question = self._strip_ui_context_suffix(question)
+        runtime_layer_ids = tuple(str(layer_id) for layer_id in (layer_ids or []) if str(layer_id).strip())
+        use_deep_validation = interface_mode == "analytic" or bool(runtime_layer_ids)
+        initial_include_profiles = bool(runtime_layer_ids)
         log_info(
             "[Relatorios][debug][engine] "
             f"runtime_engine_file='{__file__}' engine_class_file='{inspect.getsourcefile(self.__class__) or ''}' "
-            f"question='{question}' interface_mode='{interface_mode}'"
+            f"question='{raw_question}' interface_mode='{interface_mode}' scoped_layers={list(runtime_layer_ids)}"
         )
-        normalized_question = question
-        if self.dictionary_service is not None:
-            self._emit_status(status_callback, "Normalizando termos tecnicos...")
-            normalized_question = self.dictionary_service.normalize_query(question) or question
-            if normalized_question != question:
+        normalized_question = raw_question
+        if self.dictionary_service is not None and getattr(self.dictionary_service, "entry_count", 0):
+            self._emit_status(status_callback, "Normalizando a pergunta...")
+            normalized_question = self.dictionary_service.normalize_query(raw_question) or raw_question
+            if normalized_question != raw_question:
                 log_info(
                     "[Relatorios] dicionario "
-                    f"original='{question}' normalized='{normalized_question}'"
+                    f"original='{raw_question}' normalized='{normalized_question}'"
                 )
-        conversation_context = self._resolve_conversation_context(question, normalized_question)
+        conversation_context = self._resolve_conversation_context(raw_question, normalized_question)
         effective_question = conversation_context.effective_question or normalized_question
         effective_question = self._strip_ui_context_suffix(effective_question)
         if conversation_context.is_followup:
             self._emit_status(status_callback, "Aproveitando o contexto anterior...")
         self._emit_status(status_callback, "Lendo as camadas abertas...")
-        light_schema = self._load_schema(include_profiles=False)
+        light_schema = self._load_schema(
+            include_profiles=initial_include_profiles,
+            layer_ids=runtime_layer_ids or None,
+        )
         self._emit_status(status_callback, "Montando o contexto das camadas...")
-        light_context = self._load_schema_context(light_schema, include_profiles=False)
+        light_context = self._load_schema_context(
+            light_schema,
+            include_profiles=initial_include_profiles,
+            layer_ids=runtime_layer_ids or None,
+        )
         active_schema = light_schema
         active_context = light_context
         self._emit_status(status_callback, "Conectando a pergunta ao schema...")
@@ -143,7 +154,7 @@ class ReportAIEngine:
         )
         log_info(
             "[Relatorios] planner "
-            f"question='{question}' normalized='{normalized_question}' effective='{effective_question}' intent={brief.intent_label} metric={brief.metric_hint} "
+            f"question='{raw_question}' normalized='{normalized_question}' effective='{effective_question}' intent={brief.intent_label} metric={brief.metric_hint} "
             f"subject={brief.subject_hint} group={brief.group_hint} group_phrase='{brief.group_phrase}' excel={brief.excel_mode} filters={brief.extracted_filters} "
             f"layers={[item.layer_name for item in brief.likely_layers[:3]]} "
             f"linked_layers={[item.layer_name for item in brief.linked_layers[:3]]}"
@@ -158,17 +169,17 @@ class ReportAIEngine:
             deep_validation=use_deep_validation,
             status_callback=status_callback,
         )
-        schema_level = "light_deep" if use_deep_validation else "light"
+        schema_level = "scoped_deep" if initial_include_profiles else "light_deep" if use_deep_validation else "light"
 
         should_enrich = interface_mode != "local" and (
             interface_mode == "analytic" or self._should_retry_with_enriched_schema(interpretation)
         )
         if should_enrich:
             self._emit_status(status_callback, "Aprofundando a analise dos dados...")
-            layer_ids = self._candidate_layer_ids_from_interpretation(interpretation, brief)
+            layer_ids = list(runtime_layer_ids) or self._candidate_layer_ids_from_interpretation(interpretation, brief)
             log_info(
                 "[Relatorios] ai-engine retry=enriched "
-                f"question='{question}' candidate_layer_ids={layer_ids}"
+                f"question='{raw_question}' candidate_layer_ids={layer_ids}"
             )
             enriched_schema = self._load_schema(
                 include_profiles=True,
@@ -212,7 +223,7 @@ class ReportAIEngine:
 
         self._emit_status(status_callback, "Validando a melhor interpretacao...")
         interpretation = self._merge_followup_interpretation(conversation_context, interpretation)
-        interpretation = self._rerank_interpretation(question, interpretation)
+        interpretation = self._rerank_interpretation(raw_question, interpretation)
         interpretation = self.operation_planner.refine_interpretation(
             interpretation,
             brief,
@@ -221,7 +232,7 @@ class ReportAIEngine:
         )
         if interface_mode != "local":
             interpretation = self._maybe_apply_ollama_fallback(
-                question=question,
+                question=raw_question,
                 normalized_question=normalized_question,
                 effective_question=effective_question,
                 interpretation=interpretation,
@@ -235,13 +246,13 @@ class ReportAIEngine:
         interpretation = self._enforce_explicit_location_guard(interpretation, brief, active_context)
         log_info(
             "[Relatorios][debug][engine] "
-            f"pre_execution question='{question}' final_status='{interpretation.status}' "
+            f"pre_execution question='{raw_question}' final_status='{interpretation.status}' "
             f"needs_confirmation={bool(interpretation.needs_confirmation)} "
             f"has_plan={bool(interpretation.plan is not None)} "
             f"message='{interpretation.message or interpretation.clarification_question or ''}'"
         )
         if interpretation.plan is not None:
-            interpretation.plan.original_question = question
+            interpretation.plan.original_question = raw_question
             trace = dict(interpretation.plan.planning_trace or {})
             trace["dictionary_normalized_question"] = normalized_question
             trace["planner_confidence"] = float(interpretation.confidence or 0.0)
@@ -258,7 +269,7 @@ class ReportAIEngine:
         self._safe_register_interpretation(memory_handle, interpretation)
         log_info(
             "[Relatorios] ai-engine "
-            f"question='{question}' schema_level={schema_level} status={interpretation.status} "
+            f"question='{raw_question}' schema_level={schema_level} status={interpretation.status} "
             f"confidence={float(interpretation.confidence or 0.0):.3f} duration_ms={((perf_counter() - started_at) * 1000):.1f}"
         )
         return EngineInterpretationPayload(
@@ -481,6 +492,7 @@ class ReportAIEngine:
             return self.schema_service.read_project_schema(
                 force_refresh=True,
                 include_profiles=False,
+                layer_ids=layer_ids,
             )
 
     def _load_schema_context(
@@ -632,8 +644,8 @@ class ReportAIEngine:
 
         location_text = ", ".join(value.title() for value in explicit_locations[:3])
         message = (
-            f"Entendi o local {location_text}, mas ainda nao consegui aplicar esse filtro geografico com seguranca. "
-            "Prefiro confirmar antes de executar para nao trazer a contagem geral sem o local pedido."
+            f"Encontrei o filtro {location_text}, mas ainda nao consegui aplicar isso com seguranca. "
+            "Confirme ou escolha uma coluna para evitar um resultado geral."
         )
 
         interpretation.status = "confirm" if interpretation.plan is not None else "unsupported"
@@ -656,10 +668,22 @@ class ReportAIEngine:
 
     def _explicit_location_values(self, brief: PlanningBrief) -> List[str]:
         values: List[str] = []
+        linked_value_keys = {
+            normalize_compact(getattr(item, "value", "") or "")
+            for item in (getattr(brief, "linked_values", []) or [])
+            if normalize_compact(getattr(item, "value", "") or "")
+        }
+        if not linked_value_keys:
+            return values
         for item in brief.extracted_filters or []:
             if str(item.get("kind") or "").lower() != "location":
                 continue
             value = normalize_text(item.get("value") or item.get("source_text") or "")
+            value_key = normalize_compact(value)
+            if not value_key:
+                continue
+            if not any(value_key == linked_key or value_key in linked_key or linked_key in value_key for linked_key in linked_value_keys):
+                continue
             if value and value not in values:
                 values.append(value)
         return values
@@ -708,6 +732,11 @@ class ReportAIEngine:
         marker = "\n\nContexto adicional:"
         if marker in text:
             return text.split(marker, 1)[0].strip()
+        normalized_marker = " contexto adicional "
+        lowered = text.lower()
+        marker_index = lowered.find(normalized_marker)
+        if marker_index >= 0:
+            return text[:marker_index].strip()
         return text
 
     def _resolve_conversation_context(self, question: str, normalized_question: str) -> ConversationContextPayload:
@@ -805,7 +834,7 @@ class ReportAIEngine:
 
         fallback_schema = schema
         fallback_context = schema_context
-        allow_feature_scan = bool(schema_level == "enriched")
+        allow_feature_scan = bool(schema_level in {"enriched", "scoped_deep", "light_deep"})
         candidate_layer_ids = self._candidate_layer_ids_from_interpretation(interpretation, brief)
         if not allow_feature_scan and candidate_layer_ids:
             try:

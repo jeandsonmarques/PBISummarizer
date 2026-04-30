@@ -5,6 +5,8 @@ from qgis.PyQt.QtCore import QPointF, QRectF, Qt, QSize, pyqtSignal
 from qgis.PyQt.QtGui import QColor, QFont, QImage, QPainter, QPainterPath, QPen, QCursor
 from qgis.PyQt.QtWidgets import QWidget, QToolTip, QColorDialog, QMenu
 
+from ..utils.fonts import ui_font
+
 
 @dataclass
 class VisualDefinition:
@@ -22,7 +24,7 @@ class VisualTheme:
         self.axis = QColor("#666666")
         self.grid = QColor("#E0E0E0")
         self.series = [QColor("#4472C4"), QColor("#ED7D31"), QColor("#70AD47")]
-        self.font = QFont("Segoe UI", 9)
+        self.font = ui_font(9)
 
 
 class VisualRenderer:

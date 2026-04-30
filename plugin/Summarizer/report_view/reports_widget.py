@@ -8,11 +8,14 @@ from time import perf_counter
 from typing import Dict, List, Optional
 
 from qgis.PyQt.QtCore import QTimer, QSize, Qt, pyqtSignal
-from qgis.PyQt.QtGui import QColor, QFontMetrics, QIcon, QMovie, QTextOption
+from qgis.PyQt.QtGui import QColor, QFont, QFontMetrics, QIcon, QMovie, QPalette, QTextOption
 from qgis.PyQt.QtWidgets import (
     QAction,
     QApplication,
     QAbstractItemView,
+    QCheckBox,
+    QDialog,
+    QDialogButtonBox,
     QFrame,
     QGraphicsDropShadowEffect,
     QHBoxLayout,
@@ -29,10 +32,11 @@ from qgis.PyQt.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from qgis.core import QgsProject
+from qgis.core import QgsProject, QgsVectorLayer
 from qgis.utils import iface
 
 from ..palette import COLORS, TYPOGRAPHY
+from ..utils.fonts import ui_font
 from ..utils.i18n_runtime import tr_text as _rt
 from .chart_factory import ChartFactory, ReportChartWidget
 from .dictionary_service import build_dictionary_service
@@ -43,7 +47,8 @@ from .report_ai_engine import ReportAIEngine
 from .report_context_memory import ReportContextMemory
 from .report_executor import ReportExecutor
 from .report_logging import LOG_FILE, log_error, log_info, log_warning
-from .result_models import CandidateInterpretation, QueryPlan, QueryResult
+from .result_models import CandidateInterpretation, FilterSpec, MetricSpec, QueryPlan, QueryResult
+from .text_utils import normalize_text
 
 EXAMPLE_QUERIES = [
     {"label": "Extensão por cidade", "query": "extensao por cidade"},
@@ -52,9 +57,100 @@ EXAMPLE_QUERIES = [
     {"label": "Top 10 categorias", "query": "top 10 categorias"},
 ]
 
+PLUGIN_HELP_INTENT_TERMS = (
+    "ajuda",
+    "como",
+    "configurar",
+    "ensina",
+    "explica",
+    "explicar",
+    "funciona",
+    "funcionalidade",
+    "o que e",
+    "passo a passo",
+    "pra que",
+    "para que",
+    "serve",
+    "tutorial",
+    "usar",
+    "use",
+    "what is",
+    "what does",
+    "how",
+    "help",
+    "explain",
+    "guide",
+    "tutorial",
+    "step by step",
+)
+
+PLUGIN_HELP_SUBJECT_TERMS = (
+    "plugin",
+    "summarizer",
+    "aba",
+    "abas",
+    "tab",
+    "tabs",
+    "relatorio",
+    "relatorios",
+    "reports",
+    "resumo",
+    "summary",
+    "tabela dinamica",
+    "pivot",
+    "chat",
+    "camada",
+    "camadas",
+    "layer",
+    "layers",
+    "postgres",
+    "postgresql",
+    "banco",
+    "conexao",
+    "conexoes",
+    "integracao",
+    "integracoes",
+    "integration",
+    "integrations",
+    "cloud",
+    "nuvem",
+    "connection",
+    "connections",
+    "modelo",
+    "model",
+    "dashboard",
+    "grafico",
+    "graficos",
+    "chart",
+    "charts",
+    "tabela",
+    "table",
+    "filtro",
+    "filtros",
+    "filter",
+    "filters",
+    "exportar",
+    "exportacao",
+    "export",
+    "idioma",
+    "language",
+    "limpar",
+    "gerar",
+    "analisar",
+    "selecionar",
+    "botao",
+    "comando",
+    "sobre",
+    "about",
+)
+
 PREVIEW_ROWS = 6
 MAX_TABLE_ROWS = 50
 REPORTS_FONT_SCALE = 1.0
+
+
+class AnalysisCancelled(RuntimeError):
+    pass
 
 
 REPORTS_STYLE_TEMPLATE = Template(
@@ -256,8 +352,8 @@ REPORTS_STYLE_TEMPLATE = Template(
     }
     QLabel#emptyTitle {
         color: ${text_primary};
-        font-size: 30px;
-        font-weight: ${font_weight_regular};
+        font-size: 24px;
+        font-weight: ${font_weight_semibold};
     }
     QLabel#emptySubtitle {
         color: ${text_muted};
@@ -302,11 +398,11 @@ REPORTS_STYLE_TEMPLATE = Template(
     QTextEdit#promptInput {
         background: transparent;
         border: none;
-        padding: 6px 2px 6px 2px;
+        padding: 8px 4px 8px 4px;
         min-height: 36px;
         font-size: ${font_input_px}px;
         font-weight: ${font_weight_regular};
-        color: ${text_primary};
+        color: #1E293B;
         selection-background-color: ${selection_bg};
     }
     QTextEdit#promptInput:focus {
@@ -347,6 +443,20 @@ REPORTS_STYLE_TEMPLATE = Template(
         font-weight: ${font_weight_semibold};
     }
     QPushButton#sendButton:hover {
+        background: ${send_bg_hover};
+    }
+    QPushButton#sendButton[stopMode="true"] {
+        background: ${send_bg};
+        border-radius: 20px;
+        min-width: 40px;
+        max-width: 40px;
+        min-height: 40px;
+        max-height: 40px;
+        padding: 0px;
+        font-size: 13px;
+        font-weight: ${font_weight_semibold};
+    }
+    QPushButton#sendButton[stopMode="true"]:hover {
         background: ${send_bg_hover};
     }
     QMenu {
@@ -405,7 +515,7 @@ def _reports_style_context() -> Dict[str, str]:
         "scrollbar_handle": "rgba(100, 116, 139, 0.28)",
         "font_ui_stack": TYPOGRAPHY.get(
             "font_ui_stack",
-            '"Segoe UI", "Segoe UI Variable Text", Arial, sans-serif',
+            '"Inter", sans-serif',
         ),
         "font_page_title_px": _scaled_font(TYPOGRAPHY.get("font_page_title_px", 24)),
         "font_section_title_px": _scaled_font(TYPOGRAPHY.get("font_section_title_px", 16)),
@@ -414,7 +524,7 @@ def _reports_style_context() -> Dict[str, str]:
         "font_caption_px": _scaled_font(TYPOGRAPHY.get("font_caption_px", 11)),
         "font_button_px": _scaled_font(TYPOGRAPHY.get("font_button_px", 13)),
         "font_chip_px": _scaled_font(TYPOGRAPHY.get("font_chip_px", 12)),
-        "font_input_px": _scaled_font(14),
+        "font_input_px": _scaled_font(13),
         "font_weight_regular": str(TYPOGRAPHY.get("font_weight_regular", 400)),
         "font_weight_medium": str(TYPOGRAPHY.get("font_weight_medium", 500)),
         "font_weight_semibold": str(TYPOGRAPHY.get("font_weight_semibold", 600)),
@@ -465,6 +575,18 @@ class AutoResizeTextEdit(QTextEdit):
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
         self.setMinimumHeight(48)
         self.setMaximumHeight(132)
+        self.document().setDocumentMargin(0)
+        prompt_font = ui_font()
+        prompt_font.setPixelSize(13)
+        prompt_font.setWeight(QFont.Normal)
+        prompt_font.setLetterSpacing(QFont.PercentageSpacing, 101.0)
+        self.setFont(prompt_font)
+        palette = self.palette()
+        try:
+            palette.setColor(QPalette.PlaceholderText, QColor("#94A3B8"))
+        except Exception:
+            pass
+        self.setPalette(palette)
         self.textChanged.connect(self._update_height)
         self._update_height()
 
@@ -554,7 +676,18 @@ class EmptyConversationWidget(QFrame):
         self.title_label.setObjectName("emptyTitle")
         self.title_label.setAlignment(Qt.AlignCenter)
         self.title_label.setWordWrap(True)
-        self.title_label.setStyleSheet("font-size: 30px; font-weight: 400; color: #0F172A;")
+        self.title_label.setTextFormat(Qt.RichText)
+        title_font = ui_font()
+        title_font.setPixelSize(24)
+        title_font.setWeight(QFont.Normal)
+        title_font.setLetterSpacing(QFont.PercentageSpacing, 100.0)
+        self.title_label.setFont(title_font)
+        self.title_label.setStyleSheet("")
+        self.title_label.setText(
+            "<span style=\"font-size:24px; font-weight:400; color:#0F172A;\">"
+            f"{_rt('Converse com os dados do projeto')}"
+            "</span>"
+        )
         content_layout.addWidget(self.title_label)
 
         self.subtitle_label = QLabel(
@@ -565,7 +698,12 @@ class EmptyConversationWidget(QFrame):
         self.subtitle_label.setAlignment(Qt.AlignCenter)
         self.subtitle_label.setWordWrap(True)
         self.subtitle_label.setText(_rt("Faça perguntas sobre suas camadas e gere gráficos automaticamente"))
-        self.subtitle_label.setStyleSheet("font-size: 14px; font-weight: 400; color: #64748B;")
+        subtitle_font = ui_font()
+        subtitle_font.setPixelSize(14)
+        subtitle_font.setWeight(QFont.Normal)
+        subtitle_font.setLetterSpacing(QFont.PercentageSpacing, 100.0)
+        self.subtitle_label.setFont(subtitle_font)
+        self.subtitle_label.setStyleSheet("color: #64748B;")
         self.subtitle_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         content_layout.addWidget(self.subtitle_label, 0, Qt.AlignHCenter)
 
@@ -636,6 +774,7 @@ class AssistantMessageWidget(QWidget):
         choose_interpretation_callback=None,
         visual_result_callback=None,
         filter_choice_callback=None,
+        field_choice_callback=None,
         select_map_callback=None,
         model_add_callback=None,
         parent=None,
@@ -647,6 +786,7 @@ class AssistantMessageWidget(QWidget):
         self.choose_interpretation_callback = choose_interpretation_callback
         self.visual_result_callback = visual_result_callback
         self.filter_choice_callback = filter_choice_callback
+        self.field_choice_callback = field_choice_callback
         self.select_map_callback = select_map_callback
         self.model_add_callback = model_add_callback
         self.current_question = ""
@@ -664,6 +804,8 @@ class AssistantMessageWidget(QWidget):
         self.incorrect_button = None
         self.choose_button = None
         self.status_label = None
+        self.stop_button = None
+        self.cancel_callback = None
 
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
 
@@ -712,6 +854,13 @@ class AssistantMessageWidget(QWidget):
     def update_loading_text(self, message: str):
         if self.status_label is not None:
             self.status_label.setText(message)
+
+    def _request_cancel(self):
+        if self.stop_button is not None:
+            self.stop_button.setEnabled(False)
+            self.stop_button.setToolTip(_rt("Cancelando..."))
+        if callable(self.cancel_callback):
+            self.cancel_callback(self)
 
     def show_message(self, message: str, message_object_name: str = "assistantText"):
         self.current_result = None
@@ -788,6 +937,59 @@ class AssistantMessageWidget(QWidget):
                 )
             )
             buttons_column.addWidget(button)
+        self.content_layout.addLayout(buttons_column)
+
+    def show_field_choices(self, question: str, message: str, field_options):
+        self.current_question = question
+        self.current_result = None
+        self.current_plan = None
+        self.available_candidates = []
+        self.preview_limit = PREVIEW_ROWS
+        self._reset_content()
+
+        label = QLabel(message, self.content_widget)
+        label.setObjectName("assistantText")
+        label.setWordWrap(True)
+        self.content_layout.addWidget(label)
+
+        buttons_column = QVBoxLayout()
+        buttons_column.setContentsMargins(0, 0, 0, 0)
+        buttons_column.setSpacing(8)
+        visible_options = list(field_options or [])[:6]
+        distinct_layers = {
+            str(option.get("layer_name") or "").strip()
+            for option in visible_options
+            if str(option.get("layer_name") or "").strip()
+        }
+        for option in visible_options:
+            field_label = str(option.get("label") or option.get("field") or "").strip()
+            layer_name = str(option.get("layer_name") or "").strip()
+            kind = str(option.get("kind") or "").strip()
+            button_text = field_label
+            if layer_name and len(distinct_layers) > 1:
+                button_text = f"{field_label} · {layer_name}"
+            if kind:
+                kind_label = _rt("número") if kind in {"integer", "numeric"} else _rt("texto")
+                button_text = f"{button_text} ({kind_label})"
+            button = QPushButton(button_text, self.content_widget)
+            button.setProperty("optionButton", True)
+            button.clicked.connect(
+                lambda checked=False, q=question, payload=dict(option): self.field_choice_callback(
+                    q,
+                    payload,
+                    self,
+                )
+                if self.field_choice_callback is not None
+                else None
+            )
+            buttons_column.addWidget(button)
+
+        cancel_button = QPushButton(_rt("Cancelar"), self.content_widget)
+        cancel_button.setProperty("actionButton", True)
+        cancel_button.clicked.connect(
+            lambda checked=False: self.show_message(_rt("Tudo bem. Ajuste a pergunta e tente novamente."))
+        )
+        buttons_column.addWidget(cancel_button)
         self.content_layout.addLayout(buttons_column)
 
     def show_confirmation(
@@ -1397,11 +1599,16 @@ class ReportsWidget(QWidget):
         self.ai_engine = None
         self.active_execution_job = None
         self.active_execution_token = 0
+        self.active_response_widget = None
+        self.analysis_cancel_requested = False
+        self.analysis_running = False
         self.context_source = "project"
         self.ai_mode = "auto"
         self.context_layer_mode = ""
         self.context_layer_id = ""
         self.context_layer_name = ""
+        self.context_layer_ids: List[str] = []
+        self.context_layer_names: List[str] = []
         self.project_context_enabled = False
         self._initial_layout_stable = False
 
@@ -1708,6 +1915,12 @@ class ReportsWidget(QWidget):
 
     def _set_context_source(self, source: str):
         self.context_source = str(source or "project").strip().lower()
+        self.context_layer_mode = ""
+        self.context_layer_id = ""
+        self.context_layer_name = ""
+        self.context_layer_ids = []
+        self.context_layer_names = []
+        self._reset_scope_runtime_state()
         self._refresh_context_header()
         self._refresh_prompt_state()
 
@@ -1722,6 +1935,27 @@ class ReportsWidget(QWidget):
         self.context_layer_mode = str(mode or "").strip().lower()
         self.context_layer_id = str(layer_meta.get("id") or "")
         self.context_layer_name = str(layer_meta.get("name") or "")
+        self.context_layer_ids = [self.context_layer_id] if self.context_layer_id else []
+        self.context_layer_names = [self.context_layer_name] if self.context_layer_name else []
+        self._reset_scope_runtime_state()
+        self._refresh_context_header()
+        self._refresh_prompt_state()
+
+    def _set_context_layers(self, layers: List[Dict[str, str]], mode: str = "restrict"):
+        clean_layers = [
+            {
+                "id": str(layer.get("id") or "").strip(),
+                "name": str(layer.get("name") or "").strip(),
+            }
+            for layer in (layers or [])
+            if str(layer.get("id") or "").strip()
+        ]
+        self.context_layer_mode = str(mode or "restrict").strip().lower()
+        self.context_layer_ids = [layer["id"] for layer in clean_layers]
+        self.context_layer_names = [layer["name"] for layer in clean_layers if layer["name"]]
+        self.context_layer_id = self.context_layer_ids[0] if len(self.context_layer_ids) == 1 else ""
+        self.context_layer_name = self.context_layer_names[0] if len(self.context_layer_names) == 1 else ""
+        self._reset_scope_runtime_state()
         self._refresh_context_header()
         self._refresh_prompt_state()
 
@@ -1736,6 +1970,7 @@ class ReportsWidget(QWidget):
 
     def _toggle_project_context(self):
         self.project_context_enabled = not self.project_context_enabled
+        self._reset_scope_runtime_state()
         self._refresh_context_header()
         self._refresh_prompt_state()
 
@@ -1743,9 +1978,72 @@ class ReportsWidget(QWidget):
         self.context_layer_mode = ""
         self.context_layer_id = ""
         self.context_layer_name = ""
+        self.context_layer_ids = []
+        self.context_layer_names = []
         self.project_context_enabled = False
+        self._reset_scope_runtime_state()
         self._refresh_context_header()
         self._refresh_prompt_state()
+
+    def _reset_scope_runtime_state(self):
+        try:
+            self.context_memory.clear()
+        except Exception:
+            pass
+        try:
+            if self.conversation_memory_service is not None:
+                self.conversation_memory_service.clear_state(self.session_id)
+        except Exception:
+            pass
+
+    def _provider_name_for_layer(self, layer) -> str:
+        try:
+            provider_type = getattr(layer, "providerType", None)
+            provider_name = str(provider_type() if callable(provider_type) else provider_type or "").strip().lower()
+            if provider_name:
+                return provider_name
+        except Exception:
+            pass
+        try:
+            provider = getattr(layer, "dataProvider", lambda: None)()
+            provider_name = str(getattr(provider, "name", lambda: "")() or "").strip().lower()
+            if provider_name:
+                return provider_name
+        except Exception:
+            pass
+        try:
+            source = str(getattr(layer, "source", lambda: "")() or "").lower()
+            if "dbname=" in source or "postgres" in source or "postgresql" in source:
+                return "postgres"
+        except Exception:
+            pass
+        return ""
+
+    def _scoped_layer_ids(self) -> Optional[List[str]]:
+        if self.context_layer_ids:
+            return list(self.context_layer_ids)
+        if self.context_layer_id:
+            return [self.context_layer_id]
+
+        layers = []
+        try:
+            project = QgsProject.instance()
+            layers = list(project.mapLayers().values() if project is not None else [])
+        except Exception:
+            layers = []
+
+        if self.context_source == "postgres":
+            ids = []
+            for layer in layers:
+                layer_id = str(getattr(layer, "id", lambda: "")() or "").strip()
+                if not layer_id:
+                    continue
+                provider_name = self._provider_name_for_layer(layer)
+                if provider_name in {"postgres", "postgresql"}:
+                    ids.append(layer_id)
+            return ids or ["__scope_without_layers__"]
+
+        return None
 
     def _context_source_label(self) -> str:
         return {
@@ -1764,6 +2062,9 @@ class ReportsWidget(QWidget):
 
     def _context_status_label(self) -> str:
         if self.context_source == "postgres":
+            postgres_layers = self._project_layers(source_filter="postgres")
+            if postgres_layers:
+                return _rt("PostgreSQL ativo · {total} camada(s) carregada(s)", total=len(postgres_layers))
             try:
                 from ..browser_integration import connection_registry
 
@@ -1795,23 +2096,17 @@ class ReportsWidget(QWidget):
         return _rt("Projeto atual · {total_layers} camada(s)", total_layers=total_layers)
 
     def _context_placeholder(self) -> str:
-        base = {
-            "project": _rt("Pergunte qualquer coisa sobre o projeto e as camadas abertas..."),
-            "postgres": _rt("Pergunte algo sobre as conexões PostgreSQL e os dados abertos..."),
-            "cloud": _rt("Pergunte algo sobre as camadas do cloud e o projeto atual..."),
-        }.get(self.context_source, _rt("Pergunte qualquer coisa sobre o projeto..."))
-        if self.context_layer_name:
-            return f"{base} Camada em foco: {self.context_layer_name}."
-        return base
+        return _rt("Digite sua pergunta")
 
     def _refresh_context_header(self):
         if getattr(self, "context_button", None) is not None:
             self.context_button.setText(self._context_source_label())
 
         parts = [self._context_status_label(), self._ai_mode_label()]
-        if self.context_layer_name:
-            layer_prefix = _rt("Camada") if self.context_layer_mode != "restrict" else _rt("Limite")
-            parts.append(f"{layer_prefix}: {self.context_layer_name}")
+        layer_summary = self._selected_layers_summary()
+        if layer_summary:
+            layer_prefix = _rt("Camada") if len(self.context_layer_names) == 1 else _rt("Camadas")
+            parts.append(f"{layer_prefix}: {layer_summary}")
         if self.project_context_enabled:
             parts.append(_rt("Contexto extra ativo"))
         if getattr(self, "status_label", None) is not None:
@@ -1823,17 +2118,233 @@ class ReportsWidget(QWidget):
         if getattr(self, "engine_button", None) is not None:
             self.engine_button.setText(self._ai_mode_label())
 
-    def _project_layers(self) -> List[Dict[str, str]]:
+    def _selected_layers_summary(self) -> str:
+        names = [str(name or "").strip() for name in getattr(self, "context_layer_names", []) if str(name or "").strip()]
+        if not names and self.context_layer_name:
+            names = [self.context_layer_name]
+        if not names:
+            return ""
+        if len(names) <= 2:
+            return ", ".join(names)
+        return f"{names[0]}, {names[1]} +{len(names) - 2}"
+
+    def _has_selected_chat_layers(self) -> bool:
+        return bool(
+            getattr(self, "context_layer_ids", None)
+            or str(getattr(self, "context_layer_id", "") or "").strip()
+        )
+
+    def _is_plugin_help_question(self, question: str) -> bool:
+        normalized = f" {normalize_text(question)} "
+        if not normalized.strip():
+            return False
+        has_help_intent = any(f" {term} " in normalized or term in normalized for term in PLUGIN_HELP_INTENT_TERMS)
+        has_plugin_subject = any(f" {term} " in normalized or term in normalized for term in PLUGIN_HELP_SUBJECT_TERMS)
+        return bool(has_help_intent and has_plugin_subject)
+
+    def _plugin_help_response(self, question: str) -> str:
+        normalized = normalize_text(question)
+
+        def has_any(*terms: str) -> bool:
+            return any(term in normalized for term in terms)
+
+        if has_any("resumo", "summary", "tabela dinamica", "pivot"):
+            return _rt(
+                "Aba Resumo\n"
+                "Objetivo: explorar uma camada em formato de tabela dinâmica, com agrupamentos, totais e leitura rápida dos campos.\n"
+                "Quando usar: use esta aba quando quiser investigar os dados manualmente, comparar categorias ou montar uma visão tabular antes de gerar gráficos.\n"
+                "Como fazer:\n"
+                "1. Abra a aba Resumo no menu lateral.\n"
+                "2. Escolha a camada que deseja analisar.\n"
+                "3. Selecione campos, medidas e agrupamentos conforme a estrutura da camada.\n"
+                "4. Use filtros e seleção de campos para refinar a tabela.\n"
+                "5. Quando precisar de uma resposta conversada ou gráfico automático, volte para a aba Relatórios.\n"
+                "Dica: a aba Resumo é melhor para conferência e exploração; a aba Relatórios é melhor para perguntas em linguagem natural."
+            )
+
+        if has_any("relatorio", "relatorios", "reports", "chat"):
+            return _rt(
+                "Aba Relatórios\n"
+                "Objetivo: transformar perguntas em análises, tabelas e gráficos automáticos usando as camadas do projeto.\n"
+                "Quando usar: use esta aba quando quiser perguntar algo como totais, rankings, comparações, distribuições ou filtros por atributo.\n"
+                "Como fazer:\n"
+                "1. Digite a pergunta no campo do chat.\n"
+                "2. Escolha uma ou mais camadas quando a janela de seleção aparecer.\n"
+                "3. Clique em Analisar para executar a pergunta somente nas camadas marcadas.\n"
+                "4. Se o chat tiver dúvida sobre a coluna correta, selecione uma das opções sugeridas.\n"
+                "5. Continue perguntando: as camadas escolhidas permanecem em foco até você clicar em Limpar.\n"
+                "Dica: para reiniciar tudo e escolher outras camadas, use o botão Limpar."
+            )
+
+        if has_any("modelo", "model", "dashboard"):
+            return _rt(
+                "Aba Modelo/Dashboard\n"
+                "Objetivo: organizar gráficos, cards e visuais em uma página de apresentação do projeto.\n"
+                "Quando usar: use esta aba quando quiser montar um painel visual, posicionar elementos e preparar uma leitura executiva dos resultados.\n"
+                "Como fazer:\n"
+                "1. Gere um gráfico ou resultado na aba Relatórios.\n"
+                "2. Use a opção de adicionar ao modelo quando ela estiver disponível.\n"
+                "3. Na aba Modelo, organize os visuais no canvas.\n"
+                "4. Ajuste tamanho, posição, aparência e leitura dos elementos.\n"
+                "5. Volte à aba Relatórios sempre que precisar criar novas análises.\n"
+                "Dica: pense nessa aba como a área de montagem final do dashboard."
+            )
+
+        if (
+            not has_any("postgres", "postgresql", "banco")
+            and has_any("integracao", "integracoes", "integration", "integrations", "conexao", "conexoes", "connection", "connections")
+        ):
+            return _rt(
+                "Aba Conexões/Integrações\n"
+                "Objetivo: centralizar origens externas e facilitar o acesso a dados que não estão diretamente no projeto.\n"
+                "Quando usar: use esta área para configurar conexões, abrir fontes recentes ou preparar dados externos para análise.\n"
+                "Como fazer:\n"
+                "1. Abra a área de Conexões ou Integrações no plugin.\n"
+                "2. Cadastre, selecione ou reabra uma origem de dados disponível.\n"
+                "3. Carregue as camadas necessárias no projeto quando a origem exigir isso.\n"
+                "4. Volte para a aba Relatórios e escolha o contexto correto no topo do chat.\n"
+                "5. Faça a pergunta e selecione as camadas que devem ser analisadas.\n"
+                "Dica: conexão prepara a origem; a análise acontece na aba Relatórios."
+            )
+
+        if has_any("cloud", "nuvem"):
+            return _rt(
+                "Área Cloud\n"
+                "Objetivo: acessar dados e conexões disponíveis na nuvem do plugin.\n"
+                "Quando usar: use Cloud quando os dados não estiverem apenas no projeto local ou quando a organização disponibilizar fontes online.\n"
+                "Como fazer:\n"
+                "1. Abra a área de Cloud ou Integrações.\n"
+                "2. Faça login quando o plugin solicitar autenticação.\n"
+                "3. Escolha a conexão, projeto ou camada disponível na nuvem.\n"
+                "4. No chat, selecione o contexto Cloud antes de fazer perguntas sobre esses dados.\n"
+                "5. Se nenhuma conexão aparecer, confirme login, permissões e disponibilidade da fonte.\n"
+                "Dica: se a pergunta for sobre dados locais, use Projeto atual; se for sobre dados online, use Cloud."
+            )
+
+        if has_any("sobre", "about"):
+            return _rt(
+                "Aba Sobre\n"
+                "Objetivo: apresentar informações institucionais e técnicas do Summarizer.\n"
+                "Quando usar: use esta aba quando precisar conferir versão, descrição, suporte ou informações gerais do plugin.\n"
+                "Como fazer:\n"
+                "1. Abra Sobre no rodapé ou na área indicada do plugin.\n"
+                "2. Consulte as informações exibidas sobre o produto.\n"
+                "3. Use esses dados para suporte, validação de versão ou identificação do plugin.\n"
+                "4. Para executar análises, volte para Relatórios, Resumo, Modelo ou Conexões.\n"
+                "Dica: a aba Sobre é informativa; ela não altera seus dados nem executa consultas."
+            )
+
+        if has_any("postgres", "postgresql", "banco", "conexao", "conexoes", "connection"):
+            return _rt(
+                "Contexto PostgreSQL\n"
+                "Objetivo: direcionar perguntas para camadas carregadas a partir de uma conexão PostgreSQL/PostGIS.\n"
+                "Quando usar: use este contexto quando a análise deve considerar dados do banco, e não todas as camadas do projeto.\n"
+                "Como fazer:\n"
+                "1. Configure ou carregue as camadas PostgreSQL no projeto.\n"
+                "2. No topo do chat, abra o seletor de contexto.\n"
+                "3. Escolha Banco PostgreSQL.\n"
+                "4. Digite sua pergunta e selecione uma ou mais camadas PostgreSQL quando a janela aparecer.\n"
+                "5. Clique em Analisar. As próximas perguntas continuam usando essas camadas até você clicar em Limpar.\n"
+                "Dica: se nenhuma camada aparecer, verifique se a conexão está configurada e se as camadas foram carregadas no QGIS."
+            )
+
+        if has_any("camada", "camadas", "layer", "layers", "selecionar"):
+            return _rt(
+                "Seleção de camadas no chat\n"
+                "Objetivo: garantir que a resposta seja calculada somente nas camadas escolhidas por você.\n"
+                "Quando usar: sempre que a pergunta for sobre dados do projeto, o chat precisa saber quais camadas deve analisar.\n"
+                "Como fazer:\n"
+                "1. Digite a pergunta no chat.\n"
+                "2. Quando a janela abrir, marque uma ou mais camadas.\n"
+                "3. Clique em Analisar para confirmar a seleção.\n"
+                "4. Continue perguntando normalmente; a seleção permanece ativa.\n"
+                "5. Para trocar as camadas, clique em Limpar e faça uma nova pergunta.\n"
+                "Dica: selecionar poucas camadas tende a gerar respostas mais precisas."
+            )
+
+        if has_any("grafico", "graficos", "chart", "charts", "dashboard", "modelo"):
+            return _rt(
+                "Gráficos e resultados visuais\n"
+                "Objetivo: transformar uma resposta do chat em visualizações como barras, rankings, totais ou distribuições.\n"
+                "Quando usar: use gráficos quando quiser apresentar padrões, comparar categorias ou destacar indicadores do projeto.\n"
+                "Como fazer:\n"
+                "1. Faça uma pergunta que gere uma métrica, contagem, soma, média, ranking ou agrupamento.\n"
+                "2. Selecione as camadas que devem ser analisadas.\n"
+                "3. Clique em Gerar ou Analisar.\n"
+                "4. Revise o resultado visual criado pelo chat.\n"
+                "5. Se quiser montar uma apresentação, adicione o visual ao Modelo/Dashboard.\n"
+                "Dica: perguntas com 'por categoria', 'top 10', 'total por' ou 'quantidade por' costumam gerar bons gráficos."
+            )
+
+        if has_any("filtro", "filtros", "filter", "filters"):
+            return _rt(
+                "Filtros no chat\n"
+                "Objetivo: limitar a análise a um conjunto específico de registros, usando colunas e valores das camadas selecionadas.\n"
+                "Quando usar: use filtros quando quiser responder perguntas por local, status, categoria, tipo, data ou qualquer campo existente na camada.\n"
+                "Como fazer:\n"
+                "1. Escreva o filtro dentro da pergunta, por exemplo: por cidade, por status ou em determinado valor.\n"
+                "2. O chat compara o texto com nomes de colunas e valores encontrados na camada.\n"
+                "3. Se houver dúvida, ele mostra opções para você escolher a coluna correta.\n"
+                "4. Depois da escolha, a consulta é recalculada somente com o filtro selecionado.\n"
+                "Dica: quanto mais parecido o texto estiver com o nome da coluna ou valor real, melhor será a interpretação."
+            )
+
+        if has_any("limpar", "reset", "reiniciar"):
+            return _rt(
+                "Botão Limpar\n"
+                "Objetivo: reiniciar o contexto do chat com segurança.\n"
+                "Quando usar: use Limpar quando quiser encerrar a análise atual, trocar as camadas em foco ou começar uma nova linha de perguntas.\n"
+                "O que acontece:\n"
+                "1. O histórico visível do chat é limpo.\n"
+                "2. As camadas em foco são removidas.\n"
+                "3. A memória da conversa atual é reiniciada.\n"
+                "4. Na próxima pergunta de dados, o chat volta a pedir a seleção de camadas.\n"
+                "Dica: Limpar não apaga suas camadas do QGIS; ele apenas reinicia o contexto do chat."
+            )
+
+        if has_any("idioma", "language", "ingles", "english"):
+            return _rt(
+                "Idioma e tradução\n"
+                "Objetivo: permitir que o plugin seja usado em diferentes idiomas sem perder a lógica de análise.\n"
+                "Como funciona:\n"
+                "1. Você pode fazer perguntas em português ou inglês.\n"
+                "2. O chat normaliza acentos, maiúsculas e sinais para comparar melhor os textos.\n"
+                "3. Para perguntas sobre dados, ele prioriza nomes reais de camadas, colunas e valores do projeto.\n"
+                "4. Para perguntas sobre o plugin, ele responde como guia de uso, sem pedir camada.\n"
+                "5. As respostas de ajuda são preparadas para acompanhar o idioma selecionado no plugin.\n"
+                "Dica: em consultas de dados, escrever próximo ao nome real da coluna sempre melhora o resultado."
+            )
+
+        return _rt(
+            "Ajuda do Summarizer\n"
+            "Objetivo: orientar o uso do plugin sem executar consultas desnecessárias.\n"
+            "Como funciona:\n"
+            "1. Se a pergunta for sobre uma funcionalidade, o chat responde com explicação e passo a passo.\n"
+            "2. Se a pergunta for sobre dados, o chat solicita as camadas que devem ser analisadas.\n"
+            "3. As camadas escolhidas permanecem em foco até você clicar em Limpar.\n"
+            "4. Você pode perguntar sobre Relatórios, Resumo, Modelo/Dashboard, Conexões, PostgreSQL, Cloud ou Sobre.\n"
+            "Dica: para obter uma orientação mais precisa, cite o nome da aba ou do comando que deseja entender."
+        )
+
+    def _project_layers(self, source_filter: Optional[str] = None) -> List[Dict[str, str]]:
+        source_filter = str(source_filter or "").strip().lower()
         layers = []
         try:
             project = QgsProject.instance()
             for layer in (project.mapLayers().values() if project is not None else []):
+                if not isinstance(layer, QgsVectorLayer):
+                    continue
+                if not layer.isValid():
+                    continue
+                provider_name = self._provider_name_for_layer(layer)
+                if source_filter == "postgres" and provider_name not in {"postgres", "postgresql"}:
+                    continue
                 name_getter = getattr(layer, "name", None)
                 layer_name = str(name_getter() if callable(name_getter) else "")
                 layer_id_getter = getattr(layer, "id", None)
                 layer_id = str(layer_id_getter() if callable(layer_id_getter) else "")
                 if layer_name:
-                    layers.append({"id": layer_id, "name": layer_name})
+                    layers.append({"id": layer_id, "name": layer_name, "provider": provider_name})
         except Exception:
             return []
         return sorted(layers, key=lambda item: item["name"].lower())
@@ -1845,29 +2356,412 @@ class ReportsWidget(QWidget):
             return None
 
     def _build_effective_question(self, question: str) -> str:
+        # Keep the user prompt clean. Scope is passed to the engine as layer ids,
+        # so UI hints do not get mistaken for filters or locations.
         return str(question or "").strip()
-        hints = []
-        if self.context_source == "postgres":
-            hints.append("Priorize as camadas e conexões PostgreSQL abertas no projeto.")
-        elif self.context_source == "cloud":
-            hints.append("Priorize as camadas do cloud carregadas no projeto.")
-        else:
-            hints.append("Considere o projeto atual aberto no QGIS.")
 
-        if self.context_layer_name:
-            if self.context_layer_mode == "restrict":
-                hints.append(f"Limite a análise apenas à camada {self.context_layer_name}.")
-            elif self.context_layer_mode == "focus":
-                hints.append(f"Use a camada atual {self.context_layer_name} como foco principal.")
+    def _field_choice_options(self, question: str) -> List[Dict[str, str]]:
+        scoped_ids = self._scoped_layer_ids() or []
+        if not scoped_ids or scoped_ids == ["__scope_without_layers__"]:
+            return []
+        normalized_question = normalize_text(question)
+        question_terms = [
+            token
+            for token in normalized_question.split()
+            if token
+            and token
+            not in {
+                "a",
+                "as",
+                "o",
+                "os",
+                "de",
+                "do",
+                "da",
+                "dos",
+                "das",
+                "em",
+                "no",
+                "na",
+                "por",
+                "para",
+                "quanto",
+                "quantos",
+                "quantas",
+                "total",
+                "soma",
+                "somar",
+            }
+        ]
+        options: List[Dict[str, str]] = []
+        project = QgsProject.instance()
+        for layer_id in scoped_ids:
+            layer = project.mapLayer(layer_id) if project is not None else None
+            if not isinstance(layer, QgsVectorLayer) or not layer.isValid():
+                continue
+            fields = layer.fields()
+            for index, field in enumerate(fields):
+                field_name = str(field.name() or "").strip()
+                if not field_name:
+                    continue
+                alias = str(layer.attributeAlias(index) or "").strip()
+                label = alias or field_name
+                kind = self._qgis_field_kind(field)
+                score = self._score_field_for_question(question_terms, field_name, alias, kind)
+                if score <= 0:
+                    continue
+                options.append(
+                    {
+                        "layer_id": str(layer_id),
+                        "layer_name": str(layer.name() or ""),
+                        "field": field_name,
+                        "label": label,
+                        "kind": kind,
+                        "score": str(score),
+                    }
+                )
+        options.sort(key=lambda item: (int(item.get("score") or 0), item.get("label") or ""), reverse=True)
+        return options[:8]
+
+    def _confident_field_choice(self, field_options: List[Dict[str, str]]) -> Optional[Dict[str, str]]:
+        if not field_options:
+            return None
+        ranked = list(field_options)
+        top_score = int(ranked[0].get("score") or 0)
+        second_score = int(ranked[1].get("score") or 0) if len(ranked) > 1 else 0
+        if top_score >= 7 and top_score - second_score >= 2:
+            return dict(ranked[0])
+        return None
+
+    def _qgis_field_kind(self, field) -> str:
+        type_name = normalize_text(getattr(field, "typeName", lambda: "")() or "")
+        if any(token in type_name for token in ("int", "serial")):
+            return "integer"
+        if any(token in type_name for token in ("double", "float", "real", "numeric", "decimal")):
+            return "numeric"
+        if "date" in type_name:
+            return "date"
+        return "text"
+
+    def _score_field_for_question(self, question_terms: List[str], field_name: str, alias: str, kind: str) -> int:
+        field_text = normalize_text(" ".join([field_name, alias])).strip()
+        compact_field = "".join(ch for ch in field_text if ch.isalnum())
+        if not field_text:
+            return 0
+        score = 0
+        for term in question_terms:
+            for candidate in self._field_term_variants(term):
+                compact_candidate = "".join(ch for ch in normalize_text(candidate) if ch.isalnum())
+                if not compact_candidate:
+                    continue
+                if f" {candidate} " in f" {field_text} ":
+                    score += 5
+                elif compact_candidate in compact_field:
+                    score += 4
+                elif len(compact_candidate) >= 4 and compact_candidate[:4] in compact_field:
+                    score += 2
+        return score
+
+    def _field_term_variants(self, term: str) -> List[str]:
+        term = normalize_text(term)
+        if not term:
+            return []
+        variants = {term}
+        if len(term) >= 4:
+            variants.add(term[:4])
+        if len(term) >= 5:
+            variants.add(term[:5])
+        return [item for item in variants if item]
+
+    def _plan_for_field_choice(self, question: str, option: Dict[str, str]) -> Optional[QueryPlan]:
+        layer_id = str(option.get("layer_id") or "").strip()
+        field_name = str(option.get("field") or "").strip()
+        if not layer_id or not field_name:
+            return None
+        layer = QgsProject.instance().mapLayer(layer_id)
+        if not isinstance(layer, QgsVectorLayer) or not layer.isValid():
+            layer_name = normalize_text(option.get("layer_name") or "")
+            for candidate in QgsProject.instance().mapLayers().values():
+                if not isinstance(candidate, QgsVectorLayer) or not candidate.isValid():
+                    continue
+                if normalize_text(candidate.name() or "") == layer_name:
+                    layer = candidate
+                    layer_id = str(candidate.id() or "")
+                    break
+        if not isinstance(layer, QgsVectorLayer) or not layer.isValid():
+            return None
+        field_index = layer.fields().indexFromName(field_name)
+        if field_index < 0:
+            wanted = normalize_text(field_name)
+            wanted_label = normalize_text(option.get("label") or "")
+            for index, field in enumerate(layer.fields()):
+                field_text = normalize_text(field.name() or "")
+                alias_text = normalize_text(layer.attributeAlias(index) or "")
+                if wanted in {field_text, alias_text} or wanted_label in {field_text, alias_text}:
+                    field_index = index
+                    field_name = str(field.name() or "").strip()
+                    break
+        if field_index < 0:
+            return None
+        field = layer.fields().field(field_index)
+        kind = self._qgis_field_kind(field)
+        operation = self._operation_for_field_choice(question, kind)
+        field_label = str(option.get("label") or field_name).strip()
+        filters = []
+        if operation == "count" and kind not in {"integer", "numeric"}:
+            filters.append(FilterSpec(field=field_name, value="", operator="has_value", layer_role="target"))
+        metric_label = {
+            "count": _rt("Quantidade"),
+            "avg": _rt("Média"),
+            "max": _rt("Maior valor"),
+            "min": _rt("Menor valor"),
+            "sum": _rt("Total"),
+        }.get(operation, _rt("Total"))
+        plan = QueryPlan(
+            intent="value_insight",
+            original_question=question,
+            target_layer_id=layer_id,
+            target_layer_name=str(layer.name() or ""),
+            metric=MetricSpec(
+                operation=operation,
+                field=field_name if operation != "count" else None,
+                field_label=field_label,
+                label=metric_label,
+            ),
+            filters=filters,
+            planning_trace={
+                "manual_field_choice": True,
+                "chosen_metric_field": field_name,
+                "chosen_metric_field_label": field_label,
+            },
+        )
+        plan.chart.title = f"{metric_label} de {field_label}"
+        return plan
+
+    def _operation_for_field_choice(self, question: str, kind: str) -> str:
+        if kind not in {"integer", "numeric"}:
+            return "count"
+        return "sum"
+
+    def _prompt_layers_for_question(self, question: str) -> Optional[List[Dict[str, str]]]:
+        source_filter = "postgres" if self.context_source == "postgres" else None
+        layers = self._project_layers(source_filter=source_filter)
+        if not layers:
+            dialog = QDialog(self)
+            dialog.setWindowTitle(_rt("Selecionar camadas"))
+            dialog.setObjectName("layerPickerDialog")
+            self._apply_layer_picker_style(dialog)
+            layout = QVBoxLayout(dialog)
+            layout.setContentsMargins(18, 18, 18, 18)
+            layout.setSpacing(12)
+            if self.context_source == "postgres":
+                empty_text = _rt(
+                    "Nenhuma camada PostgreSQL vetorial está carregada no projeto. "
+                    "Carregue uma camada PostgreSQL no QGIS ou mude o contexto para Projeto atual."
+                )
             else:
-                hints.append(f"Considere também a camada {self.context_layer_name} como contexto adicional.")
+                empty_text = _rt(
+                    "Nenhuma camada vetorial válida foi encontrada no projeto. Carregue uma camada antes de perguntar."
+                )
+            message = QLabel(
+                empty_text,
+                dialog,
+            )
+            message.setWordWrap(True)
+            layout.addWidget(message)
+            buttons = QDialogButtonBox(QDialogButtonBox.Ok, dialog)
+            buttons.accepted.connect(dialog.accept)
+            layout.addWidget(buttons)
+            dialog.exec_()
+            return None
 
-        if self.project_context_enabled:
-            hints.append("Inclua o contexto geral do projeto e as relações entre camadas abertas.")
+        dialog = QDialog(self)
+        dialog.setWindowTitle(_rt("Escolha as camadas para o chat"))
+        dialog.setObjectName("layerPickerDialog")
+        dialog.setMinimumWidth(460)
+        dialog.setMinimumHeight(420)
+        self._apply_layer_picker_style(dialog)
 
-        if not hints:
-            return question
-        return f"{question}\n\nContexto adicional:\n- " + "\n- ".join(hints)
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(18, 18, 18, 18)
+        layout.setSpacing(12)
+
+        title_text = (
+            _rt("Quais camadas PostgreSQL o chat deve analisar?")
+            if self.context_source == "postgres"
+            else _rt("Quais camadas o chat deve analisar?")
+        )
+        title = QLabel(title_text, dialog)
+        title_font = ui_font()
+        title_font.setPixelSize(16)
+        title_font.setWeight(QFont.DemiBold)
+        title.setFont(title_font)
+        layout.addWidget(title)
+
+        helper_text = _rt("Selecione uma ou mais camadas. A resposta será calculada somente com as camadas marcadas.")
+        if self.context_source == "postgres":
+            helper_text = _rt(
+                "Mostrando apenas camadas PostgreSQL carregadas no projeto. "
+                "A resposta será calculada somente com as camadas marcadas."
+            )
+        helper = QLabel(helper_text, dialog)
+        helper.setWordWrap(True)
+        layout.addWidget(helper)
+
+        question_label = QLabel(f"{_rt('Pergunta')}: {question}", dialog)
+        question_label.setWordWrap(True)
+        question_label.setStyleSheet("color: #64748B;")
+        layout.addWidget(question_label)
+
+        tools_row = QHBoxLayout()
+        tools_row.setContentsMargins(0, 0, 0, 0)
+        tools_row.setSpacing(8)
+        select_all_btn = QPushButton(_rt("Selecionar todas"), dialog)
+        select_all_btn.setObjectName("layerPickerUtilityButton")
+        clear_btn = QPushButton(_rt("Limpar seleção"), dialog)
+        clear_btn.setObjectName("layerPickerUtilityButton")
+        tools_row.addWidget(select_all_btn, 0)
+        tools_row.addWidget(clear_btn, 0)
+        tools_row.addStretch(1)
+        layout.addLayout(tools_row)
+
+        scroll = QScrollArea(dialog)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        list_host = QWidget(scroll)
+        list_layout = QVBoxLayout(list_host)
+        list_layout.setContentsMargins(2, 2, 2, 2)
+        list_layout.setSpacing(6)
+
+        selected_ids = set(self._scoped_layer_ids() or [])
+        checkboxes = []
+        for layer in layers:
+            checkbox = QCheckBox(layer["name"], list_host)
+            checkbox.setProperty("layerId", layer["id"])
+            checkbox.setProperty("layerName", layer["name"])
+            checkbox.setChecked(layer["id"] in selected_ids)
+            checkbox.setMinimumHeight(30)
+            list_layout.addWidget(checkbox)
+            checkboxes.append(checkbox)
+        list_layout.addStretch(1)
+        scroll.setWidget(list_host)
+        layout.addWidget(scroll, 1)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, dialog)
+        analyze_button = buttons.button(QDialogButtonBox.Ok)
+        cancel_button = buttons.button(QDialogButtonBox.Cancel)
+        if analyze_button is not None:
+            analyze_button.setText(_rt("Analisar"))
+            analyze_button.setObjectName("layerPickerPrimaryButton")
+        if cancel_button is not None:
+            cancel_button.setText(_rt("Cancelar"))
+            cancel_button.setObjectName("layerPickerSecondaryButton")
+
+        def update_analyze_state():
+            selected_count = sum(1 for checkbox in checkboxes if checkbox.isChecked())
+            if analyze_button is not None:
+                analyze_button.setEnabled(selected_count > 0)
+
+        def set_all_checked(value: bool):
+            for checkbox in checkboxes:
+                checkbox.setChecked(value)
+            update_analyze_state()
+
+        for checkbox in checkboxes:
+            checkbox.toggled.connect(lambda checked=False: update_analyze_state())
+        select_all_btn.clicked.connect(lambda checked=False: set_all_checked(True))
+        clear_btn.clicked.connect(lambda checked=False: set_all_checked(False))
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        self._apply_layer_picker_style(dialog)
+        update_analyze_state()
+
+        if dialog.exec_() != QDialog.Accepted:
+            return None
+
+        selected_layers = []
+        for checkbox in checkboxes:
+            if checkbox.isChecked():
+                selected_layers.append(
+                    {
+                        "id": str(checkbox.property("layerId") or ""),
+                        "name": str(checkbox.property("layerName") or checkbox.text() or ""),
+                    }
+                )
+        return selected_layers or None
+
+    def _apply_layer_picker_style(self, dialog: QDialog):
+        dialog.setStyleSheet(
+            """
+            QDialog#layerPickerDialog {
+                background: #FFFFFF;
+                color: #0F172A;
+            }
+            QDialog#layerPickerDialog QLabel {
+                color: #0F172A;
+                background: transparent;
+            }
+            QDialog#layerPickerDialog QScrollArea {
+                background: transparent;
+                border: 1px solid rgba(15, 23, 42, 0.08);
+                border-radius: 12px;
+            }
+            QDialog#layerPickerDialog QWidget {
+                background: #FFFFFF;
+            }
+            QDialog#layerPickerDialog QCheckBox {
+                color: #0F172A;
+                spacing: 8px;
+                min-height: 28px;
+                background: transparent;
+            }
+            QDialog#layerPickerDialog QCheckBox::indicator {
+                width: 14px;
+                height: 14px;
+                border: 1px solid #CBD5E1;
+                border-radius: 3px;
+                background: #FFFFFF;
+            }
+            QDialog#layerPickerDialog QCheckBox::indicator:checked {
+                background: #4F46E5;
+                border-color: #4F46E5;
+            }
+            QDialog#layerPickerDialog QPushButton {
+                background: #FFFFFF;
+                color: #0F172A;
+                border: 1px solid #D7DEE8;
+                border-radius: 10px;
+                min-height: 34px;
+                padding: 0 16px;
+                font-weight: 500;
+            }
+            QDialog#layerPickerDialog QPushButton:hover {
+                background: #F8FAFC;
+                border-color: #CBD5E1;
+            }
+            QDialog#layerPickerDialog QPushButton#layerPickerPrimaryButton {
+                background: #10182B;
+                color: #FFFFFF;
+                border-color: #10182B;
+            }
+            QDialog#layerPickerDialog QPushButton#layerPickerPrimaryButton:hover {
+                background: #1A2740;
+                border-color: #1A2740;
+            }
+            QDialog#layerPickerDialog QPushButton#layerPickerPrimaryButton:disabled {
+                background: #E2E8F0;
+                color: #94A3B8;
+                border-color: #E2E8F0;
+            }
+            QDialog#layerPickerDialog QPushButton#layerPickerUtilityButton,
+            QDialog#layerPickerDialog QPushButton#layerPickerSecondaryButton {
+                background: #FFFFFF;
+                color: #0F172A;
+                border-color: #D7DEE8;
+            }
+            """
+        )
 
     def _apply_local_styles(self):
         self.setObjectName("reportsRoot")
@@ -1902,10 +2796,46 @@ class ReportsWidget(QWidget):
             widget.set_bubble_max_width(user_max)
 
     def generate_report(self):
+        if getattr(self, "analysis_running", False):
+            self._cancel_active_run()
+            return
+
         visible_question = (self.question_edit.toPlainText() or "").strip()
         if not visible_question:
             self.question_edit.setFocus()
             return
+
+        if self._is_plugin_help_question(visible_question):
+            self.question_edit.clear()
+            self._set_history_started(True)
+            self._append_history_widget(UserMessageWidget(visible_question, self.history_viewport))
+            response_widget = AssistantMessageWidget(
+                self._retry_with_choice,
+                self._execute_plan_choice,
+                self._handle_result_feedback,
+                self._show_candidate_picker,
+                self._show_visual_result,
+                self._apply_filter_choice,
+                self._execute_field_choice,
+                self._select_result_on_map,
+                self.plugin.handle_add_chart_to_model_request if self.plugin is not None and hasattr(self.plugin, "handle_add_chart_to_model_request") else None,
+                self.history_viewport,
+            )
+            response_widget.cancel_callback = self._cancel_active_run
+            self._append_history_widget(response_widget)
+            response_widget.show_message(self._plugin_help_response(visible_question))
+            self.clear_chat_btn.setEnabled(True)
+            self.question_edit.setFocus()
+            self._scroll_to_bottom()
+            return
+
+        if not self._has_selected_chat_layers():
+            selected_layers = self._prompt_layers_for_question(visible_question)
+            if not selected_layers:
+                self.question_edit.setFocus()
+                return
+
+            self._set_context_layers(selected_layers, mode="restrict")
 
         question = self._build_effective_question(visible_question)
         self.question_edit.clear()
@@ -1918,10 +2848,12 @@ class ReportsWidget(QWidget):
             self._show_candidate_picker,
             self._show_visual_result,
             self._apply_filter_choice,
+            self._execute_field_choice,
             self._select_result_on_map,
             self.plugin.handle_add_chart_to_model_request if self.plugin is not None and hasattr(self.plugin, "handle_add_chart_to_model_request") else None,
             self.history_viewport,
         )
+        response_widget.cancel_callback = self._cancel_active_run
         self._append_history_widget(response_widget)
         self._start_run(question, response_widget, overrides=None)
 
@@ -1949,8 +2881,8 @@ class ReportsWidget(QWidget):
             ]
             location_text = ", ".join(loc.title() for loc in locations[:3])
             message = (
-                f"A interpretacao continua sem aplicar com seguranca o local {location_text}. "
-                "Por isso, este plano nao sera executado ate a localizacao ser resolvida."
+                f"Ainda não consegui aplicar o filtro {location_text} com segurança. "
+                "Escolha uma coluna ou ajuste a pergunta para evitar um resultado geral."
             ).strip()
             log_info(
                 "[Relatorios][debug][ui] "
@@ -1969,6 +2901,9 @@ class ReportsWidget(QWidget):
             notes="Usuário confirmou a interpretação sugerida.",
             user_action_json={"action": "execute_plan_choice"},
         )
+        self.analysis_cancel_requested = False
+        self.active_response_widget = response_widget
+        response_widget.cancel_callback = self._cancel_active_run
         response_widget.show_loading(question)
         self._show_visual_loading("Aguardando confirmação da análise...")
         response_widget.set_execution_context(
@@ -1976,10 +2911,7 @@ class ReportsWidget(QWidget):
             plan,
             getattr(response_widget, "available_candidates", []),
         )
-        self.clear_chat_btn.setEnabled(False)
-        self.generate_btn.setEnabled(False)
-        self.generate_btn.setText(_rt("Analisando..."))
-        self.question_edit.setEnabled(False)
+        self._prepare_ui_for_analysis()
         QTimer.singleShot(
             0,
             lambda: self._execute_plan(
@@ -2015,6 +2947,52 @@ class ReportsWidget(QWidget):
         )
         self._execute_plan_choice(question, selected_plan, response_widget)
 
+    def _execute_field_choice(self, question: str, option: Dict[str, str], response_widget: AssistantMessageWidget):
+        plan = self._plan_for_field_choice(question, option)
+        if plan is None:
+            response_widget.show_message(
+                _rt("Não consegui montar a consulta com essa coluna. Tente escolher outra coluna.")
+            )
+            self._show_visual_empty(_rt("Nenhum resultado visual foi gerado para esta coluna."))
+            self._finish_ui_after_run()
+            return
+
+        self._safe_register_explicit_feedback(
+            response_widget,
+            feedback_type="selected_field",
+            plan=plan,
+            notes="Usuário escolheu manualmente a coluna para responder a pergunta.",
+            user_action_json={
+                "selected_field": {
+                    "layer_id": option.get("layer_id"),
+                    "layer_name": option.get("layer_name"),
+                    "field": option.get("field"),
+                    "label": option.get("label"),
+                    "kind": option.get("kind"),
+                }
+            },
+        )
+        self.analysis_cancel_requested = False
+        self.active_response_widget = response_widget
+        response_widget.cancel_callback = self._cancel_active_run
+        response_widget.show_loading(question)
+        response_widget.set_execution_context(question, plan, [])
+        self._show_visual_loading(_rt("Executando a consulta na coluna selecionada..."))
+        self.clear_chat_btn.setEnabled(False)
+        self.generate_btn.setEnabled(False)
+        self.generate_btn.setText(_rt("Analisando..."))
+        self.question_edit.setEnabled(False)
+        QTimer.singleShot(
+            0,
+            lambda: self._execute_plan(
+                question,
+                plan,
+                response_widget,
+                getattr(response_widget, "memory_handle", None),
+            ),
+        )
+        self._scroll_to_bottom()
+
     def _select_result_on_map(self, response_widget: AssistantMessageWidget):
         plan = response_widget.feedback_plan()
         if plan is None or response_widget.select_map_button is None:
@@ -2042,6 +3020,9 @@ class ReportsWidget(QWidget):
     ):
         if not reuse_history or getattr(response_widget, "memory_handle", None) is None:
             response_widget.memory_handle = self._create_query_history_handle(question)
+        self.analysis_cancel_requested = False
+        self.active_response_widget = response_widget
+        response_widget.cancel_callback = self._cancel_active_run
         response_widget.show_loading(question)
         self._show_visual_loading(_rt("Analisando e preparando o resultado visual..."))
         self.clear_chat_btn.setEnabled(False)
@@ -2058,6 +3039,22 @@ class ReportsWidget(QWidget):
         )
         self._scroll_to_bottom()
 
+    def _cancel_active_run(self, response_widget: Optional[AssistantMessageWidget] = None):
+        self.analysis_cancel_requested = True
+        self.active_execution_token += 1
+        if self.active_execution_job is not None:
+            try:
+                self.active_execution_job.cancel()
+            except Exception:
+                pass
+            self.active_execution_job = None
+
+        target_widget = response_widget or self.active_response_widget
+        if target_widget is not None:
+            target_widget.show_message(_rt("Análise cancelada. Você pode ajustar a pergunta e tentar novamente."))
+        self._show_visual_empty(_rt("A análise foi cancelada pelo usuário."))
+        self._finish_ui_after_run()
+
     def _run_query(
         self,
         question: str,
@@ -2073,13 +3070,23 @@ class ReportsWidget(QWidget):
                 f"runtime_widget_file='{__file__}' widget_class_file='{inspect.getsourcefile(self.__class__) or ''}' "
                 f"engine_created={bool(self.ai_engine is not None)} question='{question}' overrides={overrides}"
             )
+            scoped_layer_ids = self._scoped_layer_ids()
+            if not scoped_layer_ids or scoped_layer_ids == ["__scope_without_layers__"]:
+                response_widget.show_message(
+                    _rt("Selecione uma ou mais camadas antes de executar a pergunta.")
+                )
+                self._show_visual_empty(_rt("A análise não foi executada porque nenhuma camada foi selecionada."))
+                self._finish_ui_after_run()
+                return
             self._push_loading_status(response_widget, _rt("Pensando na sua pergunta..."))
             engine_payload = self._ensure_ai_engine().interpret_question(
                 question=question,
                 overrides=overrides,
                 memory_handle=memory_handle,
+                layer_ids=scoped_layer_ids,
                 status_callback=lambda message: self._push_loading_status(response_widget, message),
             )
+            self._raise_if_cancelled()
             interpretation = engine_payload.interpretation
             log_info(
                 "[Relatorios][debug][ui] "
@@ -2116,6 +3123,27 @@ class ReportsWidget(QWidget):
                     )
                     self._show_visual_empty("Escolha uma interpretação para atualizar o painel visual.")
                     return
+                field_options = self._field_choice_options(question)
+                if field_options:
+                    confident_option = self._confident_field_choice(field_options)
+                    if confident_option is not None:
+                        execution_started = True
+                        self._execute_field_choice(question, confident_option, response_widget)
+                        return
+                    response_widget.show_field_choices(
+                        question,
+                        _rt(
+                            "Não encontrei automaticamente a coluna certa. "
+                            "Escolha qual coluna devo usar para calcular a resposta:"
+                        ),
+                        field_options,
+                    )
+                    log_info(
+                        "[Relatorios][debug][ui] "
+                        f"execution_blocked=True reason='field_choice_required_from_ambiguity' question='{question}'"
+                    )
+                    self._show_visual_empty(_rt("Escolha uma coluna para executar a análise."))
+                    return
                 response_widget.show_ambiguity(
                     question,
                     interpretation.message,
@@ -2129,6 +3157,27 @@ class ReportsWidget(QWidget):
                 return
 
             if interpretation.status != "ok" or interpretation.plan is None:
+                field_options = self._field_choice_options(question)
+                if field_options:
+                    confident_option = self._confident_field_choice(field_options)
+                    if confident_option is not None:
+                        execution_started = True
+                        self._execute_field_choice(question, confident_option, response_widget)
+                        return
+                    response_widget.show_field_choices(
+                        question,
+                        _rt(
+                            "Não encontrei automaticamente a coluna certa. "
+                            "Escolha qual coluna devo usar para calcular a resposta:"
+                        ),
+                        field_options,
+                    )
+                    log_info(
+                        "[Relatorios][debug][ui] "
+                        f"execution_blocked=True reason='field_choice_required' question='{question}' status='{interpretation.status}'"
+                    )
+                    self._show_visual_empty(_rt("Escolha uma coluna para executar a análise."))
+                    return
                 response_widget.show_message(
                     interpretation.message or "Não foi possível interpretar essa pergunta.",
                 )
@@ -2164,6 +3213,11 @@ class ReportsWidget(QWidget):
             execution_started = True
             self._execute_plan(question, interpretation.plan, response_widget, memory_handle)
         except Exception as exc:
+            if isinstance(exc, AnalysisCancelled):
+                log_info(f"[Relatorios] analise cancelada pelo usuario question='{question}'")
+                self.active_execution_job = None
+                self._finish_ui_after_run()
+                return
             detail = self._format_error_detail(exc)
             log_error(
                 "[Relatórios] falha durante a interpretação "
@@ -2200,6 +3254,9 @@ class ReportsWidget(QWidget):
         memory_handle=None,
     ):
         try:
+            self.analysis_cancel_requested = False
+            self.active_response_widget = response_widget
+            response_widget.cancel_callback = self._cancel_active_run
             self.active_execution_job = self._ensure_ai_engine().create_execution_job(plan)
             self.active_execution_token += 1
             token = self.active_execution_token
@@ -2228,6 +3285,14 @@ class ReportsWidget(QWidget):
     def _process_execution_step(self, question: str, response_widget: AssistantMessageWidget, memory_handle, token: int):
         if token != self.active_execution_token or self.active_execution_job is None:
             return
+        if self.analysis_cancel_requested:
+            try:
+                self.active_execution_job.cancel()
+            except Exception:
+                pass
+            self.active_execution_job = None
+            self._finish_ui_after_run()
+            return
 
         try:
             batch_size = self._batch_size_for_plan(self.active_execution_job.plan)
@@ -2245,6 +3310,24 @@ class ReportsWidget(QWidget):
                 memory_handle=memory_handle,
             )
             if not result.ok:
+                trace = dict(getattr(self.active_execution_job.plan, "planning_trace", {}) or {})
+                if not trace.get("manual_field_choice"):
+                    field_options = self._field_choice_options(question)
+                    if field_options:
+                        confident_option = self._confident_field_choice(field_options)
+                        if confident_option is not None:
+                            self._execute_field_choice(question, confident_option, response_widget)
+                            return
+                        response_widget.show_field_choices(
+                            question,
+                            _rt(
+                                "A consulta não encontrou dados compatíveis automaticamente. "
+                                "Escolha a coluna correta para eu recalcular:"
+                            ),
+                            field_options,
+                        )
+                        self._show_visual_empty(_rt("Escolha uma coluna para recalcular a análise."))
+                        return
                 self._show_visual_empty("Nenhum resultado visual foi gerado para esta pergunta.")
                 response_widget.show_message(
                     result.message or "Não foi possível gerar esse relatório.",
@@ -2304,16 +3387,54 @@ class ReportsWidget(QWidget):
             ),
         )
 
+    def _raise_if_cancelled(self):
+        if self.analysis_cancel_requested:
+            raise AnalysisCancelled("analysis cancelled by user")
+
     def _push_loading_status(self, response_widget: AssistantMessageWidget, message: str):
+        self._raise_if_cancelled()
         response_widget.update_loading_text(message)
         QApplication.processEvents()
+        self._raise_if_cancelled()
         self._scroll_to_bottom()
 
-    def _finish_ui_after_run(self):
+    def _set_analysis_running(self, running: bool):
+        running = bool(running)
+        self.analysis_running = running
         self.generate_btn.setEnabled(True)
-        self.generate_btn.setText(_rt("Gerar"))
+        self.generate_btn.setProperty("stopMode", running)
+        if running:
+            self.generate_btn.setText("■")
+            self.generate_btn.setToolTip(_rt("Parar análise"))
+            self.generate_btn.setMinimumWidth(40)
+            self.generate_btn.setMaximumWidth(40)
+            self.generate_btn.setMinimumHeight(40)
+            self.generate_btn.setMaximumHeight(40)
+        else:
+            self.generate_btn.setText(_rt("Gerar"))
+            self.generate_btn.setToolTip("")
+            self.generate_btn.setMinimumWidth(86)
+            self.generate_btn.setMaximumWidth(16777215)
+            self.generate_btn.setMinimumHeight(0)
+            self.generate_btn.setMaximumHeight(16777215)
+
+        try:
+            self.generate_btn.style().unpolish(self.generate_btn)
+            self.generate_btn.style().polish(self.generate_btn)
+            self.generate_btn.update()
+        except Exception:
+            pass
+
+    def _prepare_ui_for_analysis(self):
+        self.clear_chat_btn.setEnabled(False)
+        self.question_edit.setEnabled(False)
+        self._set_analysis_running(True)
+
+    def _finish_ui_after_run(self):
+        self._set_analysis_running(False)
         self.question_edit.setEnabled(True)
         self.clear_chat_btn.setEnabled(self.history_count > 0)
+        self.active_response_widget = None
         self._refresh_context_header()
         self.question_edit.setFocus()
         self._scroll_to_bottom()
@@ -2339,6 +3460,7 @@ class ReportsWidget(QWidget):
         if self.ai_engine is not None:
             self.ai_engine.session_id = self.session_id
         self.question_edit.clear()
+        self._clear_extra_context()
         self._set_history_started(False)
         self._refresh_context_header()
         self.question_edit.setFocus()

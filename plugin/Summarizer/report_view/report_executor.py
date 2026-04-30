@@ -53,6 +53,18 @@ class ReportExecutionJob:
         self._done = True
         self._result = result
 
+    def cancel(self):
+        if self._done:
+            return
+        self._complete(
+            QueryResult(
+                ok=False,
+                message="Análise cancelada pelo usuário.",
+                plan=self.plan,
+                total_records=self.processed,
+            )
+        )
+
     def _step_impl(self, batch_size: int):
         raise NotImplementedError
 
@@ -570,7 +582,7 @@ class _DerivedRatioJob(ReportExecutionJob):
 
     def _finish(self):
         if self.numerator_total <= 0 or self.denominator_total <= 0:
-            self._complete(QueryResult(ok=False, message="Não encontrei dados suficientes para calcular metros por ligação."))
+            self._complete(QueryResult(ok=False, message="Nao encontrei dados suficientes para calcular essa razao."))
             return
         ratio_value = float(self.numerator_total) / max(1, int(self.denominator_total))
         self._complete(
@@ -584,7 +596,7 @@ class _DerivedRatioJob(ReportExecutionJob):
                         self.denominator_total,
                     )
                 ),
-                rows=[ResultRow(category="Metros por ligação", value=float(ratio_value), raw_category="Metros por ligação")],
+                rows=[ResultRow(category="Razao", value=float(ratio_value), raw_category="Razao")],
                 value_label=self.executor._value_label(self.plan),
                 show_percent=False,
                 plan=self.plan,
@@ -1484,8 +1496,8 @@ class ReportExecutor:
         length_text = self._format_summary_value(total_length)
         scope_text = self._summary_scope_text(plan)
         return (
-            f"A extensão média por ligação{scope_text} é {ratio_text} metros. "
-            f"Foram considerados {length_text} metros de rede e {int(total_links)} ligações."
+            f"A razao calculada{scope_text} e {ratio_text}. "
+            f"Foram considerados {length_text} no numerador e {int(total_links)} registros no denominador."
         )
 
     def _build_composite_summary(
@@ -1539,7 +1551,7 @@ class ReportExecutor:
             if operation == "comparison":
                 return getattr(plan.composite, "unit_label", "") or "Valor"
         if plan.metric.operation == "ratio":
-            return "Metros por ligação"
+            return "Razao"
         if plan.metric.operation == "count":
             return "Quantidade"
         if plan.metric.operation == "length":

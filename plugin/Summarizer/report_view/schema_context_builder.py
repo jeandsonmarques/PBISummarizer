@@ -4,13 +4,7 @@ from .result_models import LayerContextProfile, ProjectSchema, ProjectSchemaCont
 from .text_utils import contains_hint_tokens, normalize_text, tokenize_text
 
 
-ENTITY_HINTS = {
-    "rede": ("rede", "redes", "adutora", "adutoras", "ramal", "ramais", "tubulacao", "tubulacoes"),
-    "ligacao": ("ligacao", "ligacoes", "cliente", "clientes", "economia", "economias"),
-    "lote": ("lote", "lotes", "parcela", "parcelas", "quadra", "quadras"),
-    "bairro": ("bairro", "bairros", "setor", "setores"),
-    "municipio": ("municipio", "municipios", "cidade", "cidades"),
-}
+ENTITY_HINTS = {}
 
 LOCATION_HINTS = ("municipio", "cidade", "bairro", "localidade", "setor", "distrito", "logradouro", "comunidade")
 DIAMETER_HINTS = ("dn", "diam", "diametro", "bitola")
@@ -90,16 +84,15 @@ class SchemaContextBuilder:
                 terms.add(canonical)
                 terms.update(normalize_text(hint) for hint in hints[:3])
         if geometry_type == "line":
-            terms.update(("rede", "trecho", "linha"))
+            terms.update(("linha",))
         elif geometry_type == "point":
-            terms.update(("ponto", "ligacao"))
+            terms.update(("ponto",))
         elif geometry_type == "polygon":
             terms.update(("area", "poligono", "limite"))
         return sorted(term for term in terms if term)
 
     def _semantic_tags(self, layer_name: str, geometry_type: str, fields) -> List[str]:
         tags = []
-        normalized_name = normalize_text(layer_name)
         if geometry_type == "line":
             tags.append("metric:length")
         if geometry_type == "polygon":
@@ -112,10 +105,6 @@ class SchemaContextBuilder:
             tags.append("filter:location")
         if any(contains_hint_tokens(field.search_text, COUNT_HINTS) for field in fields):
             tags.append("metric:count")
-        if "adutora" in normalized_name:
-            tags.append("network:adutora")
-        if "ligac" in normalized_name:
-            tags.append("network:ligacao")
         return sorted(set(tags))
 
     def _summary_text(

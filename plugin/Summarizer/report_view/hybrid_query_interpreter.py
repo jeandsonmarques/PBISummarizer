@@ -72,6 +72,40 @@ STOP_TERMS = {
     "metros",
     "area",
     "top",
+    "an",
+    "and",
+    "any",
+    "at",
+    "average",
+    "by",
+    "count",
+    "does",
+    "for",
+    "from",
+    "has",
+    "have",
+    "highest",
+    "how",
+    "in",
+    "largest",
+    "length",
+    "lowest",
+    "max",
+    "maximum",
+    "mean",
+    "min",
+    "minimum",
+    "number",
+    "of",
+    "smallest",
+    "sum",
+    "the",
+    "there",
+    "to",
+    "total",
+    "what",
+    "which",
+    "with",
 }
 
 LENGTH_TERMS = DEFAULT_DOMAIN_PACK.length_terms
@@ -1092,7 +1126,7 @@ class HybridQueryInterpreter:
                 status="unsupported",
                 message=self.ratio_messages.get(
                     "missing_layers",
-                    "Nao consegui encontrar uma camada de rede e uma camada de ligacoes para calcular essa media.",
+                    "Nao consegui encontrar camadas compativeis para calcular essa media.",
                 ),
                 confidence=0.0,
                 source="heuristic_ratio",
@@ -1122,7 +1156,7 @@ class HybridQueryInterpreter:
                 status="unsupported",
                 message=self.ratio_messages.get(
                     "build_failed",
-                    "Nao consegui montar uma consulta segura de metros por ligacao com as camadas abertas.",
+                    "Nao consegui montar uma consulta segura com as camadas abertas.",
                 ),
                 confidence=0.0,
                 source="heuristic_ratio",
@@ -1150,7 +1184,7 @@ class HybridQueryInterpreter:
                 status="ambiguous",
                 message=self.ratio_messages.get(
                     "ambiguous",
-                    "Encontrei mais de uma forma plausivel de calcular metros por ligacao.",
+                    "Encontrei mais de uma forma plausivel de calcular essa razao.",
                 ),
                 confidence=best.confidence,
                 source="heuristic_ratio",
@@ -1260,7 +1294,7 @@ class HybridQueryInterpreter:
             score = 4
             score += self._score_terms(
                 layer.search_text,
-                self.ratio_source_terms or ("ligacao", "ligacoes"),
+                self.ratio_source_terms,
             ) * 3
             if any(item.get("kind") == "location" for item in raw_filters) and any(field.is_location_candidate for field in layer.fields):
                 score += 2
@@ -1382,12 +1416,12 @@ class HybridQueryInterpreter:
                 field=None,
                 field_label="",
                 use_geometry=False,
-                label=self.derived_intent_labels.get("ratio_metric", "Metros por ligacao"),
+                label=self.derived_intent_labels.get("ratio_metric", "Razao entre metricas"),
                 source_geometry_hint=self.ratio_target_geometry_types[0] if self.ratio_target_geometry_types else "line",
             ),
             filters=combined_filters,
         )
-        plan.chart.title = self.derived_intent_labels.get("ratio_chart_title", "Metros por ligacao")
+        plan.chart.title = self.derived_intent_labels.get("ratio_chart_title", "Razao entre metricas")
         plan.chart.type = "bar"
 
         confidence = 0.60
@@ -2538,18 +2572,6 @@ class HybridQueryInterpreter:
             if self._is_probable_location_phrase(location_text):
                 append_candidate("location", location_text, location_text)
 
-        if not any(token in normalized.split() for token in ("maior", "menor", "mais", "menos", "cidade", "municipio", "bairro", "localidade")):
-            for match in re.finditer(
-                r"\b(?:rede|trecho|trechos|tubulacao|adutora|ramal|ramais|ligacao|ligacoes)\s+([a-z0-9][a-z0-9\s]+)$",
-                normalized,
-            ):
-                tail_text = normalize_text(match.group(1))
-                if any(fragment in tail_text for fragment in (" em ", " no ", " na ", " camada ")):
-                    continue
-                location_text = self._clean_location_phrase(tail_text)
-                if self._is_probable_location_phrase(location_text):
-                    append_candidate("location", location_text, location_text)
-
         tail_matches = list(re.finditer(r"\b(?:em|no|na)\s+([a-z0-9][a-z0-9\s]+)$", normalized))
         if tail_matches:
             tail_text = self._clean_location_phrase(tail_matches[-1].group(1))
@@ -3003,7 +3025,7 @@ class HybridQueryInterpreter:
         if metric.operation == "comparison":
             return "a comparacao"
         if metric.operation == "ratio":
-            return self.derived_intent_labels.get("ratio_human_metric", "a extensao media por ligacao")
+            return self.derived_intent_labels.get("ratio_human_metric", "a razao entre metricas")
         if metric.operation == "length":
             return "a extensao total"
         if metric.operation == "area":
@@ -3038,7 +3060,7 @@ class HybridQueryInterpreter:
 
         if plan.intent == "derived_ratio":
             filter_text = self._filter_phrase(recognized_filters)
-            base = self.derived_intent_labels.get("ratio_summary", "A extensao media da rede por ligacao")
+            base = self.derived_intent_labels.get("ratio_summary", "A razao entre metricas")
             if filter_text:
                 return f"{base} {filter_text}".replace("  ", " ").strip()
             return base
@@ -3063,12 +3085,12 @@ class HybridQueryInterpreter:
         if plan.intent == "composite_metric":
             return "dos operandos"
         if plan.intent == "derived_ratio":
-            return self.derived_intent_labels.get("ratio_entity", "da rede por ligacao")
+            return self.derived_intent_labels.get("ratio_entity", "dos dados")
         layer_name = normalize_text(plan.target_layer_name or plan.source_layer_name or "")
-        if any(token in layer_name for token in (self.domain_pack.network_terms or ("rede",))):
-            return self.entity_label_suffixes.get("rede", "da rede")
+        if any(token in layer_name for token in (self.domain_pack.network_terms or ())):
+            return self.entity_label_suffixes.get("line", "das linhas")
         if plan.metric.source_geometry_hint == "line":
-            return self.entity_label_suffixes.get("rede", "da rede")
+            return self.entity_label_suffixes.get("line", "das linhas")
         if plan.metric.source_geometry_hint == "polygon" or plan.metric.operation == "area":
             return "das areas"
         return "dos registros"
@@ -3125,7 +3147,7 @@ class HybridQueryInterpreter:
                 kind = "location"
             elif any(token in field_text for token in ("dn", "diam", "diametro")):
                 kind = "diameter"
-            elif any(token in field_text for token in ("servico", "serviço", "sistema", "rede", "ligacao", "ligação")):
+            elif any(token in field_text for token in ("servico", "serviço", "sistema")):
                 kind = "generic"
             elif "material" in field_text:
                 kind = "material"
@@ -3379,7 +3401,7 @@ class HybridQueryInterpreter:
         if plan.intent == "derived_ratio":
             base = self.derived_intent_labels.get(
                 "ratio_confirmation_template",
-                "Voce quis dizer a extensao media da rede por ligacao, usando {target_layer} dividido por {source_layer}?",
+                "Voce quis dizer uma razao entre {target_layer} e {source_layer}?",
             )
             base = base.format(
                 target_layer=plan.target_layer_name,

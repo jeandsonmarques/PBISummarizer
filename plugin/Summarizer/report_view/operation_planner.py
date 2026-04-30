@@ -14,7 +14,7 @@ from .schema_linker_service import (
     SchemaLinkResult,
     SchemaLinkValueCandidate,
 )
-from .text_utils import contains_hint_tokens, normalize_text, tokenize_text
+from .text_utils import contains_hint_tokens, normalize_compact, normalize_text, tokenize_text
 
 
 MATERIAL_VALUES = DEFAULT_DOMAIN_PACK.material_terms
@@ -541,40 +541,21 @@ class OperationPlanner:
     ) -> Tuple[float, List[str]]:
         question_text = normalize_text(preprocessed.corrected_text or preprocessed.original_text)
         layer_text = normalize_text(" ".join([layer.name, layer.search_text] + list(layer.entity_terms or []) + list(layer.semantic_tags or [])))
-        layer_name_text = normalize_text(layer.name or "")
-        layer_name_tokens = layer_name_text.replace("_", " ").split()
         score = 0.0
         reasons: List[str] = []
 
-        asks_water = contains_hint_tokens(question_text, WATER_TERMS)
-        asks_sewer = contains_hint_tokens(question_text, SEWER_TERMS)
-        asks_network = preprocessed.subject_hint == "rede" or contains_hint_tokens(question_text, NETWORK_TERMS)
-        asks_connections = preprocessed.subject_hint == "ligacao" or contains_hint_tokens(question_text, CONNECTION_TERMS)
+        asks_network = contains_hint_tokens(question_text, NETWORK_TERMS)
+        asks_connections = contains_hint_tokens(question_text, CONNECTION_TERMS)
         asks_length = preprocessed.metric_hint == "length" or contains_hint_tokens(question_text, LENGTH_TERMS)
         asks_count = preprocessed.metric_hint == "count" or contains_hint_tokens(question_text, COUNT_TERMS)
 
-        layer_is_water = contains_hint_tokens(layer_text, WATER_TERMS) or bool(layer_name_tokens and layer_name_tokens[0] == "sa")
-        layer_is_sewer = contains_hint_tokens(layer_text, SEWER_TERMS) or bool(layer_name_tokens and layer_name_tokens[0] == "se")
         layer_is_network = contains_hint_tokens(layer_text, NETWORK_TERMS) or layer.geometry_type == "line"
         layer_is_connections = contains_hint_tokens(layer_text, CONNECTION_TERMS) or layer.geometry_type == "point"
-
-        if asks_water:
-            if layer_is_water:
-                score += 0.30
-                reasons.append("nome da camada combina com agua")
-            elif layer_is_sewer:
-                score -= 0.18
-        if asks_sewer:
-            if layer_is_sewer:
-                score += 0.30
-                reasons.append("nome da camada combina com esgoto")
-            elif layer_is_water:
-                score -= 0.18
 
         if asks_network:
             if layer_is_network:
                 score += 0.22
-                reasons.append("camada parece ser de rede")
+                reasons.append("camada compativel com a pergunta")
             elif layer.geometry_type == "point":
                 score -= 0.10
 
@@ -815,7 +796,7 @@ class OperationPlanner:
             "area": "Area total",
             "max": "Maior valor",
             "min": "Menor valor",
-            "ratio": "Metros por ligacao",
+            "ratio": "Razao entre metricas",
             "difference": "Diferenca",
             "percentage": "Percentual",
             "comparison": "Comparacao",
@@ -825,7 +806,7 @@ class OperationPlanner:
 
         if plan.intent == "derived_ratio":
             return self._append_filters(
-                self.derived_intent_labels.get("ratio_label", "Metros por ligacao da rede"),
+                self.derived_intent_labels.get("ratio_label", "Razao entre metricas"),
                 plan.filters,
             )
 
@@ -909,14 +890,33 @@ class OperationPlanner:
         return "; ".join(unique)
 
     def _explicit_location_values(self, brief: PlanningBrief) -> List[str]:
-        return self._explicit_location_values_from_filters(brief.extracted_filters)
+        return self._explicit_location_values_from_filters(
+            brief.extracted_filters,
+            getattr(brief, "linked_values", []) or [],
+        )
 
-    def _explicit_location_values_from_filters(self, filters: Sequence[Dict[str, str]]) -> List[str]:
+    def _explicit_location_values_from_filters(
+        self,
+        filters: Sequence[Dict[str, str]],
+        linked_values: Sequence[SchemaLinkValueCandidate] = (),
+    ) -> List[str]:
         values: List[str] = []
+        linked_value_keys = {
+            normalize_compact(getattr(item, "value", "") or "")
+            for item in (linked_values or [])
+            if normalize_compact(getattr(item, "value", "") or "")
+        }
+        if not linked_value_keys:
+            return values
         for item in filters or []:
             if str(item.get("kind") or "").lower() != "location":
                 continue
             value = normalize_text(item.get("value") or item.get("source_text") or "")
+            value_key = normalize_compact(value)
+            if not value_key:
+                continue
+            if not any(value_key == linked_key or value_key in linked_key or linked_key in value_key for linked_key in linked_value_keys):
+                continue
             if value and value not in values:
                 values.append(value)
         return values

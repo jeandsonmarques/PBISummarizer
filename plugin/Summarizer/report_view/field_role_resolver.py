@@ -15,7 +15,7 @@ ROLE_HINTS: Dict[str, Tuple[str, ...]] = {
     "localidade_field": ("localidade", "comunidade", "povoado", "logradouro", "zona", "distrito"),
     "generic_name_field": ("nome", "descricao", "desc", "nm", "name", "rotulo"),
     "status_field": ("status", "situacao", "sit"),
-    "service_field": ("servico", "sistema", "tipo_servico", "rede", "ligacao", "abastecimento", "esgoto", "agua"),
+    "service_field": ("servico", "sistema", "tipo_servico"),
 }
 
 ROLE_KIND_BONUS: Dict[str, Tuple[str, ...]] = {
@@ -82,8 +82,6 @@ class FieldRoleResolver:
             if role == "localidade_field" and any(token in name_text for token in ("localidade", "comunidade", "povoado", "zona")):
                 score += 2.0
             if role == "status_field" and any(token in value_text for token in ("ativa", "ativo", "cancelada", "cancelado", "suspensa", "eliminada")):
-                score += 3.0
-            if role == "service_field" and any(token in value_text for token in ("agua", "esgoto", "drenagem", "pluvial")):
                 score += 3.0
             if role == "generic_name_field" and geometry_type == "polygon" and any(token in name_text for token in ("nome", "nm", "descricao")):
                 score += 1.5

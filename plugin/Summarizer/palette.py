@@ -7,6 +7,8 @@ of the codebase can import consistent tokens instead of hardcoding values.
 
 from collections import ChainMap
 
+from .utils.fonts import ui_font_family, ui_font_stack
+
 COLORS = {
     "color_app_bg": "#FAFAFA",
     "color_surface": "#FFFFFF",
@@ -28,8 +30,8 @@ COLORS = {
 }
 
 TYPOGRAPHY = {
-    "font_family": "Segoe UI",
-    "font_ui_stack": '"Segoe UI", "Segoe UI Variable Text", "SF Pro Text", "Helvetica Neue", Arial, sans-serif',
+    "font_family": ui_font_family(),
+    "font_ui_stack": ui_font_stack(),
     "font_mono_stack": '"Cascadia Mono", "SF Mono", Consolas, "Liberation Mono", monospace',
     "font_base_size": 11,
     "font_title_size": 18,

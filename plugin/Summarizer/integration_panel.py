@@ -49,6 +49,7 @@ from .slim_dialogs import SlimDialogBase, slim_message
 from .browser_integration import connection_registry
 from .cloud_session import cloud_session
 from .cloud_dialogs import open_cloud_dialog
+from .utils.fonts import ui_font, ui_font_stack
 from .utils.i18n_runtime import apply_widget_translations as _apply_i18n_widgets, tr_text as _rt
 from .utils.resources import svg_icon
 
@@ -180,7 +181,7 @@ class ConnectorCard(QFrame):
                 border: 1px solid #E2E6EC;
             }}
             QLabel {{
-                font-family: 'Segoe UI', 'Montserrat', sans-serif;
+                font-family: %s;
                 color: #1E1E1E;
             }}
             QLabel[class="cardCaption"] {{
@@ -192,10 +193,11 @@ class ConnectorCard(QFrame):
                 color: #4B5563;
             }}
             """
+            % ui_font_stack()
         )
 
         self._apply_icon()
-        self.title_label.setFont(QFont("Segoe UI", 11, QFont.DemiBold))
+        self.title_label.setFont(ui_font(11, QFont.DemiBold))
 
     def _apply_icon(self):
         if self.config.icon_path and os.path.exists(self.config.icon_path):
@@ -209,7 +211,7 @@ class ConnectorCard(QFrame):
                 self.icon_label.setPixmap(icon.pixmap(QSize(64, 64)))
                 return
         self.icon_label.setText(self.config.icon_text.upper())
-        self.icon_label.setFont(QFont("Segoe UI", 18, QFont.Bold))
+        self.icon_label.setFont(ui_font(18, QFont.Bold))
 
     def enterEvent(self, event: QEvent):
         if self.graphicsEffect():
@@ -338,7 +340,7 @@ class IntegrationPanel(QWidget):
         self.title_label = QLabel("Adicionar dados ao seu relatório", wrapper)
         self.title_label.setAlignment(Qt.AlignHCenter)
         self.title_label.setProperty("cardTitle", True)
-        self.title_label.setFont(QFont("Segoe UI", 17, QFont.DemiBold))
+        self.title_label.setFont(ui_font(17, QFont.DemiBold))
         header_layout.addWidget(self.title_label)
 
         self.subtitle_label = QLabel(
@@ -369,7 +371,7 @@ class IntegrationPanel(QWidget):
         recents_header.setSpacing(6)
         recents_title = QLabel("Recentes", recents_frame)
         recents_title.setProperty("cardTitle", True)
-        recents_title.setFont(QFont("Segoe UI", 12, QFont.DemiBold))
+        recents_title.setFont(ui_font(12, QFont.DemiBold))
         recents_header.addWidget(recents_title)
         recents_header.addStretch(1)
 
@@ -413,7 +415,7 @@ class IntegrationPanel(QWidget):
                 border: 1px solid #E2E6EC;
                 border-radius: 12px;
                 padding: 6px;
-                font-family: 'Segoe UI', 'Montserrat', sans-serif;
+                font-family: %s;
                 font-size: 10pt;
             }
             QListWidget::item {
@@ -425,6 +427,7 @@ class IntegrationPanel(QWidget):
                 border-radius: 8px;
             }
             """
+            % ui_font_stack()
         )
         self._apply_runtime_i18n()
 
@@ -488,7 +491,7 @@ class IntegrationPanel(QWidget):
         header_layout.setSpacing(8)
         title = QLabel("Summarizer Cloud (beta)", self.cloud_section)
         title.setProperty("cardTitle", True)
-        title.setFont(QFont("Segoe UI", 13, QFont.DemiBold))
+        title.setFont(ui_font(13, QFont.DemiBold))
         header_layout.addWidget(title)
         header_layout.addStretch(1)
         self.cloud_status_badge = QLabel("Desconectado", self.cloud_section)

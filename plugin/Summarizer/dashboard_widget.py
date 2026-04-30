@@ -59,7 +59,7 @@ class DashboardWidget(QWidget):
         layout.setContentsMargins(14, 14, 14, 14)
         layout.setSpacing(10)
 
-        header_font = QFont(TYPOGRAPHY.get("font_family", "Segoe UI"), 21, QFont.DemiBold)
+        header_font = QFont(TYPOGRAPHY.get("font_family", "Inter"), 21, QFont.DemiBold)
 
         hero_frame = QFrame()
         hero_frame.setObjectName("HeroFrame")

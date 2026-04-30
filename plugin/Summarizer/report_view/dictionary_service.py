@@ -6,9 +6,7 @@ from .report_logging import log_info, log_warning
 from .text_utils import normalize_text
 
 
-DEFAULT_DICTIONARY_PATH = (
-    Path(__file__).resolve().parent / "resources" / "dictionaries" / "mega_dicionario_engenharia_v3.csv"
-)
+DEFAULT_DICTIONARY_PATH = None
 
 _PAYLOAD_CACHE: Dict[str, Dict] = {}
 
@@ -22,6 +20,13 @@ class DictionaryService:
         self._entry_count = 0
 
     def loadDictionary(self, force_reload: bool = False):
+        if self.csv_path is None:
+            self._alias_by_size = {}
+            self._max_alias_tokens = 1
+            self._entry_count = 0
+            self._loaded = True
+            return self
+
         cache_key = str(self.csv_path.resolve())
         if not force_reload and cache_key in _PAYLOAD_CACHE:
             payload = _PAYLOAD_CACHE[cache_key]
@@ -148,4 +153,3 @@ def build_dictionary_service(csv_path: Optional[str] = None) -> DictionaryServic
     service = DictionaryService(csv_path=csv_path)
     service.loadDictionary()
     return service
-

@@ -88,24 +88,8 @@ GENERIC_FILTER_STOP_VALUES = {
     "suspenso",
 }
 
-ENGINEERING_VALUE_HINTS = (
-    "pvc",
-    "pead",
-    "fofo",
-    "ferro",
-    "aco",
-    "dn",
-    "mm",
-)
-SERVICE_FIELD_FAMILY_HINTS = (
-    "ligacao",
-    "ligação",
-    "rede",
-    "servico",
-    "serviço",
-    "abastecimento",
-    "coleta",
-)
+ENGINEERING_VALUE_HINTS = ()
+SERVICE_FIELD_FAMILY_HINTS = ("servico", "servico")
 
 GENERIC_NAME_FIELD_HINTS = (
     "nome",
@@ -115,26 +99,8 @@ GENERIC_NAME_FIELD_HINTS = (
     "descricao",
     "desc",
 )
-GENERIC_SERVICE_FIELD_HINTS = (
-    "servico",
-    "serviço",
-    "sistema",
-    "rede",
-    "ligacao",
-    "ligação",
-    "tipo_servico",
-)
-GENERIC_SEMANTIC_TERMS = (
-    "agua",
-    "esgoto",
-    "drenagem",
-    "pluvial",
-    "sanitario",
-    "ativo",
-    "inativo",
-    "cancelado",
-    "suspenso",
-)
+GENERIC_SERVICE_FIELD_HINTS = ("servico", "sistema", "tipo_servico")
+GENERIC_SEMANTIC_TERMS = ("ativo", "inativo", "cancelado", "suspenso")
 
 def _contains_hint_tokens(value: str, hints: Sequence[str]) -> bool:
     return contains_hint_tokens(value, hints)
@@ -183,6 +149,8 @@ class LayerSchemaService:
             if not isinstance(layer, QgsVectorLayer):
                 continue
             if not layer.isValid():
+                continue
+            if selected_layer_ids and layer.id() not in selected_layer_ids:
                 continue
             should_profile = include_profiles and (not selected_layer_ids or layer.id() in selected_layer_ids)
             layers.append(self._build_layer_schema(layer, include_profiles=should_profile))

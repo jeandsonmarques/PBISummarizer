@@ -6,6 +6,7 @@ from qgis.PyQt.QtWidgets import QGraphicsDropShadowEffect, QGraphicsRectItem, QM
 from qgis.core import QgsMessageLog
 
 from .field_item import FieldItem
+from ..utils.fonts import ui_font
 
 
 class TableCardItem(QGraphicsRectItem):
@@ -30,9 +31,9 @@ class TableCardItem(QGraphicsRectItem):
         self._virtual_header_rect: Optional[QRectF] = None
         self._virtual_title_height = 0
 
-        self.title_font = QFont("Segoe UI", 8, QFont.DemiBold)
-        self.body_font = QFont("Segoe UI", 8)
-        self.preview_title_font = QFont("Segoe UI", 8)
+        self.title_font = ui_font(8, QFont.DemiBold)
+        self.body_font = ui_font(8)
+        self.preview_title_font = ui_font(8)
         self.preview_title_font.setItalic(True)
 
         self.setFlag(self.ItemIsMovable, True)

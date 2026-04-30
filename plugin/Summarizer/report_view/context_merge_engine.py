@@ -8,14 +8,7 @@ from .result_models import FilterSpec, InterpretationResult, QueryPlan
 from .text_utils import normalize_text
 
 
-ENTITY_LABELS = {
-    "rede": "rede",
-    "ligacao": "ligacoes",
-    "lote": "lotes",
-    "parcela": "parcelas",
-    "hidrante": "hidrantes",
-    "cliente": "clientes",
-}
+ENTITY_LABELS = {}
 
 
 class ContextMergeEngine:
@@ -158,8 +151,6 @@ class ContextMergeEngine:
             return "material"
         if any(token in field_text for token in ("diam", "bitola", "dn")):
             return "diameter"
-        if any(token in field_text for token in ("agua", "esgoto", "servico", "sistema")):
-            return "service"
         return ""
 
     def _annotate_trace(

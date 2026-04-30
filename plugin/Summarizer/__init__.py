@@ -48,6 +48,9 @@ def _prioritize_qgis_binary_packages():
 
 def classFactory(iface):
     _prioritize_qgis_binary_packages()
+    from .utils.fonts import ensure_ui_fonts_registered
+
+    ensure_ui_fonts_registered()
     from .data_summarizer import Summarizer
 
     return Summarizer(iface)

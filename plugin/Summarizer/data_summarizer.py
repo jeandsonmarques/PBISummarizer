@@ -67,6 +67,7 @@ from .browser_integration import (
 from .model_view import ModelCanvasScene, ModelCanvasView, ModelManager
 from .cloud_session import cloud_session
 from .report_view import ReportsWidget
+from .utils.fonts import ensure_ui_fonts_registered
 from .utils.plugin_logging import log_error
 
 PROTECTED_COLUMNS_DEFAULT = {"__feature_id", "__geometry_wkb", "__target_feature_id"}
@@ -75,6 +76,7 @@ PROTECTED_COLUMNS_DEFAULT = {"__feature_id", "__geometry_wkb", "__target_feature
 def __apply_theme_once(target):
     """Tenta aplicar o stylesheet do plugin uma única vez."""
     try:
+        ensure_ui_fonts_registered()
         base_dir = os.path.dirname(__file__)
         qss_path = os.path.join(base_dir, "resources", "style.qss")
         if os.path.exists(qss_path):
@@ -352,7 +354,7 @@ class SummarizerDialog(QDialog):
         self.setWindowIcon(svg_icon("PowerPages.svg"))
 
         context = palette_context()
-        base_font = QFont(context.get("font_family", "Segoe UI"))
+        base_font = QFont(context.get("font_family", "Inter"))
         base_font.setPixelSize(int(context.get("font_body_px", 13)))
         base_font.setWeight(QFont.Normal)
         self.setFont(base_font)

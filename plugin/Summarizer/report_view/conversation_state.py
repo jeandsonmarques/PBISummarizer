@@ -61,12 +61,8 @@ def infer_semantic_filters(plan: Optional[QueryPlan]) -> Dict[str, str]:
         elif kind == "status":
             filters["status"] = value
         elif kind == "generic":
-            normalized_value = normalize_text(value)
-            if normalized_value in {"agua", "esgoto", "drenagem", "pluvial", "sanitario"}:
-                filters["service"] = value
-            else:
-                generic_index += 1
-                filters[f"generic_{generic_index}"] = value
+            generic_index += 1
+            filters[f"generic_{generic_index}"] = value
 
     for filter_spec in plan.filters or []:
         field_text = normalize_text(filter_spec.field)
@@ -77,16 +73,10 @@ def infer_semantic_filters(plan: Optional[QueryPlan]) -> Dict[str, str]:
             filters.setdefault("location", value)
         elif "situacao" in field_text or "status" in field_text:
             filters.setdefault("status", value)
-            if "agua" in field_text:
-                filters.setdefault("service", "Agua")
-            elif "esgoto" in field_text:
-                filters.setdefault("service", "Esgoto")
         elif "material" in field_text:
             filters.setdefault("material", value)
         elif any(token in field_text for token in ("diam", "dn", "bitola")):
             filters.setdefault("diameter", _normalize_filter_value(value))
-        elif any(token in field_text for token in ("servico", "sistema", "agua", "esgoto")):
-            filters.setdefault("service", value)
 
     return filters
 

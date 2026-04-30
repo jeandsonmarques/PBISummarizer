@@ -33,8 +33,8 @@ STATUS_VALUES = {
     "Cancelado": ("cancelado", "cancelada", "cancelados", "canceladas"),
     "Suspenso": ("suspenso", "suspensa", "suspensos", "suspensas"),
 }
-MATERIAL_VALUES = ("pvc", "pead", "fofo", "ferro", "aco", "fibrocimento")
-ENTITY_RESET_TERMS = ("ligacao", "ligacoes", "rede", "redes", "lote", "lotes", "parcela", "parcelas", "hidrante", "hidrantes")
+MATERIAL_VALUES = ()
+ENTITY_RESET_TERMS = ()
 
 
 class FollowupResolver:

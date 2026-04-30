@@ -349,9 +349,6 @@ class SchemaLinkerService:
             if preprocessed.metric_hint == "area" and document.geometry_type == "polygon":
                 score += 0.11
                 reasons.append("geometria compativel com area")
-            if preprocessed.subject_hint == "ligacao" and document.geometry_type == "point":
-                score += 0.10
-                reasons.append("camada de pontos proxima de ligacoes")
             if preprocessed.group_hint:
                 context_layer = schema_context.layer_by_id(document.layer_id)
                 if context_layer is not None and any(

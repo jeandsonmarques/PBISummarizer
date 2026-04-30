@@ -47,21 +47,13 @@ SOURCE_HINTS: Dict[str, List[str]] = {
     "point": [
         "ponto",
         "pontos",
-        "hidrante",
-        "hidrantes",
-        "cliente",
-        "clientes",
-        "ligacao",
-        "ligacoes",
-        "economia",
-        "economias",
         "sensor",
         "sensores",
         "poste",
         "postes",
     ],
-    "line": ["linha", "linhas", "rede", "redes", "trecho", "trechos", "tubulacao", "tubulacoes", "ramal", "ramais", "adutora", "adutoras"],
-    "polygon": ["poligono", "poligonos", "area", "areas", "lote", "lotes", "quadra", "quadras", "bairro", "bairros", "municipio", "municipios"],
+    "line": ["linha", "linhas"],
+    "polygon": ["poligono", "poligonos", "area", "areas"],
 }
 
 

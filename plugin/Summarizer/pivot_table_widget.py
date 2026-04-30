@@ -866,7 +866,7 @@ class PivotTableWidget(QWidget):
         self.initial_state_title.setMinimumWidth(600)
         self.initial_state_title.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.initial_state_title.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        welcome_title_font = QFont(str(TYPOGRAPHY.get("font_family", "Segoe UI")))
+        welcome_title_font = QFont(str(TYPOGRAPHY.get("font_family", "Inter")))
         welcome_title_font.setPixelSize(26)
         welcome_title_font.setWeight(QFont.DemiBold)
         self.initial_state_title.setFont(welcome_title_font)
@@ -881,7 +881,7 @@ class PivotTableWidget(QWidget):
         self.initial_state_text.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.initial_state_text.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.initial_state_text.setWordWrap(True)
-        welcome_text_font = QFont(str(TYPOGRAPHY.get("font_family", "Segoe UI")))
+        welcome_text_font = QFont(str(TYPOGRAPHY.get("font_family", "Inter")))
         welcome_text_font.setPixelSize(14)
         welcome_text_font.setWeight(QFont.Normal)
         self.initial_state_text.setFont(welcome_text_font)
@@ -2404,7 +2404,7 @@ class PivotTableWidget(QWidget):
             "__FONT_UI_STACK__": str(
                 TYPOGRAPHY.get(
                     "font_ui_stack",
-                    '"Segoe UI Variable Text", "Segoe UI", Arial, sans-serif',
+                    '"Inter", sans-serif',
                 )
             ),
             "__FONT_PAGE_TITLE_PX__": str(int(TYPOGRAPHY.get("font_page_title_px", 24))),
@@ -3671,7 +3671,7 @@ class PivotTableWidget(QWidget):
         )
         self._pivot_data_column_offset = self._row_header_depth
 
-        base_font = QFont(TYPOGRAPHY.get("font_family", "Montserrat"), TYPOGRAPHY.get("font_body_size", 12))
+        base_font = QFont(TYPOGRAPHY.get("font_family", "Inter"), TYPOGRAPHY.get("font_body_size", 12))
         base_font.setWeight(QFont.Medium)
         total_column_index = headers.index("Total") if "Total" in headers else -1
         for row_index, row in enumerate(self.pivot_df.itertuples(index=False, name=None)):
@@ -4237,7 +4237,7 @@ class PivotTableWidget(QWidget):
 
     def _apply_theming_tokens(self):
         try:
-            font_family = TYPOGRAPHY.get("font_family", "Montserrat")
+            font_family = TYPOGRAPHY.get("font_family", "Inter")
             base_font = QFont(font_family)
             base_font.setPixelSize(int(TYPOGRAPHY.get("font_body_px", 13)))
             base_font.setWeight(QFont.Normal)

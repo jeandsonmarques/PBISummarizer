@@ -5,6 +5,7 @@ from qgis.PyQt.QtGui import QColor, QPainterPath, QPen, QFont, QPolygonF
 from qgis.PyQt.QtWidgets import QGraphicsPathItem
 
 from .field_item import FieldItem
+from ..utils.fonts import ui_font
 
 
 class RelationshipItem(QGraphicsPathItem):
@@ -145,7 +146,7 @@ class RelationshipItem(QGraphicsPathItem):
         source_point = path.pointAtPercent(start_pct)
         target_point = path.pointAtPercent(end_pct)
 
-        card_font = QFont("Segoe UI", 8, QFont.DemiBold)
+        card_font = ui_font(8, QFont.DemiBold)
         painter.setFont(card_font)
 
         def draw_card_box(point: QPointF, text: str):

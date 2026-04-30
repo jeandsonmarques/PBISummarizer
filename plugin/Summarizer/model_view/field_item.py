@@ -4,6 +4,8 @@ from qgis.PyQt.QtCore import QPointF, QRectF, Qt
 from qgis.PyQt.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPen
 from qgis.PyQt.QtWidgets import QGraphicsObject
 
+from ..utils.fonts import ui_font
+
 if TYPE_CHECKING:  # pragma: no cover
     from .model_canvas_scene import ModelCanvasScene
 
@@ -32,8 +34,8 @@ class FieldItem(QGraphicsObject):
         self._width = float(width)
         self._height = 18.0
         self._hover = False
-        self._font = QFont("Segoe UI", 8)
-        self._type_font = QFont("Segoe UI", 7)
+        self._font = ui_font(8)
+        self._type_font = ui_font(7)
         self.port_radius = 3.5
         self._has_relations = False
 

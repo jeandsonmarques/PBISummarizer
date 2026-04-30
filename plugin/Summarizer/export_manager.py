@@ -7,6 +7,8 @@ import pandas as pd
 from qgis.PyQt.QtCore import QRectF, Qt
 from qgis.PyQt.QtGui import QColor, QFont, QPainter, QPageSize, QPdfWriter
 
+from .utils.fonts import ui_font
+
 
 class ExportManager:
     def __init__(self):
@@ -105,9 +107,9 @@ class ExportManager:
                 writer.newPage()
                 y = margin
 
-        title_font = QFont("Segoe UI", 16, QFont.Bold)
-        header_font = QFont("Segoe UI", 11, QFont.DemiBold)
-        text_font = QFont("Segoe UI", 10)
+        title_font = ui_font(16, QFont.Bold)
+        header_font = ui_font(11, QFont.DemiBold)
+        text_font = ui_font(10)
 
         painter.fillRect(QRectF(0, 0, page_width, margin + 20), QColor("#0078D4"))
         painter.setPen(QColor("#FFFFFF"))

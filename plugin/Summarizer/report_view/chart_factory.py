@@ -217,6 +217,7 @@ class ReportChartWidget(QWidget):
         self._interaction_levels: Dict[str, float] = {}
         self._interaction_start_levels: Dict[str, float] = {}
         self._interaction_target_map: Dict[str, float] = {}
+        self._item_color_cache: Dict[str, QColor] = {}
         self._hovered_category_key: str = ""
         self._external_filters_signature = ""
         self._last_rerender_signature = ""
@@ -866,9 +867,8 @@ class ReportChartWidget(QWidget):
     def _item_interaction_style(self, base_color: QColor, item: Dict[str, object]):
         level = self._item_interaction_level(item)
         fill = QColor(base_color)
-        if level > 0.0:
-            fill = self._blend_color(fill, QColor("#1E293B"), 0.08 * level)
-        border = self._blend_color(fill, QColor("#0F172A"), 0.24 * level)
+        border_mix = 0.08 if level <= 0.0 else 0.18 + (0.22 * level)
+        border = self._blend_color(fill, QColor("#0F172A"), border_mix)
         border_width = 0.0 if level < 0.04 else (0.9 + level * 0.85)
         return fill, border, border_width, level
 
@@ -877,6 +877,7 @@ class ReportChartWidget(QWidget):
         previous_type = self.chart_state.chart_type if previous_payload is not None else ""
         self._payload = payload
         self._last_rerender_signature = ""
+        self._reset_item_color_cache()
         if empty_text is not None:
             self._empty_text = empty_text
         self.chart_state = self._default_visual_state(payload)
@@ -1449,6 +1450,7 @@ class ReportChartWidget(QWidget):
         if chart_type not in self.TYPE_LABELS:
             return
         self.chart_state.chart_type = chart_type
+        self._reset_item_color_cache()
         self._ensure_visual_state_compatibility()
         self._rerender_chart(transition="type")
 
@@ -1457,6 +1459,7 @@ class ReportChartWidget(QWidget):
         if requested not in self.PALETTE_LABELS:
             requested = "purple"
         self.chart_state.palette = requested
+        self._reset_item_color_cache()
         self._rerender_chart(transition="data")
 
     def _toggle_show_legend(self, checked: bool):
@@ -1499,6 +1502,7 @@ class ReportChartWidget(QWidget):
         self._selected_category_key = ""
         self._filtered_category_key = ""
         self._hovered_category_key = ""
+        self._reset_item_color_cache()
         self._ensure_visual_state_compatibility()
         self._start_interaction_animation("selection")
         self._rerender_chart(transition="type")
@@ -2239,6 +2243,7 @@ class ReportChartWidget(QWidget):
                 }
             )
 
+        source_pairs = list(pairs)
         external_filter = self._resolve_external_filter()
         if external_filter:
             selected_feature_ids = {
@@ -2280,7 +2285,6 @@ class ReportChartWidget(QWidget):
 
         if self.chart_state.chart_type in {"pie", "donut"}:
             pairs = self._prepare_pie_family_pairs(pairs)
-
         dense_truncated = False
         if len(pairs) > self.MAX_RENDER_ITEMS:
             pairs = pairs[: self.MAX_RENDER_ITEMS]
@@ -2289,6 +2293,20 @@ class ReportChartWidget(QWidget):
         categories = [str(item["category"]) for item in pairs]
         values = [float(item["value"]) for item in pairs]
         positive_total = sum(max(0.0, value) for value in values)
+        color_rank_by_key = {
+            str(item.get("key") or ""): rank
+            for rank, item in enumerate(
+                sorted(
+                    source_pairs,
+                    key=lambda item: (
+                        -float(item.get("value") or 0.0),
+                        str(item.get("key") or ""),
+                    ),
+                )
+            )
+            if str(item.get("key") or "").strip()
+        }
+        color_rank_total = max(1, len(color_rank_by_key))
 
         chart_type = self.chart_state.chart_type
         if not self._supported_chart_types().get(chart_type, False):
@@ -2309,6 +2327,8 @@ class ReportChartWidget(QWidget):
             "has_external_filter": bool(external_filter),
             "total": positive_total,
             "items": pairs,
+            "color_rank_by_key": color_rank_by_key,
+            "color_rank_total": color_rank_total,
             "selection_layer_id": getattr(self._payload, "selection_layer_id", None),
             "selection_layer_name": getattr(self._payload, "selection_layer_name", ""),
             "category_field": getattr(self._payload, "category_field", ""),
@@ -2529,6 +2549,46 @@ class ReportChartWidget(QWidget):
             base = [QColor(purple_multi[index % len(purple_multi)]) for index in range(max(1, count))]
         return base
 
+    def _reset_item_color_cache(self):
+        self._item_color_cache = {}
+
+    def _item_cache_key(self, item: Dict[str, object], index: int) -> str:
+        return str(
+            item.get("key")
+            or item.get("raw_category")
+            or item.get("category")
+            or f"item_{index}"
+        ).strip()
+
+    def _resolve_item_color(self, item: Dict[str, object], index: int) -> QColor:
+        item_key = self._item_cache_key(item, index)
+        rank_map = dict((self._active_render_payload or {}).get("color_rank_by_key") or {})
+        rank = rank_map.get(item_key)
+        if rank is None:
+            rank = index
+
+        palette_key = f"{self.chart_state.palette}|{item_key}|{int(rank)}"
+        cached = self._item_color_cache.get(palette_key)
+        if cached is not None:
+            return QColor(cached)
+
+        palette_name = str(self.chart_state.palette or "category").strip().lower()
+        if palette_name == "default":
+            palette_name = "category"
+        palette = self._palette_colors(8, palette_name)
+        if not palette:
+            color = QColor("#5A3FE6")
+        else:
+            index_value = max(0, min(int(rank), len(palette) - 1))
+            base_color = QColor(palette[index_value])
+            rank_total = int((self._active_render_payload or {}).get("color_rank_total") or max(1, len(rank_map)))
+            rank_total = max(1, rank_total)
+            rank_ratio = float(index_value) / float(max(1, rank_total - 1))
+            lighten = 0.06 + (0.62 * rank_ratio)
+            color = self._blend_color(base_color, QColor("#FFFFFF"), lighten)
+        self._item_color_cache[palette_key] = QColor(color)
+        return color
+
     def _draw_series_legend(self, painter: QPainter, rect: QRectF, color: QColor, text: str):
         legend_rect = QRectF(rect.right() - 160, rect.top(), 160, 22)
         painter.save()
@@ -2643,7 +2703,7 @@ class ReportChartWidget(QWidget):
             bar_rect = QRectF(chart_rect.left(), y, width, bar_height)
 
             fill_color, border_color, border_width, level = self._item_interaction_style(
-                QColor(colors[index % len(colors)]),
+                self._resolve_item_color(item, index),
                 item,
             )
             if border_width > 0.0:
@@ -2711,7 +2771,7 @@ class ReportChartWidget(QWidget):
             bar_rect = QRectF(x, y, bar_width, height)
 
             fill_color, border_color, border_width, level = self._item_interaction_style(
-                QColor(colors[index % len(colors)]),
+                self._resolve_item_color(item, index),
                 item,
             )
             if border_width > 0.0:
@@ -2792,7 +2852,7 @@ class ReportChartWidget(QWidget):
             span = min(raw_span, sweep_budget)
             sweep_budget -= raw_span
             fill_color, border_color, border_width, _level = self._item_interaction_style(
-                QColor(colors[index % len(colors)]),
+                self._resolve_item_color(item, index),
                 item,
             )
             if border_width > 0.0:
@@ -3482,7 +3542,6 @@ class ReportChartWidget(QWidget):
         y = frame.top() + 14
         row_height = 30
         max_x = frame.right() - 14
-        colors = self._palette_colors(len(items), "purple")
         for index, item in enumerate(items):
             text = str(item.get("category") or "")
             if not text:
@@ -3494,11 +3553,10 @@ class ReportChartWidget(QWidget):
             if y + row_height > frame.bottom() - 8:
                 break
             chip_rect = QRectF(x, y, chip_width, row_height)
-            base = QColor(colors[index % len(colors)])
+            base = self._resolve_item_color(item, index)
             _fill, _border, _border_width, level = self._item_interaction_style(base, item)
-            selected_fill = self._blend_color(base.lighter(132), QColor("#FFFFFF"), 0.2)
-            fill = self._blend_color(QColor("#F8FAFF"), selected_fill, level)
-            border = self._blend_color(QColor("#D1D5DB"), base.darker(116), level)
+            fill = QColor(base)
+            border = self._blend_color(base.darker(116), QColor("#0F172A"), 0.18 * level)
             painter.setPen(QPen(border, 0.95 + 0.55 * level))
             painter.setBrush(fill)
             painter.drawRoundedRect(chip_rect, 14, 14)
@@ -3779,7 +3837,7 @@ class ReportChartWidget(QWidget):
             points.append(QPointF(x, y))
             base_radius = 4 + 9 * math.sqrt(max(0.0, value) / max_value)
             fill_color, border_color, border_width, level = self._item_interaction_style(
-                QColor(colors[index % len(colors)]),
+                self._resolve_item_color(item, index),
                 item,
             )
             radius = base_radius * (0.82 + 0.28 * progress) + level * 1.2
@@ -3873,7 +3931,7 @@ class ReportChartWidget(QWidget):
                 inset = (1.0 - staged) * 4.0
                 draw_tile = draw_tile.adjusted(inset, inset, -inset, -inset)
 
-            fill, border, border_width, _ = self._item_interaction_style(QColor(colors[index % len(colors)]), item)
+            fill, border, border_width, _ = self._item_interaction_style(self._resolve_item_color(item, index), item)
             fill.setAlpha(230)
             painter.setPen(QPen(border, max(0.9, border_width)))
             painter.setBrush(fill)
@@ -4063,7 +4121,7 @@ class ReportChartWidget(QWidget):
             path.lineTo(QPointF(x_bottom + 12, y + step_h - 2))
             path.closeSubpath()
 
-            fill, border, border_width, _ = self._item_interaction_style(QColor(colors[index % len(colors)]), item)
+            fill, border, border_width, _ = self._item_interaction_style(self._resolve_item_color(item, index), item)
             painter.setPen(QPen(border, max(0.9, border_width)))
             painter.setBrush(fill)
             painter.drawPath(path)

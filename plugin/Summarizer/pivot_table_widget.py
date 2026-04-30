@@ -1285,9 +1285,11 @@ class PivotTableWidget(QWidget):
         self.table_view.setSortingEnabled(True)
         self.table_view.setSelectionBehavior(QAbstractItemView.SelectItems)
         self.table_view.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.table_view.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table_view.horizontalHeader().setStretchLastSection(True)
         self.table_view.horizontalHeader().setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.table_view.clicked.connect(self._handle_table_cell_clicked)
+        self.table_view.customContextMenuRequested.connect(self._open_table_context_menu)
         self.table_view.installEventFilter(self)
         self.table_view.viewport().installEventFilter(self)
         self.table_view.verticalHeader().sectionClicked.connect(self._handle_row_header_clicked)
@@ -1535,6 +1537,12 @@ class PivotTableWidget(QWidget):
         self._shortcut_redo.activated.connect(self._redo_last_action)
         self._shortcut_redo_alt = QShortcut(QKeySequence("Ctrl+Y"), self)
         self._shortcut_redo_alt.activated.connect(self._redo_last_action)
+        self._shortcut_copy = QShortcut(QKeySequence.Copy, self.table_view)
+        self._shortcut_copy.activated.connect(self._copy_selected_cells_to_clipboard)
+        self._shortcut_copy_headers = QShortcut(QKeySequence("Ctrl+Shift+C"), self.table_view)
+        self._shortcut_copy_headers.activated.connect(
+            lambda: self._copy_selected_cells_to_clipboard(include_headers=True)
+        )
         self._refresh_toolbar_chrome()
         self._reset_history_state()
         self._set_content_mode(False)
@@ -3979,9 +3987,36 @@ class PivotTableWidget(QWidget):
             self.selection_summary_label.setText(_rt("Selecione células para ver soma e contagem."))
             return
 
+        stats = self._collect_selection_statistics(indexes)
+        if stats["selected_count"] == 0:
+            self.selection_summary_label.setText(_rt("Selecione células para ver soma e contagem."))
+            return
+
+        parts = [
+            _rt("Selecionadas: {selected_count} celula(s)", selected_count=stats["selected_count"]),
+            _rt("Numericas: {numeric_count}", numeric_count=stats["numeric_count"]),
+        ]
+        if stats["blank_count"]:
+            parts.append(_rt("Vazias: {blank_count}", blank_count=stats["blank_count"]))
+        if stats["numeric_count"] > 0:
+            parts.extend(
+                [
+                    _rt("Soma: {value}", value=self._format_selection_number(stats["sum"])),
+                    _rt("Media: {value}", value=self._format_selection_number(stats["mean"])),
+                    _rt("Min: {value}", value=self._format_selection_number(stats["min"])),
+                    _rt("Max: {value}", value=self._format_selection_number(stats["max"])),
+                    _rt("Mediana: {value}", value=self._format_selection_number(stats["median"])),
+                    _rt("Unicos: {value}", value=self._format_selection_number(stats["unique_count"])),
+                ]
+            )
+        self.selection_summary_label.setText(" | ".join(parts))
+
+    def _collect_selection_statistics(self, indexes: List[Any]) -> Dict[str, Any]:
         numeric_values: List[float] = []
+        seen_values = set()
         selected_count = 0
         numeric_count = 0
+        blank_count = 0
         for proxy_index in indexes:
             try:
                 if not proxy_index.isValid():
@@ -3989,35 +4024,140 @@ class PivotTableWidget(QWidget):
                 if proxy_index.column() < self._pivot_data_column_offset:
                     continue
                 selected_count += 1
-                numeric_value = self._coerce_numeric_summary_value(proxy_index.data(Qt.DisplayRole))
+                raw_value = proxy_index.data(Qt.DisplayRole)
+                if raw_value is None or str(raw_value).strip() == "":
+                    blank_count += 1
+                    continue
+                seen_values.add(str(raw_value))
+                numeric_value = self._coerce_numeric_summary_value(raw_value)
                 if numeric_value is not None:
                     numeric_values.append(numeric_value)
                     numeric_count += 1
             except Exception:
                 continue
 
-        if selected_count == 0:
-            self.selection_summary_label.setText(_rt("Selecione células para ver soma e contagem."))
+        if numeric_values:
+            series = pd.Series(numeric_values, dtype="float64")
+            total_sum = float(series.sum())
+            mean_value = float(series.mean())
+            min_value = float(series.min())
+            max_value = float(series.max())
+            median_value = float(series.median())
+            unique_count = int(series.nunique(dropna=True))
+        else:
+            total_sum = float("nan")
+            mean_value = float("nan")
+            min_value = float("nan")
+            max_value = float("nan")
+            median_value = float("nan")
+            unique_count = 0
+
+        return {
+            "selected_count": selected_count,
+            "numeric_count": numeric_count,
+            "blank_count": blank_count,
+            "sum": total_sum,
+            "mean": mean_value,
+            "min": min_value,
+            "max": max_value,
+            "median": median_value,
+            "unique_count": unique_count,
+            "distinct_text_count": len(seen_values),
+        }
+
+    def _open_table_context_menu(self, pos):
+        menu = QMenu(self)
+        copy_action = menu.addAction(_rt("Copiar seleção"))
+        copy_headers_action = menu.addAction(_rt("Copiar seleção com cabeçalhos"))
+        copy_stats_action = menu.addAction(_rt("Copiar estatísticas"))
+        selected = self.table_view.selectionModel()
+        if selected is None or not selected.selectedIndexes():
+            copy_action.setEnabled(False)
+            copy_headers_action.setEnabled(False)
+            copy_stats_action.setEnabled(False)
+
+        action = menu.exec_(self.table_view.viewport().mapToGlobal(pos))
+        if action == copy_action:
+            self._copy_selected_cells_to_clipboard(include_headers=False)
+        elif action == copy_headers_action:
+            self._copy_selected_cells_to_clipboard(include_headers=True)
+        elif action == copy_stats_action:
+            self._copy_selection_statistics_to_clipboard()
+
+    def _copy_selected_cells_to_clipboard(self, include_headers: bool = False):
+        selection_model = self.table_view.selectionModel()
+        if selection_model is None:
             return
 
-        if numeric_values:
-            total_sum = float(sum(numeric_values))
-            sum_text = _rt("Soma: {value}", value=self._format_selection_number(total_sum))
-        else:
-            sum_text = _rt("Soma: -")
-        self.selection_summary_label.setText(
-            _rt(
-                "Selecionadas: {selected_count} celula(s) | {sum_text} | Numericas: {numeric_count}",
-                selected_count=selected_count,
-                sum_text=sum_text,
-                numeric_count=numeric_count,
+        indexes = [
+            index
+            for index in selection_model.selectedIndexes()
+            if index.isValid() and index.column() >= self._pivot_data_column_offset
+        ]
+        if not indexes:
+            return
+
+        rows = sorted({index.row() for index in indexes})
+        columns = sorted({index.column() for index in indexes})
+        grid: Dict[Tuple[int, int], str] = {}
+        for index in indexes:
+            value = index.data(Qt.DisplayRole)
+            grid[(index.row(), index.column())] = "" if value is None else str(value)
+
+        lines: List[str] = []
+        if include_headers:
+            header_values = []
+            for column in columns:
+                header = self.proxy_model.headerData(column, Qt.Horizontal, Qt.DisplayRole)
+                header_values.append("" if header is None else str(header))
+            lines.append("\t".join(header_values))
+
+        for row in rows:
+            row_values = [grid.get((row, column), "") for column in columns]
+            lines.append("\t".join(row_values))
+
+        QApplication.clipboard().setText("\n".join(lines))
+        if hasattr(self, "selection_summary_label"):
+            self.selection_summary_label.setText(
+                _rt("Seleção copiada para a área de transferência.")
             )
-        )
+
+    def _copy_selection_statistics_to_clipboard(self):
+        selection_model = self.table_view.selectionModel()
+        if selection_model is None:
+            return
+        stats = self._collect_selection_statistics(list(selection_model.selectedIndexes() or []))
+        if stats["selected_count"] == 0:
+            return
+
+        lines = [
+            _rt("Selecionadas: {value}", value=stats["selected_count"]),
+            _rt("Numericas: {value}", value=stats["numeric_count"]),
+        ]
+        if stats["blank_count"]:
+            lines.append(_rt("Vazias: {value}", value=stats["blank_count"]))
+        if stats["numeric_count"] > 0:
+            lines.extend(
+                [
+                    _rt("Soma: {value}", value=self._format_selection_number(stats["sum"])),
+                    _rt("Media: {value}", value=self._format_selection_number(stats["mean"])),
+                    _rt("Min: {value}", value=self._format_selection_number(stats["min"])),
+                    _rt("Max: {value}", value=self._format_selection_number(stats["max"])),
+                    _rt("Mediana: {value}", value=self._format_selection_number(stats["median"])),
+                ]
+            )
+        QApplication.clipboard().setText(" | ".join(lines))
+        if hasattr(self, "selection_summary_label"):
+            self.selection_summary_label.setText(
+                _rt("Estatísticas da seleção copiadas.")
+            )
 
     def _format_selection_number(self, value: float) -> str:
         try:
             numeric = float(value)
         except Exception:
+            return "-"
+        if pd.isna(numeric):
             return "-"
         if abs(numeric - round(numeric)) < 1e-9:
             return f"{int(round(numeric)):,}"

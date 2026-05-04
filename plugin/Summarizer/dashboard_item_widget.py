@@ -22,6 +22,7 @@ from qgis.PyQt.QtWidgets import (
 from .dashboard_models import DashboardChartBinding, DashboardChartItem
 from .report_view.chart_factory import ReportChartWidget
 from .slim_dialogs import slim_get_text
+from .utils.fonts import ui_font
 from .utils.i18n_runtime import tr_text as _rt
 
 
@@ -112,10 +113,12 @@ class DashboardItemWidget(QFrame):
         self.title_label.setObjectName("ModelDashboardItemTitle")
         self.title_label.setCursor(Qt.PointingHandCursor)
         self.title_label.setToolTip(_rt("Duplo clique para renomear"))
+        self.title_label.setFont(ui_font())
         title_column.addWidget(self.title_label)
         self.subtitle_label = QLabel("", self.header)
         self.subtitle_label.setObjectName("ModelDashboardItemSubtitle")
         self.subtitle_label.setWordWrap(True)
+        self.subtitle_label.setFont(ui_font())
         title_column.addWidget(self.subtitle_label)
         header_layout.addLayout(title_column, 1)
 
@@ -147,6 +150,7 @@ class DashboardItemWidget(QFrame):
         self.link_command_btn.setObjectName("ModelDashboardLinkCommandButton")
         self.link_command_btn.setCursor(Qt.PointingHandCursor)
         self.link_command_btn.setToolTip(_rt("Criar relacao com outro grafico"))
+        self.link_command_btn.setFont(ui_font())
         self.link_command_btn.clicked.connect(lambda: self.linkCommandRequested.emit(self.item_id))
         header_layout.addWidget(self.link_command_btn, 0)
 
@@ -172,6 +176,7 @@ class DashboardItemWidget(QFrame):
 
         self.footer_label = QLabel("", self.card)
         self.footer_label.setObjectName("ModelDashboardItemFooter")
+        self.footer_label.setFont(ui_font())
         card_layout.addWidget(self.footer_label, 0)
 
         self._overlay = _DashboardConnectorOverlay(self, self)
@@ -353,6 +358,21 @@ class DashboardItemWidget(QFrame):
                 self.chart_widget.set_display_scale(normalized)
             except Exception:
                 pass
+
+        title_font = ui_font()
+        title_font.setPixelSize(max(11, min(18, int(round(13 * normalized)))))
+        title_font.setWeight(600)
+        self.title_label.setFont(title_font)
+        supporting_font = ui_font()
+        supporting_font.setPixelSize(max(9, min(15, int(round(11 * normalized)))))
+        supporting_font.setWeight(400)
+        self.subtitle_label.setFont(supporting_font)
+        self.footer_label.setFont(supporting_font)
+        self.drag_label.setFont(supporting_font)
+        button_font = ui_font()
+        button_font.setPixelSize(max(9, min(14, int(round(11 * normalized)))))
+        button_font.setWeight(600)
+        self.link_command_btn.setFont(button_font)
 
         self._apply_styles()
 

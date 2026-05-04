@@ -24,7 +24,7 @@ from qgis.PyQt.QtWidgets import (
     QWidget,
 )
 
-from .utils.fonts import ui_font
+from .utils.fonts import attach_ui_font_enforcer, harmonize_widget_fonts, ui_font
 
 SLIM_DIALOG_STYLE = """
 QDialog#SlimDialog {
@@ -261,10 +261,12 @@ class SlimDialogBase(QDialog):
         self.setWindowFlag(Qt.WindowContextHelpButtonHint, False)
 
         self.setFont(_build_dialog_font())
+        self._font_enforcer = attach_ui_font_enforcer(self)
         self.setStyleSheet(SLIM_DIALOG_STYLE)
 
     def showEvent(self, event):
         super().showEvent(event)
+        harmonize_widget_fonts(self)
         if not self._geometry_key:
             return
         data = self._settings.value(self._geometry_key)
@@ -291,6 +293,7 @@ class SlimPopoverDialog(QDialog):
         self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
         self.setWindowFlag(Qt.WindowContextHelpButtonHint, False)
         self.setFont(_build_dialog_font())
+        self._font_enforcer = attach_ui_font_enforcer(self)
         self.setStyleSheet(SLIM_POPOVER_STYLE)
 
         root = QVBoxLayout(self)
@@ -314,6 +317,7 @@ class SlimPopoverDialog(QDialog):
 
     def showEvent(self, event):
         super().showEvent(event)
+        harmonize_widget_fonts(self)
         if self._did_restore_geometry:
             return
         self._did_restore_geometry = True

@@ -1,4 +1,5 @@
 import os
+import random
 from typing import Any, Dict, List, Optional
 
 import numpy as np
@@ -27,6 +28,7 @@ from .palette import COLORS, TYPOGRAPHY
 from .report_view.chart_factory import ReportChartWidget
 from .report_view.pivot.pivot_formatters import PivotFormatter
 from .report_view.result_models import ChartPayload
+from .utils.fonts import ui_font
 
 
 class DashboardWidget(QWidget):
@@ -57,9 +59,17 @@ class DashboardWidget(QWidget):
     def _build_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(14, 14, 14, 14)
-        layout.setSpacing(10)
+        layout.setSpacing(12)
 
-        header_font = QFont(TYPOGRAPHY.get("font_family", "Inter"), 21, QFont.DemiBold)
+        header_font = ui_font()
+        header_font.setPixelSize(int(TYPOGRAPHY.get("font_page_title_px", 24)))
+        header_font.setWeight(QFont.DemiBold)
+
+        body_font = ui_font()
+        body_font.setPixelSize(int(TYPOGRAPHY.get("font_secondary_px", 12)))
+
+        helper_font = ui_font()
+        helper_font.setPixelSize(int(TYPOGRAPHY.get("font_caption_px", 11)))
 
         hero_frame = QFrame()
         hero_frame.setObjectName("HeroFrame")
@@ -76,78 +86,83 @@ class DashboardWidget(QWidget):
         self.subtitle_label = QLabel("Selecione uma camada e gere um resumo para visualizar o dashboard.")
         self.subtitle_label.setObjectName("Subtitle")
         self.subtitle_label.setProperty("role", "helper")
+        self.subtitle_label.setFont(body_font)
         hero_layout.addWidget(self.subtitle_label)
 
         self.summary_line_label = QLabel("")
         self.summary_line_label.setObjectName("SummaryLine")
         self.summary_line_label.setProperty("role", "helper")
         self.summary_line_label.setWordWrap(True)
+        self.summary_line_label.setFont(helper_font)
         hero_layout.addWidget(self.summary_line_label)
         layout.addWidget(hero_frame)
 
-        kpi_row = QHBoxLayout()
-        kpi_row.setContentsMargins(0, 0, 0, 0)
-        kpi_row.setSpacing(10)
-        self.kpi_total_card, self.kpi_total_value, self.kpi_total_label = self._create_kpi_card("0", "Total")
-        self.kpi_rows_card, self.kpi_rows_value, self.kpi_rows_label = self._create_kpi_card("0", "Linhas")
-        self.kpi_categories_card, self.kpi_categories_value, self.kpi_categories_label = self._create_kpi_card("0", "Categorias")
-        kpi_row.addWidget(self.kpi_total_card, 1)
-        kpi_row.addWidget(self.kpi_rows_card, 1)
-        kpi_row.addWidget(self.kpi_categories_card, 1)
-        layout.addLayout(kpi_row)
+        toolbar_frame = QFrame()
+        toolbar_frame.setObjectName("ToolbarFrame")
+        toolbar_layout = QHBoxLayout(toolbar_frame)
+        toolbar_layout.setContentsMargins(12, 10, 12, 10)
+        toolbar_layout.setSpacing(10)
 
-        filter_frame = QFrame()
-        filter_frame.setObjectName("FilterPanel")
-        filter_layout = QVBoxLayout(filter_frame)
-        filter_layout.setContentsMargins(12, 10, 12, 10)
-        filter_layout.setSpacing(8)
+        self.chart_kind_label = QLabel("Canvas livre")
+        self.chart_kind_label.setObjectName("SectionTitle")
+        self.chart_kind_label.setFont(body_font)
+        toolbar_layout.addWidget(self.chart_kind_label, 0)
+        toolbar_layout.addStretch(1)
 
-        filter_header = QHBoxLayout()
-        filter_header.setContentsMargins(0, 0, 0, 0)
-        filter_header.setSpacing(8)
-        filter_title = QLabel("Filtros por Categoria")
-        filter_title.setObjectName("SectionTitle")
-        filter_header.addWidget(filter_title)
-        filter_header.addStretch(1)
         self.clear_filter_btn = QPushButton("Limpar filtros")
         self.clear_filter_btn.setObjectName("DashboardGhostButton")
+        self.clear_filter_btn.setFont(body_font)
         self.clear_filter_btn.clicked.connect(self._clear_category_filters)
-        filter_header.addWidget(self.clear_filter_btn)
-        filter_layout.addLayout(filter_header)
+        toolbar_layout.addWidget(self.clear_filter_btn, 0)
 
+        self.refresh_btn = QPushButton("Atualizar")
+        self.refresh_btn.setObjectName("DashboardGhostButton")
+        self.refresh_btn.setFont(body_font)
+        toolbar_layout.addWidget(self.refresh_btn, 0)
+
+        self.export_dashboard_btn = QPushButton("Exportar dashboard")
+        self.export_dashboard_btn.setObjectName("DashboardPrimaryButton")
+        self.export_dashboard_btn.setFont(body_font)
+        toolbar_layout.addWidget(self.export_dashboard_btn, 0)
+        layout.addWidget(toolbar_frame)
+
+        self.filter_chip_container = QWidget(self)
+        self.filter_chip_container.hide()
         self.filter_chip_scroll = QScrollArea(self)
         self.filter_chip_scroll.setWidgetResizable(True)
         self.filter_chip_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.filter_chip_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.filter_chip_scroll.setFrameShape(QFrame.NoFrame)
-        self.filter_chip_container = QWidget()
         self.filter_chip_container.setObjectName("FilterChipContainer")
         self.filter_chip_layout = QHBoxLayout(self.filter_chip_container)
         self.filter_chip_layout.setContentsMargins(0, 2, 0, 2)
         self.filter_chip_layout.setSpacing(8)
         self.filter_chip_layout.addStretch(1)
         self.filter_chip_scroll.setWidget(self.filter_chip_container)
-        filter_layout.addWidget(self.filter_chip_scroll)
-        layout.addWidget(filter_frame)
+        self.filter_chip_scroll.hide()
 
         self.content_splitter = QSplitter(Qt.Vertical, self)
-        self.content_splitter.setChildrenCollapsible(False)
-        self.content_splitter.setHandleWidth(8)
+        self.content_splitter.hide()
 
-        charts_frame = QFrame()
-        charts_frame.setObjectName("ChartCard")
-        charts_layout = QVBoxLayout(charts_frame)
-        charts_layout.setContentsMargins(10, 10, 10, 10)
-        charts_layout.setSpacing(8)
+        canvas_shell = QFrame()
+        canvas_shell.setObjectName("CanvasShell")
+        charts_layout = QVBoxLayout(canvas_shell)
+        charts_layout.setContentsMargins(14, 14, 14, 14)
+        charts_layout.setSpacing(10)
 
         chart_title = QLabel("Visão de Categorias")
+        chart_title = QLabel("Canvas de visualização")
         chart_title.setObjectName("SectionTitle")
+        chart_title.setFont(body_font)
         charts_layout.addWidget(chart_title)
 
         self.primary_chart = ReportChartWidget(self)
-        self.primary_chart.setMinimumHeight(420)
+        self.primary_chart.setMinimumHeight(540)
         self.primary_chart.set_payload(None, empty_text="Sem dados para exibir")
         self.primary_chart.selectionChanged.connect(lambda payload: self._handle_chart_selection(self.primary_chart, payload))
+
+        self.secondary_chart = ReportChartWidget(self)
+        self.secondary_chart.hide()
 
         self.chart_scroll = QScrollArea(self)
         self.chart_scroll.setWidgetResizable(True)
@@ -156,58 +171,31 @@ class DashboardWidget(QWidget):
         self.chart_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
 
         self.chart_canvas = QWidget()
+        self.chart_canvas.setObjectName("ChartCanvas")
         chart_canvas_layout = QVBoxLayout(self.chart_canvas)
-        chart_canvas_layout.setContentsMargins(0, 0, 0, 0)
+        chart_canvas_layout.setContentsMargins(20, 20, 20, 20)
         chart_canvas_layout.setSpacing(0)
         chart_canvas_layout.addWidget(self.primary_chart)
         self.chart_scroll.setWidget(self.chart_canvas)
         charts_layout.addWidget(self.chart_scroll, stretch=1)
 
-        self.content_splitter.addWidget(charts_frame)
-
-        details_frame = QFrame()
-        details_frame.setObjectName("DetailFrame")
-        details_layout = QVBoxLayout(details_frame)
-        details_layout.setContentsMargins(12, 12, 12, 12)
-        details_layout.setSpacing(8)
-
-        table_header = QLabel("Dados filtrados da tabela dinamica")
-        table_header.setObjectName("SectionTitle")
-        table_header.setProperty("role", "subtitle")
-        details_layout.addWidget(table_header)
+        layout.addWidget(canvas_shell, stretch=1)
 
         self.table_filter_label = QLabel("")
         self.table_filter_label.setObjectName("FilterStatus")
         self.table_filter_label.setProperty("role", "helper")
         self.table_filter_label.setWordWrap(True)
-        details_layout.addWidget(self.table_filter_label)
+        self.table_filter_label.setFont(helper_font)
+        self.table_filter_label.hide()
 
         self.details_table = QTableWidget()
-        self.details_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.details_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.details_table.verticalHeader().setVisible(False)
-        self.details_table.setAlternatingRowColors(True)
-        details_layout.addWidget(self.details_table, stretch=1)
+        self.details_table.hide()
 
         self.table_hint_label = QLabel("")
         self.table_hint_label.setObjectName("TableHint")
         self.table_hint_label.setProperty("role", "helper")
-        details_layout.addWidget(self.table_hint_label)
-
-        self.content_splitter.addWidget(details_frame)
-        self.content_splitter.setStretchFactor(0, 7)
-        self.content_splitter.setStretchFactor(1, 3)
-        layout.addWidget(self.content_splitter, stretch=1)
-
-        button_layout = QHBoxLayout()
-        button_layout.setContentsMargins(0, 0, 0, 0)
-        button_layout.addStretch()
-        self.refresh_btn = QPushButton("Atualizar")
-        self.refresh_btn.setProperty("variant", "secondary")
-        self.export_dashboard_btn = QPushButton("Exportar dashboard")
-        button_layout.addWidget(self.refresh_btn)
-        button_layout.addWidget(self.export_dashboard_btn)
-        layout.addLayout(button_layout)
+        self.table_hint_label.setFont(helper_font)
+        self.table_hint_label.hide()
 
         self.refresh_btn.clicked.connect(self._refresh_current)
         self.export_dashboard_btn.clicked.connect(self._export_dashboard)
@@ -239,24 +227,26 @@ class DashboardWidget(QWidget):
         self.setStyleSheet(
             f"""
             QWidget#DashboardRoot {{
-                background-color: #F3F6FB;
+                background-color: #F6F8FC;
             }}
             QFrame#HeroFrame {{
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #EEF6FF, stop:1 #E8F8F4);
-                border: 1px solid #D7E6F7;
-                border-radius: 10px;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #F8FBFF, stop:1 #F3FBF8);
+                border: 1px solid #DCE6F2;
+                border-radius: 12px;
+            }}
+            QFrame#ToolbarFrame,
+            QFrame#CanvasShell {{
+                background-color: {surface};
+                border-radius: 12px;
+                border: 1px solid {border};
+            }}
+            QWidget#ChartCanvas {{
+                background-color: #FFFFFF;
+                border: 1px solid #E6EBF2;
+                border-radius: 14px;
             }}
             QLabel#Subtitle {{
                 color: {helper};
-                font-size: {TYPOGRAPHY["font_small_size"]}pt;
-            }}
-            QFrame#FilterPanel,
-            QFrame#KpiCard,
-            QFrame#ChartCard,
-            QFrame#DetailFrame {{
-                background-color: {surface};
-                border-radius: 10px;
-                border: 1px solid {border};
             }}
             QLabel#SectionTitle {{
                 color: {primary_text};
@@ -264,24 +254,12 @@ class DashboardWidget(QWidget):
             }}
             QLabel#SummaryLine {{
                 color: {helper};
-                font-size: {TYPOGRAPHY["font_small_size"]}pt;
-            }}
-            QLabel#KpiValue {{
-                color: #0F172A;
-                font-size: 16pt;
-                font-weight: 700;
-            }}
-            QLabel#KpiLabel {{
-                color: {helper};
-                font-size: {TYPOGRAPHY["font_small_size"]}pt;
             }}
             QLabel#TableHint {{
                 color: {helper};
-                font-size: {TYPOGRAPHY["font_small_size"]}pt;
             }}
             QLabel#FilterStatus {{
                 color: {primary_text};
-                font-size: {TYPOGRAPHY["font_small_size"]}pt;
             }}
             QPushButton#DashboardGhostButton {{
                 border: 1px solid #CBD5E1;
@@ -289,11 +267,23 @@ class DashboardWidget(QWidget):
                 background: #FFFFFF;
                 color: #0F172A;
                 padding: 6px 12px;
-                font-weight: 600;
+                font-weight: 500;
             }}
             QPushButton#DashboardGhostButton:hover {{
                 background: #F8FAFC;
                 border-color: #94A3B8;
+            }}
+            QPushButton#DashboardPrimaryButton {{
+                border: 1px solid #111827;
+                border-radius: 8px;
+                background: #111827;
+                color: #FFFFFF;
+                padding: 6px 12px;
+                font-weight: 600;
+            }}
+            QPushButton#DashboardPrimaryButton:hover {{
+                background: #1F2937;
+                border-color: #1F2937;
             }}
             QPushButton[dashboardChip=\"true\"] {{
                 border: 1px solid #D1D9E6;
@@ -301,21 +291,12 @@ class DashboardWidget(QWidget):
                 background: #FFFFFF;
                 color: #1E293B;
                 padding: 6px 10px;
-                font-size: 9pt;
             }}
             QPushButton[dashboardChip=\"true\"]:checked {{
                 background: #DBEAFE;
                 border-color: #3B82F6;
                 color: #1D4ED8;
                 font-weight: 600;
-            }}
-            QTableWidget {{
-                background-color: {surface};
-                border: 1px solid {border};
-                border-radius: 8px;
-                gridline-color: {border};
-                selection-background-color: {selection};
-                alternate-background-color: {zebra};
             }}
             """
         )
@@ -483,15 +464,12 @@ class DashboardWidget(QWidget):
     def _render_current_data(self):
         self._update_subtitle()
         chart_df = self._update_charts()
-        self._rebuild_filter_chips(chart_df)
-        self._apply_active_filters()
-        self._sync_chart_selection()
         self._update_summary_line(chart_df)
-        self._update_filter_label()
 
     def _render_empty_state(self, message: Optional[str] = None):
         self.subtitle_label.setText(message or "Selecione uma camada e gere um resumo para visualizar o dashboard.")
         self.summary_line_label.setText("")
+        self.chart_kind_label.setText("Canvas livre")
         self.primary_chart.set_payload(None, empty_text="Sem dados para exibir")
         self.primary_chart.set_chart_context({})
         self._adjust_chart_height(0)
@@ -503,7 +481,6 @@ class DashboardWidget(QWidget):
         self.active_category_keys = []
         self._category_filters = {}
         self._rebuild_filter_chips(pd.DataFrame())
-        self._set_kpi_values(total=0.0, rows=0, categories=0)
         self.details_table.clear()
         self.details_table.setRowCount(0)
         self.details_table.setColumnCount(0)
@@ -521,19 +498,11 @@ class DashboardWidget(QWidget):
         layer = self.current_metadata.get("layer_name") or "Camada"
         value_label = self.current_config.get("value_label") or "Campo"
         agg_label = self.current_config.get("aggregation_label") or self.current_config.get("aggregation")
-        pivot_desc = f"{agg_label} de {value_label}"
-        self.subtitle_label.setText(f"{layer} - {pivot_desc}")
+        pivot_desc = f"{agg_label} de {value_label}" if agg_label else value_label
+        self.subtitle_label.setText(f"Canvas livre com base em {layer} | métrica: {pivot_desc}")
 
     def _update_summary_line(self, chart_df: Optional[pd.DataFrame] = None):
         base_df = self.current_source_df if not self.current_source_df.empty else self.current_df
-        numeric_cols = [col for col in base_df.select_dtypes(include=[np.number]).columns.tolist() if col != "_feature_id"]
-        if numeric_cols:
-            values = base_df[numeric_cols].to_numpy(dtype=float).ravel()
-            values = values[~np.isnan(values)]
-        else:
-            values = np.array([])
-
-        total = float(values.sum()) if values.size else 0.0
         rows = int(base_df.shape[0])
         if chart_df is None:
             try:
@@ -544,13 +513,11 @@ class DashboardWidget(QWidget):
 
         if rows <= 0:
             self.summary_line_label.setText("")
-            self._set_kpi_values(total=0.0, rows=0, categories=0)
             return
 
         filtered_rows = int(len(self.current_view_df.index)) if isinstance(self.current_view_df, pd.DataFrame) else rows
-        self._set_kpi_values(total=total, rows=filtered_rows, categories=categories)
         self.summary_line_label.setText(
-            f"{rows} linha(s) de origem | {filtered_rows} linha(s) visiveis | {categories} categoria(s)"
+            f"{rows} linha(s) de origem | {filtered_rows} linha(s) visíveis | {categories} categoria(s) no canvas"
         )
 
     def _update_charts(self):
@@ -558,17 +525,29 @@ class DashboardWidget(QWidget):
         if chart_df.empty or float(chart_df["Valor"].fillna(0).sum()) == 0.0:
             self.primary_chart.set_payload(None, empty_text="Sem metricas numericas")
             self._adjust_chart_height(0)
+            self.chart_kind_label.setText("Canvas livre")
             return chart_df
 
+        chart_type = random.choice(["bar", "barh", "line", "area", "pie", "donut", "funnel"])
+        chart_titles = {
+            "bar": "Canvas aleatório | Barras",
+            "barh": "Canvas aleatório | Barras horizontais",
+            "line": "Canvas aleatório | Linha",
+            "area": "Canvas aleatório | Área",
+            "pie": "Canvas aleatório | Pizza",
+            "donut": "Canvas aleatório | Rosca",
+            "funnel": "Canvas aleatório | Funil",
+        }
         primary_payload = self._build_chart_payload(
             chart_df,
-            title="Categorias (com filtro multiplo)",
-            chart_type="barh",
-            limit=max(1, int(len(chart_df.index))),
+            title=chart_titles.get(chart_type, "Canvas aleatório"),
+            chart_type=chart_type,
+            limit=max(1, min(12, int(len(chart_df.index)))),
         )
 
         self.primary_chart.set_payload(primary_payload, empty_text="Sem dados para o grafico principal")
         self.primary_chart.set_chart_context(self._chart_context_for_model(primary_payload))
+        self.chart_kind_label.setText(primary_payload.title if primary_payload is not None else "Canvas livre")
         self._adjust_chart_height(len(primary_payload.categories) if primary_payload is not None else 0)
         return chart_df
 
@@ -835,12 +814,7 @@ class DashboardWidget(QWidget):
         }
 
     def _set_kpi_values(self, *, total: float, rows: int, categories: int):
-        self.kpi_total_value.setText(self._format_number(float(total)))
-        self.kpi_total_label.setText("Total agregado")
-        self.kpi_rows_value.setText(str(max(0, int(rows))))
-        self.kpi_rows_label.setText("Linhas visiveis")
-        self.kpi_categories_value.setText(str(max(0, int(categories))))
-        self.kpi_categories_label.setText("Categorias")
+        del total, rows, categories
 
     def _adjust_chart_height(self, category_count: int):
         count = max(0, int(category_count or 0))

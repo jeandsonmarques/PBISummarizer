@@ -18,6 +18,7 @@ from qgis.utils import iface
 
 from ..slim_dialogs import slim_get_text
 from ..utils.i18n_runtime import tr_text as _rt
+from ..utils.fonts import harmonize_font_family
 from .result_models import ChartPayload, QueryResult
 
 
@@ -187,11 +188,12 @@ class ReportChartWidget(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setFont(harmonize_font_family(self.font()))
         self._payload: Optional[ChartPayload] = None
         self._empty_text = ""
         self._embedded_mode = False
         self._display_scale = 1.0
-        self._base_font = QFont(self.font())
+        self._base_font = harmonize_font_family(QFont(self.font()))
         self._ensure_base_font_scalable()
         self._font_scale = 1.0
         self.chart_state = ChartVisualState()
@@ -263,7 +265,7 @@ class ReportChartWidget(QWidget):
             self._base_font.setPointSizeF(10.0)
 
     def _fallback_font_size(self) -> float:
-        widget_font = QFont(self.font())
+        widget_font = harmonize_font_family(QFont(self.font()))
         point_size = float(widget_font.pointSizeF())
         if point_size > 0.0:
             return point_size
@@ -285,7 +287,7 @@ class ReportChartWidget(QWidget):
             return
         self._display_scale = normalized
 
-        base_font = QFont(self._base_font)
+        base_font = harmonize_font_family(QFont(self._base_font))
         point_size = base_font.pointSizeF()
         if point_size > 0:
             base_font.setPointSizeF(max(6.0, point_size * normalized))
@@ -306,7 +308,7 @@ class ReportChartWidget(QWidget):
         self.setFont(self._resolved_scaled_font())
 
     def _resolved_scaled_font(self, extra_scale: float = 1.0) -> QFont:
-        base_font = QFont(self._base_font)
+        base_font = harmonize_font_family(QFont(self._base_font))
         base_size = float(base_font.pointSizeF())
         if base_size <= 0.0:
             base_size = self._fallback_font_size()
@@ -528,12 +530,12 @@ class ReportChartWidget(QWidget):
         painter.setBrush(QColor("#FFFFFF"))
         painter.drawRoundedRect(panel, 10, 10)
         painter.setPen(QPen(QColor("#374151")))
-        title_font = QFont(self.font())
+        title_font = harmonize_font_family(QFont(self.font()))
         title_font.setBold(True)
         painter.setFont(title_font)
         painter.drawText(panel.adjusted(14, 12, -14, -20), Qt.AlignLeft | Qt.AlignTop, str(title or "Visual indisponivel"))
         if detail:
-            detail_font = QFont(self.font())
+            detail_font = harmonize_font_family(QFont(self.font()))
             detail_font.setBold(False)
             painter.setFont(detail_font)
             painter.setPen(QPen(QColor("#6B7280")))
@@ -2466,7 +2468,7 @@ class ReportChartWidget(QWidget):
             self._draw_horizontal_bar_chart(painter, chart_rect, render_payload)
 
     def _draw_title(self, painter: QPainter, rect: QRectF, title: str):
-        title_font = QFont(self.font())
+        title_font = harmonize_font_family(QFont(self.font()))
         title_font.setPointSize(self._scaled_size(title_font.pointSize() + 1, minimum=7))
         title_font.setBold(True)
         painter.save()
@@ -3110,7 +3112,7 @@ class ReportChartWidget(QWidget):
 
     def _draw_axis_label(self, painter: QPainter, rect: QRectF, text: str, align: Qt.AlignmentFlag = Qt.AlignLeft):
         painter.save()
-        axis_font = QFont(self.font())
+        axis_font = harmonize_font_family(QFont(self.font()))
         axis_font.setPointSize(self._scaled_size(axis_font.pointSize() - 1, minimum=6))
         painter.setFont(axis_font)
         painter.setPen(QPen(QColor("#6B7280")))
@@ -3134,7 +3136,7 @@ class ReportChartWidget(QWidget):
         painter.setBrush(accent)
         painter.drawRoundedRect(QRectF(frame.left(), frame.top(), 5, frame.height()), 3, 3)
 
-        label_font = QFont(self.font())
+        label_font = harmonize_font_family(QFont(self.font()))
         label_font.setPointSize(self._scaled_size(label_font.pointSize() - 1, minimum=6))
         painter.setFont(label_font)
         painter.setPen(QPen(QColor("#6B7280")))
@@ -3144,7 +3146,7 @@ class ReportChartWidget(QWidget):
             str(payload.get("value_label") or "Total"),
         )
 
-        value_font = QFont(self.font())
+        value_font = harmonize_font_family(QFont(self.font()))
         value_font.setPointSize(self._scaled_size(value_font.pointSize() + 12, minimum=9))
         value_font.setBold(True)
         painter.setFont(value_font)
@@ -3216,14 +3218,14 @@ class ReportChartWidget(QWidget):
         painter.setPen(QPen(accent.darker(106), 2.8))
         painter.drawLine(QPointF(frame.left() + 18, frame.top() + 16), QPointF(frame.left() + 92, frame.top() + 16))
         painter.setPen(QPen(QColor("#64748B")))
-        painter.setFont(QFont(self.font()))
+        painter.setFont(harmonize_font_family(QFont(self.font())))
         painter.drawText(
             QRectF(frame.left() + 20, frame.top() + 24, frame.width() - 40, 22),
             Qt.AlignLeft | Qt.AlignTop,
             str(payload.get("value_label") or "KPI"),
         )
 
-        value_font = QFont(self.font())
+        value_font = harmonize_font_family(QFont(self.font()))
         value_font.setPointSize(self._scaled_size(value_font.pointSize() + 12, minimum=9))
         value_font.setBold(True)
         painter.setFont(value_font)
@@ -3241,7 +3243,7 @@ class ReportChartWidget(QWidget):
             self._format_value(display_current),
         )
 
-        delta_font = QFont(self.font())
+        delta_font = harmonize_font_family(QFont(self.font()))
         delta_font.setPointSize(self._scaled_size(delta_font.pointSize() - 1, minimum=7))
         painter.setFont(delta_font)
         helper_text = "Sem comparacao anterior"
@@ -3322,7 +3324,7 @@ class ReportChartWidget(QWidget):
         painter.setPen(Qt.NoPen)
         painter.drawEllipse(center, 5, 5)
 
-        value_font = QFont(self.font())
+        value_font = harmonize_font_family(QFont(self.font()))
         value_font.setPointSize(self._scaled_size(value_font.pointSize() + 11, minimum=9))
         value_font.setBold(True)
         painter.setFont(value_font)
@@ -3343,7 +3345,7 @@ class ReportChartWidget(QWidget):
         if reason in {"entry", "type"}:
             helper_opacity = 0.84 + 0.16 * progress
         painter.setOpacity(helper_opacity)
-        painter.setFont(QFont(self.font()))
+        painter.setFont(harmonize_font_family(QFont(self.font())))
         painter.setPen(QPen(QColor("#6B7280")))
         painter.drawText(
             QRectF(frame.left(), frame.top() + frame.height() * 0.66, frame.width(), 20),
@@ -3390,7 +3392,7 @@ class ReportChartWidget(QWidget):
             "value_accent": QColor("#4F46E5"),
         }
 
-        font = QFont(self.font())
+        font = harmonize_font_family(QFont(self.font()))
         font.setPointSize(self._scaled_size(font.pointSize() - 1, minimum=6))
         header_font = QFont(font)
         header_font.setBold(True)
@@ -3892,7 +3894,7 @@ class ReportChartWidget(QWidget):
         total = sum(values) or 1.0
         frame = self._chart_surface(rect, 6, 4, 6, 6)
         colors = self._palette_colors(len(items), "purple")
-        font = QFont(self.font())
+        font = harmonize_font_family(QFont(self.font()))
         font.setPointSize(self._scaled_size(font.pointSize() - 1, minimum=6))
         metrics = QFontMetrics(font)
 
@@ -4093,7 +4095,7 @@ class ReportChartWidget(QWidget):
         top_width = inner.width() * 0.94
         bottom_width = inner.width() * 0.30
         colors = self._palette_colors(len(items), "purple")
-        font = QFont(self.font())
+        font = harmonize_font_family(QFont(self.font()))
         font.setPointSize(self._scaled_size(font.pointSize() - 1, minimum=6))
         metrics = QFontMetrics(font)
 

@@ -35,6 +35,7 @@ from .model_canvas_scene import ModelCanvasScene
 from .model_canvas_view import ModelCanvasView
 from .relationship_item import RelationshipItem
 from .table_card_item import TableCardItem
+from ..utils.fonts import harmonize_font_family
 from ..utils.plugin_logging import log_info
 
 
@@ -1439,7 +1440,7 @@ class ModelManager:
             table_widget.verticalHeader().setVisible(False)
             table_widget.setEditTriggers(QAbstractItemView.NoEditTriggers)
             table_widget.setSelectionMode(QAbstractItemView.NoSelection)
-            small_font = table_widget.font()
+            small_font = harmonize_font_family(table_widget.font())
             small_font.setPointSize(9)
             table_widget.setFont(small_font)
             table_widget.horizontalHeader().setFont(small_font)

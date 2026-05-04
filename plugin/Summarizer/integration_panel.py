@@ -47,7 +47,7 @@ from qgis.core import QgsVectorLayer
 
 from .slim_dialogs import SlimDialogBase, SlimMessageDialog
 from .browser_integration import connection_registry
-from .utils.fonts import ui_font, ui_font_stack
+from .utils.fonts import harmonize_widget_fonts, ui_font, ui_font_stack
 from .utils.i18n_runtime import apply_widget_translations as _apply_i18n_widgets, tr_text as _rt
 from .utils.resources import svg_icon
 
@@ -1425,6 +1425,7 @@ class DatabaseImportDialog(SlimDialogBase):
         self.resize(560, 430)
         self.setMinimumWidth(540)
         self._build_ui()
+        harmonize_widget_fonts(self)
         self._apply_runtime_i18n()
 
     def _apply_runtime_i18n(self):
@@ -1435,6 +1436,7 @@ class DatabaseImportDialog(SlimDialogBase):
 
     def showEvent(self, event):
         super().showEvent(event)
+        harmonize_widget_fonts(self)
         self._apply_runtime_i18n()
 
     def _build_ui(self):

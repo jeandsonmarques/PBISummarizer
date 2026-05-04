@@ -67,7 +67,7 @@ from .browser_integration import (
 )
 from .model_view import ModelCanvasScene, ModelCanvasView, ModelManager
 from .report_view import ReportsWidget
-from .utils.fonts import ensure_ui_fonts_registered
+from .utils.fonts import attach_ui_font_enforcer, ensure_ui_fonts_registered, harmonize_widget_fonts
 from .utils.plugin_logging import log_error
 
 PROTECTED_COLUMNS_DEFAULT = {"__feature_id", "__geometry_wkb", "__target_feature_id"}
@@ -358,6 +358,7 @@ class SummarizerDialog(QDialog):
         base_font.setPixelSize(int(context.get("font_body_px", 13)))
         base_font.setWeight(QFont.Normal)
         self.setFont(base_font)
+        self._font_enforcer = attach_ui_font_enforcer(self)
 
         self.export_manager = ExportManager()
         self.dashboard_widget = DashboardWidget()
@@ -446,6 +447,7 @@ class SummarizerDialog(QDialog):
         self.setup_connections()
         self.load_layers()
         self.apply_styles()
+        harmonize_widget_fonts(self)
         self.on_export_format_changed()
 
         try:
@@ -730,6 +732,7 @@ class SummarizerDialog(QDialog):
                     self.setStyleSheet(handler.read())
             except Exception:
                 pass
+        harmonize_widget_fonts(self)
         if getattr(self, "sidebar", None) is not None:
             try:
                 self.sidebar.refresh_styles()

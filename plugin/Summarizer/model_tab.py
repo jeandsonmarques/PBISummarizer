@@ -39,6 +39,7 @@ from .dashboard_project_store import DashboardProjectStore, PROJECT_EXTENSION
 from .report_view.chart_factory import ChartVisualState
 from .report_view.result_models import ChartPayload
 from .slim_dialogs import slim_message, slim_question
+from .utils.fonts import attach_ui_font_enforcer, harmonize_widget_fonts, ui_font
 from .utils.i18n_runtime import tr_text as _rt
 from .utils.resources import svg_icon
 
@@ -1245,6 +1246,8 @@ class ModelTab(QWidget):
         dialog.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
         dialog.setModal(True)
         dialog.resize(560, 392)
+        dialog.setFont(ui_font())
+        dialog._font_enforcer = attach_ui_font_enforcer(dialog)
         dialog.setStyleSheet(
             """
             QDialog#WalkerCanvasStyleDialog {
@@ -1371,6 +1374,16 @@ class ModelTab(QWidget):
         layout.setContentsMargins(14, 12, 14, 12)
         layout.setSpacing(10)
 
+        title_font = ui_font()
+        title_font.setPixelSize(14)
+        title_font.setWeight(600)
+
+        body_font = ui_font()
+        body_font.setPixelSize(12)
+
+        helper_font = ui_font()
+        helper_font.setPixelSize(11)
+
         drag_handle = _DialogDragHandle(dialog, dialog)
         drag_handle.setObjectName("WalkerDialogDragHandle")
         drag_handle.setFixedHeight(24)
@@ -1379,6 +1392,7 @@ class ModelTab(QWidget):
         top_bar.setSpacing(8)
         top_hint = QLabel(_rt("Configuração visual"), dialog)
         top_hint.setObjectName("WalkerDialogSubtitle")
+        top_hint.setFont(helper_font)
         top_bar.addWidget(top_hint, 0)
         top_bar.addStretch(1)
         close_btn = QToolButton(dialog)
@@ -1390,11 +1404,13 @@ class ModelTab(QWidget):
 
         title = QLabel(_rt("Configurar canvas"), dialog)
         title.setObjectName("WalkerDialogTitle")
+        title.setFont(title_font)
         layout.addWidget(title, 0)
 
         subtitle = QLabel(_rt("Ajuste fundo, grade e densidade visual com visual minimalista."), dialog)
         subtitle.setObjectName("WalkerDialogSubtitle")
         subtitle.setWordWrap(True)
+        subtitle.setFont(helper_font)
         layout.addWidget(subtitle, 0)
 
         card = QFrame(dialog)
@@ -1410,6 +1426,7 @@ class ModelTab(QWidget):
         def _build_label(text: str) -> QLabel:
             label = QLabel(text, card)
             label.setObjectName("WalkerFieldLabel")
+            label.setFont(body_font)
             return label
 
         theme_label = _build_label(_rt("Tema"))
@@ -1465,6 +1482,7 @@ class ModelTab(QWidget):
 
         show_grid_check = QCheckBox(_rt("Mostrar grade no modo de edicao"), card)
         show_grid_check.setObjectName("WalkerDialogCheck")
+        show_grid_check.setFont(body_font)
         show_grid_check.setChecked(bool(draft.get("show_grid", True)))
         grid.addWidget(show_grid_check, 3, 0, 1, 4)
 
@@ -1527,9 +1545,11 @@ class ModelTab(QWidget):
         helper = QLabel(_rt("Dica: use fundo claro com grade suave para um visual limpo."), card)
         helper.setObjectName("WalkerAuxText")
         helper.setWordWrap(True)
+        helper.setFont(helper_font)
         card_layout.addWidget(helper, 0)
 
         layout.addWidget(card, 1)
+        harmonize_widget_fonts(dialog)
 
         actions = QHBoxLayout()
         actions.setContentsMargins(0, 0, 0, 0)
@@ -1538,10 +1558,13 @@ class ModelTab(QWidget):
 
         reset_btn = QPushButton(_rt("Restaurar padrao"), dialog)
         reset_btn.setObjectName("WalkerDialogSecondaryButton")
+        reset_btn.setFont(body_font)
         cancel_btn = QPushButton(_rt("Cancelar"), dialog)
         cancel_btn.setObjectName("WalkerDialogSecondaryButton")
+        cancel_btn.setFont(body_font)
         apply_btn = QPushButton(_rt("Aplicar"), dialog)
         apply_btn.setObjectName("WalkerDialogPrimaryButton")
+        apply_btn.setFont(body_font)
 
         actions.addWidget(reset_btn, 0)
         actions.addWidget(cancel_btn, 0)

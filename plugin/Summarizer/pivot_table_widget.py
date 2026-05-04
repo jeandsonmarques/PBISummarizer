@@ -61,6 +61,7 @@ from qgis.core import (
 
 from .palette import TYPOGRAPHY
 from .slim_dialogs import slim_message
+from .utils.fonts import attach_ui_font_enforcer, harmonize_widget_fonts, ui_font
 from .utils.i18n_runtime import apply_widget_translations as _apply_i18n_widgets, tr_text as _rt
 from .utils.resources import svg_icon
 from .report_view.pivot import (
@@ -728,6 +729,11 @@ class PivotTableWidget(QWidget):
         super().__init__(parent)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setMinimumSize(0, 0)
+        base_ui_font = ui_font()
+        base_ui_font.setPixelSize(int(TYPOGRAPHY.get("font_body_px", 13)))
+        base_ui_font.setWeight(QFont.Normal)
+        self.setFont(base_ui_font)
+        self._font_enforcer = attach_ui_font_enforcer(self)
         self.iface = iface
         self._host = host
         self.raw_df: pd.DataFrame = pd.DataFrame()
@@ -781,6 +787,7 @@ class PivotTableWidget(QWidget):
         self._apply_styles()
         self._enforce_filters_surface_backgrounds()
         self._apply_theming_tokens()
+        harmonize_widget_fonts(self)
         self._load_sidebar_state()
         self._apply_sidebar_visibility(not self._sidebar_collapsed, persist=False)
         self._set_content_mode(True)
@@ -805,6 +812,18 @@ class PivotTableWidget(QWidget):
     # ------------------------------------------------------------------ UI
     def _build_ui(self):
         self.setObjectName("summaryPivotRoot")
+        section_title_px = int(TYPOGRAPHY.get("font_secondary_px", 12))
+        body_text_px = int(TYPOGRAPHY.get("font_secondary_px", 12))
+        helper_text_px = int(TYPOGRAPHY.get("font_caption_px", 11))
+        section_title_font = ui_font()
+        section_title_font.setPixelSize(section_title_px)
+        section_title_font.setWeight(QFont.Medium)
+        body_text_font = ui_font()
+        body_text_font.setPixelSize(body_text_px)
+        body_text_font.setWeight(QFont.Normal)
+        helper_text_font = ui_font()
+        helper_text_font.setPixelSize(helper_text_px)
+        helper_text_font.setWeight(QFont.Normal)
         root = QVBoxLayout(self)
         root.setContentsMargins(4, 2, 4, 3)
         root.setSpacing(4)
@@ -822,6 +841,7 @@ class PivotTableWidget(QWidget):
 
         self.context_label = QLabel("Camada")
         self.context_label.setObjectName("summaryContextLabel")
+        self.context_label.setFont(helper_text_font)
         self.context_layer_row.addWidget(self.context_label, 0, Qt.AlignVCenter)
 
         self.layer_combo_host = QFrame()
@@ -831,6 +851,7 @@ class PivotTableWidget(QWidget):
         layer_host_layout.setSpacing(0)
         self.layer_combo_placeholder = QLabel("Nenhuma camada selecionada")
         self.layer_combo_placeholder.setObjectName("summaryLayerPlaceholder")
+        self.layer_combo_placeholder.setFont(helper_text_font)
         layer_host_layout.addWidget(self.layer_combo_placeholder)
         self.context_layer_row.addWidget(self.layer_combo_host, 1)
 
@@ -839,6 +860,7 @@ class PivotTableWidget(QWidget):
         self.meta_label = QLabel("")
         self.meta_label.setObjectName("summaryMetaLabel")
         self.meta_label.setWordWrap(True)
+        self.meta_label.setFont(helper_text_font)
         self.context_layout.addWidget(self.meta_label)
 
         self.initial_state_frame = QFrame()
@@ -861,7 +883,7 @@ class PivotTableWidget(QWidget):
         self.initial_state_title.setMinimumWidth(600)
         self.initial_state_title.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.initial_state_title.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        welcome_title_font = QFont(str(TYPOGRAPHY.get("font_family", "Inter")))
+        welcome_title_font = ui_font()
         welcome_title_font.setPixelSize(26)
         welcome_title_font.setWeight(QFont.DemiBold)
         self.initial_state_title.setFont(welcome_title_font)
@@ -876,7 +898,7 @@ class PivotTableWidget(QWidget):
         self.initial_state_text.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.initial_state_text.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.initial_state_text.setWordWrap(True)
-        welcome_text_font = QFont(str(TYPOGRAPHY.get("font_family", "Inter")))
+        welcome_text_font = ui_font()
         welcome_text_font.setPixelSize(14)
         welcome_text_font.setWeight(QFont.Normal)
         self.initial_state_text.setFont(welcome_text_font)
@@ -1055,6 +1077,7 @@ class PivotTableWidget(QWidget):
         self.search_input.setFixedHeight(30)
         self.search_input.setMinimumWidth(166)
         self.search_input.setMaximumWidth(220)
+        self.search_input.setFont(body_text_font)
         self.search_input.textChanged.connect(self._on_search_text_changed)
         self.import_sheet_btn.clicked.connect(self._open_spreadsheet_source_menu)
         self.clear_filters_btn.clicked.connect(self._clear_filters)
@@ -1126,6 +1149,8 @@ class PivotTableWidget(QWidget):
         self.fields_panel_header_layout.addWidget(self.fields_panel_icon, 0, Qt.AlignVCenter)
         self.fields_panel_title = QLabel(_rt("Campos"))
         self.fields_panel_title.setObjectName("summaryPanelTitle")
+        self.fields_panel_title.setFont(section_title_font)
+        self.fields_panel_title.setStyleSheet("color: #475467; font-weight: 500;")
         self.fields_panel_header_layout.addWidget(self.fields_panel_title, 1, Qt.AlignVCenter)
         self.fields_panel_toggle_btn = QToolButton(self.fields_panel_header)
         self.fields_panel_toggle_btn.setObjectName("summaryPanelToggle")
@@ -1187,6 +1212,8 @@ class PivotTableWidget(QWidget):
         self.filters_panel_header_layout.addWidget(self.filters_panel_icon, 0, Qt.AlignVCenter)
         self.filter_area_title = QLabel(_rt("Filtros"))
         self.filter_area_title.setObjectName("summaryPanelTitle")
+        self.filter_area_title.setFont(section_title_font)
+        self.filter_area_title.setStyleSheet("color: #475467; font-weight: 500;")
         self.filters_panel_header_layout.addWidget(self.filter_area_title, 1, Qt.AlignVCenter)
         self.filters_panel_toggle_btn = QToolButton(self.filters_panel_header)
         self.filters_panel_toggle_btn.setObjectName("summaryPanelToggle")
@@ -1271,10 +1298,15 @@ class PivotTableWidget(QWidget):
         empty_layout.setSpacing(6)
         self.empty_state_title = QLabel(_rt("Adicione campos em Linhas ou Colunas para começar"))
         self.empty_state_title.setObjectName("summaryEmptyTitle")
+        empty_title_font = ui_font()
+        empty_title_font.setPixelSize(body_text_px)
+        empty_title_font.setWeight(QFont.Medium)
+        self.empty_state_title.setFont(empty_title_font)
         empty_layout.addWidget(self.empty_state_title)
         self.empty_state_text = QLabel(_rt("Nenhum resultado para a configuração atual."))
         self.empty_state_text.setObjectName("summaryEmptyText")
         self.empty_state_text.setWordWrap(True)
+        self.empty_state_text.setFont(helper_text_font)
         empty_layout.addWidget(self.empty_state_text)
         empty_layout.addStretch(1)
         self.table_stack.addWidget(self.empty_state_frame)
@@ -1308,6 +1340,7 @@ class PivotTableWidget(QWidget):
 
         self.status_label = QLabel("")
         self.status_label.setObjectName("summaryStatusLabel")
+        self.status_label.setFont(helper_text_font)
 
         self.selection_summary_bar = QFrame()
         self.selection_summary_bar.setObjectName("summaryTableFooter")
@@ -1317,6 +1350,7 @@ class PivotTableWidget(QWidget):
         selection_layout.addWidget(self.status_label, 1)
         self.selection_summary_label = QLabel("Selecione celulas para ver soma e contagem.")
         self.selection_summary_label.setObjectName("summarySelectionLabel")
+        self.selection_summary_label.setFont(helper_text_font)
         selection_layout.addWidget(self.selection_summary_label, 0)
         table_card_layout.addWidget(self.selection_summary_bar)
 
@@ -1441,6 +1475,7 @@ class PivotTableWidget(QWidget):
         row_layout.setSpacing(4)
         self.row_area_title = QLabel(_rt("Linhas"))
         self.row_area_title.setObjectName("summaryAxisTitle")
+        self.row_area_title.setFont(section_title_font)
         row_layout.addWidget(self.row_area_title)
         row_layout.addWidget(self.row_fields_list)
         self.filters_builder_layout.addWidget(self.row_area_card)
@@ -1454,6 +1489,7 @@ class PivotTableWidget(QWidget):
         col_layout.setSpacing(4)
         self.column_area_title = QLabel(_rt("Colunas"))
         self.column_area_title.setObjectName("summaryAxisTitle")
+        self.column_area_title.setFont(section_title_font)
         col_layout.addWidget(self.column_area_title)
         col_layout.addWidget(self.column_fields_list)
         self.filters_builder_layout.addWidget(self.column_area_card)
@@ -1467,14 +1503,17 @@ class PivotTableWidget(QWidget):
         value_layout.setSpacing(4)
         self.value_area_title = QLabel(_rt("Valores"))
         self.value_area_title.setObjectName("summaryAxisTitle")
+        self.value_area_title.setFont(section_title_font)
         value_layout.addWidget(self.value_area_title)
         operation_label = QLabel(_rt("Operação"))
         operation_label.setObjectName("summaryFieldLabel")
+        operation_label.setFont(helper_text_font)
         value_layout.addWidget(operation_label)
 
         self.agg_combo = QComboBox()
         self.agg_combo.setObjectName("summaryOperationCombo")
         self.agg_combo.setFixedHeight(32)
+        self.agg_combo.setFont(body_text_font)
         for label, func in self.SUPPORTED_AGGREGATORS:
             self.agg_combo.addItem(label, func)
         self.agg_combo.setCurrentIndex(self.agg_combo.findData("count"))
@@ -1490,23 +1529,28 @@ class PivotTableWidget(QWidget):
         self.advanced_group.setFlat(True)
         self.advanced_group.setCheckable(True)
         self.advanced_group.setChecked(False)
+        self.advanced_group.setFont(section_title_font)
         self.advanced_group.toggled.connect(self._on_advanced_toggled)
         advanced_layout = QVBoxLayout(self.advanced_group)
         advanced_layout.setContentsMargins(8, 18, 8, 8)
         advanced_layout.setSpacing(8)
 
         self.advanced_value_label = QLabel("Campo de valor")
+        self.advanced_value_label.setFont(helper_text_font)
         self.value_field_combo = QComboBox()
         self.value_field_combo.setFixedHeight(32)
+        self.value_field_combo.setFont(body_text_font)
         self.value_field_combo.currentIndexChanged.connect(self._on_value_field_changed)
         self.advanced_value_label.hide()
         self.value_field_combo.setVisible(False)
 
         self.only_selected_check = QCheckBox("Apenas selecionadas")
         self.only_selected_check.setObjectName("summaryAdvancedCheck")
+        self.only_selected_check.setFont(body_text_font)
         self.only_selected_check.stateChanged.connect(self._maybe_refresh)
         self.include_nulls_check = QCheckBox("Incluir nulos")
         self.include_nulls_check.setObjectName("summaryAdvancedCheck")
+        self.include_nulls_check.setFont(body_text_font)
         self.include_nulls_check.stateChanged.connect(self._maybe_refresh)
         flags_column = QVBoxLayout()
         flags_column.setContentsMargins(0, 0, 0, 0)
@@ -1527,6 +1571,10 @@ class PivotTableWidget(QWidget):
         self.apply_btn = QPushButton(_rt("Atualizar"))
         self.apply_btn.setObjectName("summaryPrimaryButton")
         self.apply_btn.setFixedHeight(34)
+        button_font = ui_font()
+        button_font.setPixelSize(body_text_px)
+        button_font.setWeight(QFont.Medium)
+        self.apply_btn.setFont(button_font)
         self.apply_btn.clicked.connect(self.refresh)
         footer_layout.addWidget(self.apply_btn)
         self.filters_panel_body_layout.addWidget(self.filters_panel_footer, 0)
@@ -2024,6 +2072,8 @@ class PivotTableWidget(QWidget):
         dialog.setWindowTitle(_rt("Personalizar tabela"))
         dialog.setModal(True)
         dialog.resize(360, 250)
+        dialog.setFont(ui_font())
+        dialog._font_enforcer = attach_ui_font_enforcer(dialog)
         dialog.setStyleSheet(
             """
             QDialog#SummaryTableSettingsDialog {
@@ -2081,8 +2131,15 @@ class PivotTableWidget(QWidget):
         layout.setContentsMargins(16, 16, 16, 14)
         layout.setSpacing(12)
 
+        body_text_font = ui_font()
+        body_text_font.setPixelSize(12)
+
         title = QLabel(_rt("Personalizar tabela"), dialog)
         title.setObjectName("SummarySettingsTitle")
+        title_font = ui_font()
+        title_font.setPixelSize(15)
+        title_font.setWeight(600)
+        title.setFont(title_font)
         layout.addWidget(title, 0)
 
         grid = QGridLayout()
@@ -2092,8 +2149,10 @@ class PivotTableWidget(QWidget):
 
         row_label = QLabel(_rt("Altura da linha"), dialog)
         row_label.setObjectName("SummarySettingsLabel")
+        row_label.setFont(body_text_font)
         row_spin = QSpinBox(dialog)
         row_spin.setObjectName("SummarySettingsInput")
+        row_spin.setFont(body_text_font)
         row_spin.setRange(24, 52)
         row_spin.setValue(int(getattr(self, "_table_row_height", 30) or 30))
         row_spin.setButtonSymbols(QSpinBox.NoButtons)
@@ -2102,11 +2161,13 @@ class PivotTableWidget(QWidget):
 
         alternating_check = QCheckBox(_rt("Linhas alternadas"), dialog)
         alternating_check.setObjectName("SummarySettingsCheck")
+        alternating_check.setFont(body_text_font)
         alternating_check.setChecked(bool(getattr(self, "_table_alternating_rows", True)))
         grid.addWidget(alternating_check, 1, 0, 1, 2)
 
         compact_check = QCheckBox(_rt("Cabeçalho compacto"), dialog)
         compact_check.setObjectName("SummarySettingsCheck")
+        compact_check.setFont(body_text_font)
         compact_check.setChecked(bool(getattr(self, "_table_header_compact", True)))
         grid.addWidget(compact_check, 2, 0, 1, 2)
         layout.addLayout(grid)
@@ -2118,11 +2179,14 @@ class PivotTableWidget(QWidget):
         actions.addStretch(1)
         cancel_btn = QPushButton(_rt("Cancelar"), dialog)
         cancel_btn.setObjectName("SummarySettingsSecondary")
+        cancel_btn.setFont(body_text_font)
         apply_btn = QPushButton(_rt("Aplicar"), dialog)
         apply_btn.setObjectName("SummarySettingsPrimary")
+        apply_btn.setFont(body_text_font)
         actions.addWidget(cancel_btn, 0)
         actions.addWidget(apply_btn, 0)
         layout.addLayout(actions)
+        harmonize_widget_fonts(dialog)
 
         cancel_btn.clicked.connect(dialog.reject)
 
@@ -2530,7 +2594,7 @@ class PivotTableWidget(QWidget):
             }
             #summaryPivotRoot QLabel#summaryPanelCollapsedTitle {
                 color: #6b7280;
-                font-size: __FONT_BUTTON_PX__px;
+                font-size: __FONT_SECONDARY_PX__px;
                 font-weight: __FONT_WEIGHT_MEDIUM__;
             }
             #summaryPivotRoot QToolButton#summaryPanelToggle {
@@ -2568,7 +2632,7 @@ class PivotTableWidget(QWidget):
             }
             #summaryPivotRoot QLabel#summaryPanelTitle {
                 color: #4b5563;
-                font-size: __FONT_CAPTION_PX__px;
+                font-size: __FONT_SECONDARY_PX__px;
                 font-weight: __FONT_WEIGHT_MEDIUM__;
                 padding: 0 0 1px 0;
             }
@@ -2636,7 +2700,7 @@ class PivotTableWidget(QWidget):
             #summaryPivotRoot QFrame#summarySidebarPanel QLabel#summaryAxisTitle,
             #summaryPivotRoot QFrame#summaryFiltersPanel QLabel#summaryAxisTitle {
                 color: #374151;
-                font-size: __FONT_CAPTION_PX__px;
+                font-size: __FONT_SECONDARY_PX__px;
                 font-weight: __FONT_WEIGHT_MEDIUM__;
                 padding: 0 0 1px 0;
             }
@@ -2657,6 +2721,12 @@ class PivotTableWidget(QWidget):
                 color: #6b7280;
                 font-size: __FONT_CAPTION_PX__px;
                 font-weight: __FONT_WEIGHT_REGULAR__;
+            }
+            #summaryPivotRoot QGroupBox#summaryAdvancedGroup,
+            #summaryPivotRoot QGroupBox#summaryAdvancedGroup::title,
+            #summaryPivotRoot QCheckBox#summaryAdvancedCheck,
+            #summaryPivotRoot QComboBox#summaryOperationCombo {
+                font-size: __FONT_SECONDARY_PX__px;
             }
             #summaryPivotRoot QLabel#summaryEmptyTitle {
                 color: #111827;
@@ -3665,7 +3735,8 @@ class PivotTableWidget(QWidget):
         )
         self._pivot_data_column_offset = self._row_header_depth
 
-        base_font = QFont(TYPOGRAPHY.get("font_family", "Inter"), TYPOGRAPHY.get("font_body_size", 12))
+        base_font = ui_font()
+        base_font.setPixelSize(int(TYPOGRAPHY.get("font_body_px", 13)))
         base_font.setWeight(QFont.Medium)
         total_column_index = headers.index("Total") if "Total" in headers else -1
         for row_index, row in enumerate(self.pivot_df.itertuples(index=False, name=None)):
@@ -4231,12 +4302,11 @@ class PivotTableWidget(QWidget):
 
     def _apply_theming_tokens(self):
         try:
-            font_family = TYPOGRAPHY.get("font_family", "Inter")
-            base_font = QFont(font_family)
+            base_font = ui_font()
             base_font.setPixelSize(int(TYPOGRAPHY.get("font_body_px", 13)))
             base_font.setWeight(QFont.Normal)
             self.table_view.setFont(base_font)
-            header_font = QFont(font_family)
+            header_font = ui_font()
             header_font.setPixelSize(int(TYPOGRAPHY.get("font_secondary_px", 12)))
             header_font.setWeight(QFont.Medium)
             self.table_view.horizontalHeader().setFont(header_font)
@@ -4246,6 +4316,7 @@ class PivotTableWidget(QWidget):
         except Exception:
             pass
         self._apply_table_preferences()
+        harmonize_widget_fonts(self)
 
     def _apply_table_preferences(self):
         table = getattr(self, "table_view", None)
@@ -4832,11 +4903,16 @@ class PivotTableWidget(QWidget):
             checkbox.setObjectName("summaryAutoUpdateCheck")
             checkbox.setMinimumHeight(28)
             checkbox.setContentsMargins(0, 0, 0, 0)
+            check_font = ui_font()
+            check_font.setPixelSize(int(TYPOGRAPHY.get("font_secondary_px", 12)))
+            check_font.setWeight(QFont.Normal)
+            checkbox.setFont(check_font)
             self.toolbar_strip_layout.addSpacing(10)
             self.toolbar_strip_layout.addWidget(checkbox)
             checkbox.setVisible(True)
         self.auto_update_check = checkbox
         self._external_auto_checkbox = checkbox
+        harmonize_widget_fonts(checkbox)
         self._refresh_toolbar_chrome()
 
     def add_dashboard_button(self, button: QPushButton):

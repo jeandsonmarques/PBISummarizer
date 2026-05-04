@@ -1,7 +1,9 @@
 import os
 from typing import List, Optional
 
+from qgis.PyQt.QtCore import QEvent, QObject, QTimer
 from qgis.PyQt.QtGui import QFont, QFontDatabase
+from qgis.PyQt.QtWidgets import QWidget
 
 _FONT_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "resources", "fonts", "Inter")
 _FONT_FILES = (
@@ -49,4 +51,53 @@ def ui_font(point_size: Optional[int] = None, weight: int = QFont.Normal) -> QFo
     if point_size is not None:
         font.setPointSize(point_size)
     font.setWeight(weight)
+    font.setStretch(QFont.Unstretched)
+    font.setKerning(True)
     return font
+
+
+def harmonize_font_family(font: Optional[QFont]) -> QFont:
+    resolved = QFont(font) if font is not None else QFont()
+    resolved.setFamily(ui_font_family())
+    resolved.setStretch(QFont.Unstretched)
+    resolved.setKerning(True)
+    return resolved
+
+
+def harmonize_widget_fonts(root: Optional[QObject]) -> None:
+    if root is None:
+        return
+    widgets: List[QWidget] = []
+    if isinstance(root, QWidget):
+        widgets.append(root)
+    try:
+        widgets.extend(root.findChildren(QWidget))
+    except Exception:
+        pass
+    for widget in widgets:
+        try:
+            widget.setFont(harmonize_font_family(widget.font()))
+        except Exception:
+            continue
+
+
+class _UiFontEnforcer(QObject):
+    def eventFilter(self, watched, event):
+        if event is not None and event.type() == QEvent.ChildAdded:
+            child = event.child()
+            if child is not None:
+                QTimer.singleShot(0, lambda c=child: harmonize_widget_fonts(c))
+        return False
+
+
+def attach_ui_font_enforcer(root: Optional[QWidget]) -> Optional[QObject]:
+    if root is None:
+        return None
+    existing = getattr(root, "_ui_font_enforcer", None)
+    if existing is not None:
+        return existing
+    enforcer = _UiFontEnforcer(root)
+    root.installEventFilter(enforcer)
+    setattr(root, "_ui_font_enforcer", enforcer)
+    QTimer.singleShot(0, lambda: harmonize_widget_fonts(root))
+    return enforcer

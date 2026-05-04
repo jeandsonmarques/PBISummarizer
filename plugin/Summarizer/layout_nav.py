@@ -65,6 +65,8 @@ class SidebarController(QObject):
         self._active_indicator = QFrame(container)
         self._active_indicator.setObjectName("sidebarActiveIndicator")
         self._active_indicator.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self._active_indicator.setStyleSheet("background: #6C4CF1; border-radius: 1px;")
+        self._active_indicator.setGeometry(0, 0, 3, 28)
         self._active_indicator.hide()
         self._active_indicator.raise_()
         container.installEventFilter(self)
@@ -192,8 +194,8 @@ class SidebarController(QObject):
         if not geo.isValid():
             return QRect()
         indicator_width = 3
-        indicator_height = min(max(28, geo.height() - 12), 44)
-        x = max(4, geo.left() - 10)
+        indicator_height = min(max(28, geo.height() - 8), 44)
+        x = 0
         y = geo.center().y() - (indicator_height // 2)
         return QRect(x, y, indicator_width, indicator_height)
 

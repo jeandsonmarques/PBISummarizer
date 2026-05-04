@@ -1,6 +1,8 @@
 ﻿import base64
 import os
 import re
+import tempfile
+import uuid
 from datetime import datetime
 from typing import Dict, Optional, List
 from string import Template
@@ -8,7 +10,7 @@ from string import Template
 import numpy as np
 import pandas as pd
 from pandas.api import types as ptypes
-from qgis.PyQt.QtCore import QBuffer, QCoreApplication, QSettings, QTimer, QTranslator, Qt, QVariant, QRectF
+from qgis.PyQt.QtCore import QBuffer, QCoreApplication, QSettings, QTimer, QTranslator, Qt, QVariant, QRectF, QUrl
 from qgis.PyQt.QtGui import QFont, QImage, QPainter
 from qgis.PyQt.QtWidgets import (
     QAction,
@@ -32,6 +34,7 @@ from qgis.PyQt.QtWidgets import (
 
 from .report_view.visuals import BarChartRenderer, VisualDefinition, VisualTheme
 from qgis.core import (
+    QgsDataSourceUri,
     QgsFeature,
     QgsFeatureRequest,
     QgsGeometry,
@@ -927,14 +930,9 @@ class SummarizerDialog(QDialog):
         descriptor.setdefault("connector", descriptor.get("connector") or "Fonte externa")
         descriptor.setdefault("record_count", int(len(df)))
         descriptor.setdefault("timestamp", descriptor.get("timestamp") or datetime.now().isoformat())
+        import_target = str(descriptor.get("import_target") or "").strip().lower()
 
-        summary_data = self._build_dataframe_summary(df, descriptor)
-        self.current_summary_data = summary_data
-        self.display_advanced_summary(summary_data)
-        self.update_charts_preview(summary_data)
-        self.prepare_export_tab_defaults(summary_data)
-
-        layer = self._create_memory_table_from_dataframe(df, descriptor)
+        layer = self._create_integration_project_layer(df, descriptor)
         if layer is not None and layer.isValid():
             descriptor["layer_id"] = layer.id()
             descriptor["layer_name"] = layer.name()
@@ -950,8 +948,151 @@ class SummarizerDialog(QDialog):
             except Exception:
                 pass
 
+        if import_target == "project":
+            if not descriptor.get("layer_id"):
+                return {}
+            return descriptor
+
+        summary_data = self._build_dataframe_summary(df, descriptor)
+        self.current_summary_data = summary_data
+        self.display_advanced_summary(summary_data)
+        self.update_charts_preview(summary_data)
+        self.prepare_export_tab_defaults(summary_data)
+
         self.sidebar.show_results_page()
         return descriptor
+
+    def _create_integration_project_layer(self, df: pd.DataFrame, descriptor: Dict) -> Optional[QgsVectorLayer]:
+        connector = str(descriptor.get("connector") or "").strip().lower()
+        source_path = str(descriptor.get("source_path") or "").strip()
+        geometry_column = str(descriptor.get("geometry_column") or "").strip()
+        if connector in ("postgresql", "postgis") and geometry_column:
+            try:
+                return self._load_integration_database_layer(descriptor)
+            except Exception:
+                pass
+        if connector == "geopackage" and source_path and os.path.exists(source_path):
+            try:
+                return self._load_integration_source_layer(source_path, descriptor)
+            except Exception:
+                pass
+        try:
+            layer = self._materialize_integration_text_layer(df, descriptor)
+            if layer is not None and layer.isValid():
+                return layer
+        except Exception:
+            pass
+        return self._create_memory_table_from_dataframe(df, descriptor)
+
+    def _load_integration_source_layer(self, source_path: str, descriptor: Dict) -> Optional[QgsVectorLayer]:
+        base_name = (descriptor.get("display_name") or os.path.basename(source_path) or "Camada externa").strip()
+        if not base_name:
+            base_name = "Camada externa"
+
+        project = QgsProject.instance()
+        existing_names = {layer.name() for layer in project.mapLayers().values()}
+        name = base_name
+        suffix = 2
+        while name in existing_names:
+            name = f"{base_name} ({suffix})"
+            suffix += 1
+
+        layer = QgsVectorLayer(source_path, name, "ogr")
+        if not layer or not layer.isValid():
+            return None
+        return self._add_layer_to_project(layer)
+
+    def _load_integration_database_layer(self, descriptor: Dict) -> Optional[QgsVectorLayer]:
+        connection = descriptor.get("db_connection") or {}
+        schema = str(descriptor.get("schema") or "").strip()
+        table_name = str(descriptor.get("table_name") or "").strip()
+        geometry_column = str(descriptor.get("geometry_column") or "").strip()
+        if not table_name or not geometry_column:
+            return None
+
+        uri = QgsDataSourceUri()
+        uri.setConnection(
+            str(connection.get("host") or ""),
+            str(connection.get("port") or ""),
+            str(connection.get("database") or ""),
+            str(connection.get("user") or ""),
+            str(connection.get("password") or ""),
+        )
+        uri.setDataSource(schema, table_name, geometry_column)
+
+        base_name = (descriptor.get("display_name") or table_name or "Camada externa").strip()
+        if not base_name:
+            base_name = table_name or "Camada externa"
+        layer = QgsVectorLayer(uri.uri(), self._unique_layer_name(base_name), "postgres")
+        if not layer or not layer.isValid():
+            return None
+        return self._add_layer_to_project(layer)
+
+    def _materialize_integration_text_layer(self, df: pd.DataFrame, descriptor: Dict) -> Optional[QgsVectorLayer]:
+        base_name = (descriptor.get("display_name") or "Tabela externa").strip()
+        if not base_name:
+            base_name = "Tabela externa"
+        base_name = os.path.splitext(base_name)[0].strip() or base_name
+        layer_name = self._unique_layer_name(base_name)
+
+        temp_dir = os.path.join(tempfile.gettempdir(), "summarizer_imports")
+        os.makedirs(temp_dir, exist_ok=True)
+        csv_path = os.path.join(temp_dir, f"{uuid.uuid4().hex}_{layer_name}.csv")
+        try:
+            export_df = df.copy()
+            export_df.columns = [str(column) for column in export_df.columns]
+            export_df.to_csv(csv_path, index=False, encoding="utf-8-sig")
+        except Exception as exc:
+            QgsMessageLog.logMessage(
+                f"Falha ao salvar tabela temporária de integração: {exc}",
+                "Summarizer",
+                Qgis.Warning,
+            )
+            return None
+
+        uri = (
+            f"{QUrl.fromLocalFile(csv_path).toString()}?"
+            "type=csv&detectTypes=yes&geomType=none&subsetIndex=no&watchFile=no"
+        )
+        iface_layer = None
+        add_vector_layer = getattr(self.iface, "addVectorLayer", None)
+        if callable(add_vector_layer):
+            try:
+                iface_layer = add_vector_layer(uri, layer_name, "delimitedtext")
+            except Exception as exc:
+                QgsMessageLog.logMessage(
+                    f"Falha ao adicionar tabela de texto via iface.addVectorLayer: {exc}",
+                    "Summarizer",
+                    Qgis.Warning,
+                )
+                iface_layer = None
+        if iface_layer is not None and iface_layer.isValid():
+            return iface_layer
+
+        project_layer = QgsVectorLayer(uri, layer_name, "delimitedtext")
+        if not project_layer or not project_layer.isValid():
+            return None
+        return self._add_layer_to_project(project_layer)
+
+    def _add_layer_to_project(self, layer: Optional[QgsVectorLayer]) -> Optional[QgsVectorLayer]:
+        if layer is None or not layer.isValid():
+            return None
+        project = QgsProject.instance()
+        try:
+            project.addMapLayer(layer)
+        except Exception as exc:
+            QgsMessageLog.logMessage(
+                f"Falha ao adicionar camada ao projeto: {exc}",
+                "Summarizer",
+                Qgis.Warning,
+            )
+            return None
+        try:
+            if layer.id() not in project.mapLayers():
+                return None
+        except Exception:
+            return None
+        return layer
 
     def _build_dataframe_summary(self, df: pd.DataFrame, descriptor: Dict) -> Dict:
         numeric_columns = [col for col in df.columns if ptypes.is_numeric_dtype(df[col])]
@@ -1014,48 +1155,22 @@ class SummarizerDialog(QDialog):
             base_name = (descriptor.get("display_name") or "Tabela externa").strip()
             if not base_name:
                 base_name = "Tabela externa"
-
-            project = QgsProject.instance()
-            existing_names = {layer.name() for layer in project.mapLayers().values()}
-            name = base_name
-            suffix = 2
-            while name in existing_names:
-                name = f"{base_name} ({suffix})"
-                suffix += 1
-
-            layer = QgsVectorLayer("None", name, "memory")
-            provider = layer.dataProvider()
-            fields = QgsFields()
-            for column in df.columns:
-                variant = self._map_series_to_variant(df[column])
-                fields.append(QgsField(column[:254], variant))
-            provider.addAttributes(fields)
-            layer.updateFields()
-
-            features = []
-            columns = list(df.columns)
-            for _, row in df.iterrows():
-                feature = QgsFeature()
-                feature.setFields(fields)
-                attrs = []
-                for column in columns:
-                    value = row[column]
-                    if pd.isna(value):
-                        attrs.append(None)
-                    elif ptypes.is_datetime64_any_dtype(df[column]):
-                        try:
-                            attrs.append(pd.to_datetime(value).to_pydatetime())
-                        except Exception:
-                            attrs.append(str(value))
-                    else:
-                        attrs.append(value.item() if hasattr(value, "item") else value)
-                feature.setAttributes(attrs)
-                features.append(feature)
-            if features:
-                provider.addFeatures(features)
-            layer.updateExtents()
-            project.addMapLayer(layer)
-            return layer
+            layer_name = self._unique_layer_name(base_name)
+            layer, error_message = self._create_layer_from_dataframe(
+                df,
+                layer_name,
+                with_geometry=False,
+                geometry_layer=None,
+            )
+            if layer is None:
+                if error_message:
+                    QgsMessageLog.logMessage(
+                        f"Falha ao criar tabela de integração: {error_message}",
+                        "Summarizer",
+                        Qgis.Warning,
+                    )
+                return None
+            return self._add_layer_to_project(layer)
         except Exception:
             return None
 

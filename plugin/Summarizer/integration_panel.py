@@ -14,6 +14,7 @@ from qgis.PyQt.QtCore import (
     QSettings,
     QSize,
     Qt,
+    QTimer,
     pyqtSignal,
 )
 from qgis.PyQt.QtGui import QColor, QCursor, QFont, QKeySequence, QIcon
@@ -44,7 +45,7 @@ from qgis.PyQt.QtWidgets import (
 )
 from qgis.core import QgsVectorLayer
 
-from .slim_dialogs import SlimDialogBase
+from .slim_dialogs import SlimDialogBase, SlimMessageDialog
 from .browser_integration import connection_registry
 from .utils.fonts import ui_font, ui_font_stack
 from .utils.i18n_runtime import apply_widget_translations as _apply_i18n_widgets, tr_text as _rt
@@ -65,6 +66,21 @@ SAVED_CONNECTIONS_KEY = "Summarizer/integration/saved_connections"
 LAST_DB_PARAMS_KEY = "Summarizer/integration/last_db_params"
 
 
+def _apply_walker_dialog_buttons(*, primary=None, secondary=None):
+    for button in list(primary or []):
+        if button is None:
+            continue
+        button.setObjectName("SlimPrimaryButton")
+        button.style().unpolish(button)
+        button.style().polish(button)
+    for button in list(secondary or []):
+        if button is None:
+            continue
+        button.setObjectName("SlimSecondaryButton")
+        button.style().unpolish(button)
+        button.style().polish(button)
+
+
 @dataclass
 class ConnectorConfig:
     key: str
@@ -78,6 +94,7 @@ class ConnectorConfig:
     description: str = ""
     icon_name: str = ""
     icon_path: str = ""
+    keywords: str = ""
 
 
 class ConnectorCard(QFrame):
@@ -91,128 +108,73 @@ class ConnectorCard(QFrame):
         self.setObjectName(f"integrationCard_{config.key}")
         self.setCursor(Qt.PointingHandCursor)
         self.setFocusPolicy(Qt.StrongFocus)
-        self.setFixedSize(260, 180)
-
-        self._shadow = QGraphicsDropShadowEffect(self)
-        self._shadow.setBlurRadius(28)
-        self._shadow.setXOffset(0)
-        self._shadow.setYOffset(12)
-        self._shadow.setColor(QColor(24, 24, 24, 35))
-        self._shadow.setEnabled(False)
-        self.setGraphicsEffect(self._shadow)
+        self.setFixedSize(148, 102)
 
         self._build_ui()
         self._apply_styles()
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(8)
 
-        top = QFrame(self)
-        top.setObjectName("cardTop")
-        top.setFixedHeight(110)
-        top_layout = QHBoxLayout(top)
-        top_layout.setContentsMargins(18, 16, 18, 16)
-        top_layout.setSpacing(0)
-
-        self.icon_label = QLabel(top)
+        self.icon_label = QLabel(self)
         self.icon_label.setAlignment(Qt.AlignCenter)
-        self.icon_label.setMinimumSize(64, 64)
-        top_layout.addStretch(1)
-        top_layout.addWidget(self.icon_label, 0, Qt.AlignCenter)
-        top_layout.addStretch(1)
+        self.icon_label.setFixedSize(40, 40)
+        layout.addWidget(self.icon_label, 0, Qt.AlignHCenter)
 
-        layout.addWidget(top)
-
-        body = QFrame(self)
-        body_layout = QVBoxLayout(body)
-        body_layout.setContentsMargins(18, 12, 18, 18)
-        body_layout.setSpacing(6)
-
-        self.title_label = QLabel(self.config.title, body)
+        self.title_label = QLabel(self.config.title, self)
         self.title_label.setWordWrap(True)
-        body_layout.addWidget(self.title_label)
+        self.title_label.setAlignment(Qt.AlignHCenter)
+        layout.addWidget(self.title_label)
 
-        self.caption_label = QLabel(self.config.caption, body)
+        self.caption_label = QLabel(self.config.caption, self)
         self.caption_label.setWordWrap(True)
         self.caption_label.setProperty("class", "cardCaption")
-        body_layout.addWidget(self.caption_label)
-        body_layout.addStretch(1)
-
-        microcopy = QLabel(self.config.microcopy, body)
-        microcopy.setWordWrap(True)
-        microcopy.setProperty("class", "cardMicrocopy")
-        body_layout.addWidget(microcopy)
-
-        layout.addWidget(body)
-
-        self.top_band = top
-        self.body_frame = body
+        self.caption_label.setAlignment(Qt.AlignHCenter)
+        layout.addWidget(self.caption_label)
 
     def _apply_styles(self):
-        accent = QColor(self.config.accent)
-        top_rgba = QColor(accent)
-        top_rgba.setAlpha(38)
-
-        self.top_band.setStyleSheet(
-            f"""
-            QFrame#cardTop {{
-                background-color: {top_rgba.name(QColor.HexArgb)};
-                border-top-left-radius: 16px;
-                border-top-right-radius: 16px;
-            }}
-            """
-        )
-
         self.setStyleSheet(
             f"""
             ConnectorCard {{
-                background-color: #FFFFFF;
-                border-radius: 12px;
-                border: 1px solid #E2E6EC;
+                background-color: transparent;
+                border: none;
             }}
             QLabel {{
                 font-family: %s;
                 color: #1E1E1E;
             }}
             QLabel[class="cardCaption"] {{
-                font-size: 11pt;
-                font-weight: 600;
-            }}
-            QLabel[class="cardMicrocopy"] {{
-                font-size: 9.5pt;
-                color: #4B5563;
+                font-size: 8.6pt;
+                font-weight: 400;
+                color: #475569;
             }}
             """
             % ui_font_stack()
         )
 
         self._apply_icon()
-        self.title_label.setFont(ui_font(11, QFont.DemiBold))
+        self.title_label.setFont(ui_font(10, QFont.DemiBold))
 
     def _apply_icon(self):
         if self.config.icon_path and os.path.exists(self.config.icon_path):
             icon = QIcon(self.config.icon_path)
             if not icon.isNull():
-                self.icon_label.setPixmap(icon.pixmap(64, 64))
+                self.icon_label.setPixmap(icon.pixmap(40, 40))
                 return
         if self.config.icon_name:
             icon = svg_icon(self.config.icon_name)
             if not icon.isNull():
-                self.icon_label.setPixmap(icon.pixmap(QSize(64, 64)))
+                self.icon_label.setPixmap(icon.pixmap(QSize(40, 40)))
                 return
-        self.icon_label.setText(self.config.icon_text.upper())
-        self.icon_label.setFont(ui_font(18, QFont.Bold))
+        self.icon_label.setText(self.config.icon_text.upper()[:3])
+        self.icon_label.setFont(ui_font(12, QFont.Bold))
 
     def enterEvent(self, event: QEvent):
-        if self.graphicsEffect():
-            self.graphicsEffect().setEnabled(True)
         super().enterEvent(event)
 
     def leaveEvent(self, event: QEvent):
-        if self.graphicsEffect():
-            self.graphicsEffect().setEnabled(False)
         super().leaveEvent(event)
 
     def mouseReleaseEvent(self, event):
@@ -232,17 +194,19 @@ class ResponsiveGrid(QWidget):
     """Responsive grid that ensures target number of columns according to width."""
 
     BREAKPOINTS: Sequence[Tuple[int, int]] = (
-        (920, 3),
+        (1160, 4),
+        (860, 3),
         (640, 2),
         (0, 1),
     )
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self._layout = QGridLayout(self)
         self._layout.setContentsMargins(0, 0, 0, 0)
-        self._layout.setHorizontalSpacing(20)
-        self._layout.setVerticalSpacing(20)
+        self._layout.setHorizontalSpacing(12)
+        self._layout.setVerticalSpacing(18)
         self._items: List[ConnectorCard] = []
 
     def add_item(self, card: ConnectorCard):
@@ -255,20 +219,21 @@ class ResponsiveGrid(QWidget):
         self._relayout()
 
     def _relayout(self):
-        width = max(self.width(), 1)
+        width = max(self.width(), self.parentWidget().width() if self.parentWidget() else 0, 1)
         columns = 1
         for breakpoint, cols in self.BREAKPOINTS:
             if width >= breakpoint:
                 columns = cols
                 break
 
-        for idx, card in enumerate(self._items):
+        visible_cards = [card for card in self._items if card.isVisible()]
+        for idx, card in enumerate(visible_cards):
             row = idx // columns
             col = idx % columns
-            self._layout.addWidget(card, row, col)
+            self._layout.addWidget(card, row, col, Qt.AlignHCenter | Qt.AlignTop)
 
         for col in range(columns):
-            self._layout.setColumnStretch(col, 1)
+            self._layout.setColumnStretch(col, 0)
 
 
 class IntegrationPanel(QWidget):
@@ -305,6 +270,11 @@ class IntegrationPanel(QWidget):
     def showEvent(self, event):
         super().showEvent(event)
         self._apply_runtime_i18n()
+        QTimer.singleShot(0, self._refresh_connector_layout)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        QTimer.singleShot(0, self._refresh_connector_layout)
 
     # ------------------------------------------------------------------ UI
     def _build_ui(self):
@@ -315,29 +285,19 @@ class IntegrationPanel(QWidget):
         wrapper = QFrame(self)
         wrapper.setObjectName("integrationWrapper")
         wrapper.setProperty("card", True)
-        wrapper.setMaximumWidth(960)
-        wrapper.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Preferred)
+        wrapper.setMaximumWidth(16777215)
+        wrapper.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         wrapper_layout = QVBoxLayout(wrapper)
-        wrapper_layout.setContentsMargins(24, 24, 24, 24)
-        wrapper_layout.setSpacing(24)
+        wrapper_layout.setContentsMargins(28, 28, 28, 28)
+        wrapper_layout.setSpacing(20)
 
         header_layout = QVBoxLayout()
-        header_layout.setSpacing(8)
+        header_layout.setSpacing(6)
 
         self.title_label = QLabel("Adicionar dados ao seu relatório", wrapper)
-        self.title_label.setAlignment(Qt.AlignHCenter)
         self.title_label.setProperty("cardTitle", True)
-        self.title_label.setFont(ui_font(17, QFont.DemiBold))
+        self.title_label.setFont(ui_font(18, QFont.DemiBold))
         header_layout.addWidget(self.title_label)
-
-        self.subtitle_label = QLabel(
-            "Depois de carregados, seus dados serão exibidos no painel Dados.",
-            wrapper,
-        )
-        self.subtitle_label.setAlignment(Qt.AlignHCenter)
-        self.subtitle_label.setWordWrap(True)
-        self.subtitle_label.setProperty("role", "helper")
-        header_layout.addWidget(self.subtitle_label)
 
         wrapper_layout.addLayout(header_layout)
 
@@ -361,14 +321,14 @@ class IntegrationPanel(QWidget):
         recents_header.addStretch(1)
 
         self.clear_recent_btn = QPushButton("Limpar", recents_frame)
-        self.clear_recent_btn.setProperty("variant", "ghost")
+        self.clear_recent_btn.setProperty("role", "recentClear")
         self.clear_recent_btn.clicked.connect(self._clear_recents)
         recents_header.addWidget(self.clear_recent_btn)
 
         recents_layout.addLayout(recents_header)
 
         self.recents_list = QListWidget(recents_frame)
-        self.recents_list.setAlternatingRowColors(True)
+        self.recents_list.setAlternatingRowColors(False)
         self.recents_list.setSpacing(6)
         self.recents_list.itemActivated.connect(self._open_recent)
         recents_layout.addWidget(self.recents_list)
@@ -380,41 +340,64 @@ class IntegrationPanel(QWidget):
 
         wrapper_layout.addWidget(recents_frame)
 
-        bottom_row = QHBoxLayout()
-        bottom_row.addStretch(1)
-        self.extended_connectors_link = QLabel("<a href='#'>Ver outras fontes disponíveis →</a>", wrapper)
-        self.extended_connectors_link.setTextFormat(Qt.RichText)
-        self.extended_connectors_link.setTextInteractionFlags(Qt.TextBrowserInteraction)
-        self.extended_connectors_link.linkActivated.connect(self._show_extended_connectors)
-        # Usa as cores globais do tema para o link
-        bottom_row.addWidget(self.extended_connectors_link)
-        wrapper_layout.addLayout(bottom_row)
-
-        root.addStretch(1)
-        root.addWidget(wrapper, 0, Qt.AlignHCenter)
-        root.addStretch(1)
+        root.addWidget(wrapper, 1)
 
         self.setStyleSheet(
             """
             QListWidget {
-                border: 1px solid #E2E6EC;
-                border-radius: 12px;
-                padding: 6px;
+                border: none;
+                background: transparent;
+                outline: none;
+                padding: 0px;
                 font-family: %s;
-                font-size: 10pt;
+                font-size: 9pt;
             }
             QListWidget::item {
                 padding: 8px 10px;
-                margin: 2px;
+                margin: 0px;
+                border: none;
+                border-radius: 10px;
+                background: #F5F7FA;
+                color: #111827;
             }
             QListWidget::item:selected {
-                background-color: #FFF4CC;
+                background: #ECEFF3;
+                border: none;
+                color: #111827;
+            }
+            QListWidget::item:hover {
+                background: #EEF2F6;
+            }
+            QPushButton[role="recentClear"] {
+                background: #111827;
+                color: #FFFFFF;
+                border: none;
                 border-radius: 8px;
+                min-width: 0px;
+                padding: 4px 10px;
+                font-family: %s;
+                font-size: 9pt;
+                font-weight: 600;
+            }
+            QPushButton[role="recentClear"]:hover {
+                background: #1F2937;
+            }
+            QPushButton[role="recentClear"]:pressed {
+                background: #0B1220;
+            }
+            QPushButton[role="recentClear"]:disabled {
+                background: #D1D5DB;
+                color: #FFFFFF;
             }
             """
-            % ui_font_stack()
+            % (ui_font_stack(), ui_font_stack())
         )
         self._apply_runtime_i18n()
+
+    def _refresh_connector_layout(self):
+        if hasattr(self, "grid_widget") and self.grid_widget is not None:
+            self.grid_widget.updateGeometry()
+            self.grid_widget._relayout()
 
     def _build_connectors(self):
         self._connectors: Dict[str, ConnectorConfig] = {}
@@ -430,37 +413,141 @@ class IntegrationPanel(QWidget):
         register(
             ConnectorConfig(
                 key="excel",
-                title="Importar dados do Excel",
+                title="Excel",
                 caption="Arquivos XLSX e XLS",
-                microcopy="Importar dados do Excel",
+                microcopy="",
                 accent="#CDEFE0",
                 icon_text="X",
                 handler=self._handle_excel,
-                icon_path=os.path.join(_ICON_DIR, "card_excel.svg"),
+                description="Planilhas tabulares com uma ou várias abas.",
+                icon_path=os.path.join(_ICON_DIR, "source_excel.svg"),
+                keywords="excel xlsx xls planilha arquivo tabela",
             )
         )
         register(
             ConnectorConfig(
-                key="sql",
-                title="Importar dados do SQL Server",
-                caption="Bancos relacionais corporativos",
-                microcopy="Importar dados do SQL Server / PostgreSQL",
-                accent="#E5F0FF",
+                key="postgresql",
+                title="PostgreSQL",
+                caption="Tabelas e views",
+                microcopy="",
+                accent="#DCEBFF",
+                icon_text="PG",
+                handler=self._handle_postgresql_database,
+                description="Servidor PostgreSQL muito comum em ambientes GIS e BI.",
+                icon_path=os.path.join(_ICON_DIR, "source_postgresql.svg"),
+                keywords="postgresql postgres servidor banco dados relacional",
+            )
+        )
+        register(
+            ConnectorConfig(
+                key="postgis",
+                title="PostGIS",
+                caption="Camadas e tabelas espaciais",
+                microcopy="",
+                accent="#DDF6E8",
+                icon_text="GIS",
+                handler=self._handle_postgis_database,
+                description="Acesso a bases geoespaciais corporativas com PostgreSQL/PostGIS.",
+                icon_path=os.path.join(_ICON_DIR, "source_postgis.svg"),
+                keywords="postgis espacial geometria servidor postgres qgis",
+            )
+        )
+        register(
+            ConnectorConfig(
+                key="sqlserver",
+                title="SQL Server",
+                caption="Dados corporativos",
+                microcopy="",
+                accent="#E8EEFF",
                 icon_text="SQL",
-                handler=self._handle_sql_database,
-                icon_path=os.path.join(_ICON_DIR, "card_sql.svg"),
+                handler=self._handle_sqlserver_database,
+                description="Conector para ambientes Microsoft SQL Server.",
+                icon_path=os.path.join(_ICON_DIR, "source_sqlserver.svg"),
+                keywords="sql server mssql servidor banco microsoft",
+            )
+        )
+        register(
+            ConnectorConfig(
+                key="oracle",
+                title="Oracle",
+                caption="Ambientes corporativos",
+                microcopy="",
+                accent="#FFF0E7",
+                icon_text="ORA",
+                handler=self._handle_oracle_database,
+                description="Conector para bases Oracle quando o driver QOCI estiver disponível.",
+                icon_path=os.path.join(_ICON_DIR, "source_oracle.svg"),
+                keywords="oracle servidor banco corporativo",
+            )
+        )
+        register(
+            ConnectorConfig(
+                key="mysql",
+                title="MySQL",
+                caption="Aplicações e serviços",
+                microcopy="",
+                accent="#EEF7FF",
+                icon_text="MY",
+                handler=self._handle_mysql_database,
+                description="Conector para bases MySQL quando o driver QMYSQL estiver disponível.",
+                icon_path=os.path.join(_ICON_DIR, "source_mysql.svg"),
+                keywords="mysql mariadb servidor banco aplicacao",
             )
         )
         register(
             ConnectorConfig(
                 key="gsheets",
-                title="Planilha Google (URL pública)",
-                caption="Planilhas publicadas na web",
-                microcopy="Importar dados do Google Sheets",
+                title="Google Sheets",
+                caption="Planilhas web públicas",
+                microcopy="",
                 accent="#F4FFF6",
                 icon_text="GS",
                 handler=self._handle_google_sheets,
-                icon_path=os.path.join(_ICON_DIR, "card_gsheets.svg"),
+                description="Ideal para tabelas compartilhadas por URL pública.",
+                icon_path=os.path.join(_ICON_DIR, "source_gsheets.svg"),
+                keywords="google sheets web nuvem url publica planilha",
+            )
+        )
+        register(
+            ConnectorConfig(
+                key="delimited",
+                title="CSV / TXT",
+                caption="Arquivos delimitados",
+                microcopy="",
+                accent="#FFF1D8",
+                icon_text="CSV",
+                handler=self._handle_delimited_file,
+                description="Importe arquivos tabulares simples com pré-visualização.",
+                icon_path=os.path.join(_ICON_DIR, "source_csv.svg"),
+                keywords="csv txt delimitado separado virgula ponto e virgula texto",
+            )
+        )
+        register(
+            ConnectorConfig(
+                key="geopackage",
+                title="GeoPackage",
+                caption="Camadas vetoriais",
+                microcopy="",
+                accent="#E8F6EC",
+                icon_text="GPKG",
+                handler=self._handle_geopackage,
+                description="Abra dados vetoriais de um arquivo GeoPackage diretamente no plugin.",
+                icon_path=os.path.join(_ICON_DIR, "source_geopackage.svg"),
+                keywords="geopackage gpkg camada espacial geometria vetor qgis",
+            )
+        )
+        register(
+            ConnectorConfig(
+                key="clipboard",
+                title="Área de transferência",
+                caption="Colar tabela copiada",
+                microcopy="",
+                accent="#F4ECFF",
+                icon_text="CLP",
+                handler=self._handle_clipboard,
+                description="Útil para colar rapidamente dados copiados de outras ferramentas.",
+                icon_path=os.path.join(_ICON_DIR, "source_clipboard.svg"),
+                keywords="clipboard colar copiar area de transferencia rapido",
             )
         )
 
@@ -568,6 +655,12 @@ class IntegrationPanel(QWidget):
                 "options": options,
             }
             self._finalize_import(df, meta)
+        elif connector == "GeoPackage":
+            path = data.get("source_path")
+            if not path or not os.path.exists(path):
+                QMessageBox.warning(self, "Recentes", "Arquivo não está mais disponível.")
+                return
+            self._import_geopackage_path(path)
         else:
             QMessageBox.information(
                 self,
@@ -761,12 +854,14 @@ class IntegrationPanel(QWidget):
                 )
             self._finalize_import(df, metadata)
 
-    def _handle_sql_database(self):
+    def _open_database_dialog(self, preferred_driver: Optional[str] = None):
         dialog = DatabaseImportDialog(
             self,
             self._saved_connections,
             browser_sync_callback=self._mirror_connection_in_browser,
         )
+        if preferred_driver:
+            dialog.driver_combo.setCurrentText(preferred_driver)
         if dialog.exec_() == QDialog.Accepted:
             df, metadata, connection_meta, session_connection = dialog.result()
             self._finalize_import(df, metadata)
@@ -785,20 +880,30 @@ class IntegrationPanel(QWidget):
                 (connection_meta or {}).get("fingerprint")
                 or (session_connection or {}).get("fingerprint")
             )
+
+    def _handle_sql_database(self):
+        self._open_database_dialog()
+
+    def _handle_postgresql_database(self):
+        self._open_database_dialog("PostgreSQL")
+
+    def _handle_postgis_database(self):
+        self._open_database_dialog("PostGIS")
+
+    def _handle_sqlserver_database(self):
+        self._open_database_dialog("SQL Server")
+
+    def _handle_oracle_database(self):
+        self._open_database_dialog("Oracle")
+
+    def _handle_mysql_database(self):
+        self._open_database_dialog("MySQL")
+
     def _handle_clipboard(self):
         dialog = ClipboardImportDialog(self)
         if dialog.exec_() == QDialog.Accepted:
             df, metadata = dialog.result()
             self._finalize_import(df, metadata)
-
-    def _handle_sample_data(self):
-        df = self._sample_dataset()
-        metadata = {
-            "connector": "Sample",
-            "display_name": "Vendas/Obras (amostra)",
-            "record_count": len(df),
-        }
-        self._finalize_import(df, metadata)
 
     def _handle_delimited_file(self):
         dialog = DelimitedFileDialog(
@@ -823,7 +928,9 @@ class IntegrationPanel(QWidget):
         if not path:
             return
         self.settings.setValue("integ/last_gpkg_dir", os.path.dirname(path))
+        self._import_geopackage_path(path)
 
+    def _import_geopackage_path(self, path: str):
         layer = QgsVectorLayer(path, os.path.basename(path), "ogr")
         if not layer or not layer.isValid():
             QMessageBox.warning(self, "GeoPackage", "Não foi possível abrir o arquivo informado.")
@@ -865,15 +972,24 @@ class IntegrationPanel(QWidget):
             QMessageBox.information(self, _rt("Conexão"), _rt("Nenhum dado encontrado para carregar."))
             return
         metadata = dict(metadata)
+        metadata.setdefault("import_target", "project")
         metadata.setdefault("record_count", len(df))
         metadata.setdefault("timestamp", QDateTime.currentDateTime().toString(Qt.ISODate))
         try:
             descriptor = self.host.register_integration_dataframe(df, metadata)
-            if descriptor:
+            if descriptor and descriptor.get("layer_id"):
                 self._store_recent(descriptor)
                 self._toast_success(
                     _rt("Dados carregados: {count} linhas.", count=descriptor.get("record_count", len(df)))
                 )
+                return
+            SlimMessageDialog(
+                _rt("Conexão"),
+                _rt("Os dados foram lidos, mas a camada não entrou no projeto do QGIS."),
+                parent=self,
+                accept_label=_rt("OK"),
+                geometry_key="Summarizer/integration/importWarning",
+            ).exec_()
         except Exception as exc:  # pragma: no cover - runtime safeguard
             QMessageBox.critical(self, _rt("Conexão"), _rt("Falha ao enviar dados para o plugin: {exc}", exc=exc))
 
@@ -886,73 +1002,6 @@ class IntegrationPanel(QWidget):
             except Exception:
                 pass
         QMessageBox.information(self, _rt("Conexão"), message)
-
-    def _sample_dataset(self) -> pd.DataFrame:
-        data = {
-            "Obra": [
-                "Linha Amarela",
-                "Parque Linear",
-                "Corredor Norte",
-                "Hospital Central",
-                "Ponte Mar Azul",
-                "Viaduto Leste",
-                "Terminal Urbano",
-                "Marginal Oeste",
-                "Centro Cultural",
-                "Campus Integrado",
-            ],
-            "Categoria": [
-                "Mobilidade",
-                "Urbanismo",
-                "Mobilidade",
-                "Saúde",
-                "Mobilidade",
-                "Mobilidade",
-                "Mobilidade",
-                "Mobilidade",
-                "Cultura",
-                "Educação",
-            ],
-            "Regional": [
-                "Zona Norte",
-                "Zona Oeste",
-                "Zona Norte",
-                "Centro",
-                "Zona Sul",
-                "Zona Leste",
-                "Zona Oeste",
-                "Zona Oeste",
-                "Centro",
-                "Zona Sul",
-            ],
-            "Valor_previsto": [12.4, 5.8, 18.1, 9.6, 23.5, 7.9, 6.2, 14.3, 4.7, 11.8],
-            "Valor_executado": [11.2, 4.3, 15.6, 9.8, 17.1, 7.4, 5.9, 13.7, 4.9, 10.5],
-            "Status": [
-                "Em andamento",
-                "Concluída",
-                "Em andamento",
-                "Em andamento",
-                "Planejada",
-                "Em andamento",
-                "Planejada",
-                "Em andamento",
-                "Concluída",
-                "Planejada",
-            ],
-            "Ultima_atualizacao": [
-                "2025-06-12",
-                "2025-05-03",
-                "2025-06-01",
-                "2025-06-10",
-                "2025-06-05",
-                "2025-05-30",
-                "2025-05-22",
-                "2025-06-09",
-                "2025-04-29",
-                "2025-05-18",
-            ],
-        }
-        return pd.DataFrame(data)
 
     def _format_timestamp(self, ts: Optional[str]) -> str:
         if not ts:
@@ -1037,6 +1086,7 @@ class ExcelImportDialog(SlimDialogBase):
         preview_btn = buttons.addButton(_rt("Pré-visualizar"), QDialogButtonBox.ActionRole)
         load_btn = buttons.addButton(_rt("Carregar"), QDialogButtonBox.AcceptRole)
         cancel_btn = buttons.addButton(QDialogButtonBox.Cancel)
+        _apply_walker_dialog_buttons(primary=[load_btn], secondary=[preview_btn, cancel_btn, browse_btn])
         layout.addWidget(buttons)
 
         preview_btn.clicked.connect(self._preview)
@@ -1154,6 +1204,7 @@ class DelimitedFileDialog(SlimDialogBase):
         preview_btn = buttons.addButton(_rt("Pré-visualizar"), QDialogButtonBox.ActionRole)
         load_btn = buttons.addButton(_rt("Carregar"), QDialogButtonBox.AcceptRole)
         cancel_btn = buttons.addButton(QDialogButtonBox.Cancel)
+        _apply_walker_dialog_buttons(primary=[load_btn], secondary=[preview_btn, cancel_btn, browse_btn])
         layout.addWidget(buttons)
 
         preview_btn.clicked.connect(self._preview)
@@ -1287,6 +1338,7 @@ class ClipboardImportDialog(SlimDialogBase):
         preview_btn = buttons.addButton(_rt("Pré-visualizar"), QDialogButtonBox.ActionRole)
         load_btn = buttons.addButton(_rt("Carregar"), QDialogButtonBox.AcceptRole)
         cancel_btn = buttons.addButton(QDialogButtonBox.Cancel)
+        _apply_walker_dialog_buttons(primary=[load_btn], secondary=[preview_btn, cancel_btn])
         layout.addWidget(buttons)
 
         self.preview_table = QTableWidget(self)
@@ -1370,8 +1422,8 @@ class DatabaseImportDialog(SlimDialogBase):
         self._last_params: Dict[str, Dict] = self._load_last_params()
         self._suspend_defaults = False
         self.setWindowTitle(_rt("Importar dados do banco de dados"))
-        self.resize(640, 520)
-        self.setMinimumWidth(620)
+        self.resize(560, 430)
+        self.setMinimumWidth(540)
         self._build_ui()
         self._apply_runtime_i18n()
 
@@ -1387,33 +1439,16 @@ class DatabaseImportDialog(SlimDialogBase):
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(10)
-        self.setStyleSheet(
-            """
-            QDialog {
-                background: #FFFFFF;
-            }
-            QLabel[role="dbLabel"] {
-                color: #1F2937;
-                font-weight: 500;
-            }
-            QLineEdit, QComboBox, QTableWidget {
-                border: 1px solid #D8DEE8;
-                border-radius: 10px;
-                background: #FFFFFF;
-            }
-            QTableWidget {
-                gridline-color: #E9EDF3;
-            }
-            """
-        )
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(8)
 
         form = QGridLayout()
-        form.setHorizontalSpacing(10)
-        form.setVerticalSpacing(8)
-        form.setColumnMinimumWidth(0, 88)
+        form.setHorizontalSpacing(8)
+        form.setVerticalSpacing(6)
+        form.setColumnMinimumWidth(0, 82)
+        form.setColumnMinimumWidth(2, 72)
         form.setColumnStretch(1, 1)
+        form.setColumnStretch(3, 1)
 
         def _field_label(text: str) -> QLabel:
             label = QLabel(_rt(text), self)
@@ -1421,10 +1456,10 @@ class DatabaseImportDialog(SlimDialogBase):
             return label
 
         self.driver_combo = QComboBox(self)
-        self.driver_combo.addItems(["PostgreSQL", "SQL Server"])
+        self.driver_combo.addItems(["PostgreSQL", "PostGIS", "SQL Server", "Oracle", "MySQL"])
         self.driver_combo.currentTextChanged.connect(self._on_driver_changed)
-        form.addWidget(_field_label("Banco de dados:"), 0, 0)
-        form.addWidget(self.driver_combo, 0, 1)
+        form.addWidget(_field_label("Conector:"), 0, 0)
+        form.addWidget(self.driver_combo, 0, 1, 1, 3)
 
         self.host_edit = QLineEdit(self)
         self.host_edit.setPlaceholderText("servidor.empresa.com")
@@ -1433,21 +1468,21 @@ class DatabaseImportDialog(SlimDialogBase):
 
         self.port_edit = QLineEdit(self)
         self.port_edit.setPlaceholderText("5432 ou 1433…")
-        form.addWidget(_field_label("Porta:"), 2, 0)
-        form.addWidget(self.port_edit, 2, 1)
+        form.addWidget(_field_label("Porta:"), 1, 2)
+        form.addWidget(self.port_edit, 1, 3)
 
         self.database_edit = QLineEdit(self)
-        form.addWidget(_field_label("Banco:"), 3, 0)
-        form.addWidget(self.database_edit, 3, 1)
+        form.addWidget(_field_label("Banco:"), 2, 0)
+        form.addWidget(self.database_edit, 2, 1, 1, 3)
 
         self.user_edit = QLineEdit(self)
-        form.addWidget(_field_label("Usuário:"), 4, 0)
-        form.addWidget(self.user_edit, 4, 1)
+        form.addWidget(_field_label("Usuário:"), 3, 0)
+        form.addWidget(self.user_edit, 3, 1)
 
         self.password_edit = QLineEdit(self)
         self.password_edit.setEchoMode(QLineEdit.Password)
-        form.addWidget(_field_label("Senha:"), 5, 0)
-        form.addWidget(self.password_edit, 5, 1)
+        form.addWidget(_field_label("Senha:"), 3, 2)
+        form.addWidget(self.password_edit, 3, 3)
 
         layout.addLayout(form)
 
@@ -1478,12 +1513,17 @@ class DatabaseImportDialog(SlimDialogBase):
         layout.addWidget(self.tables_combo)
 
         self.preview_table = QTableWidget(self)
+        self.preview_table.setMinimumHeight(128)
         layout.addWidget(self.preview_table, 1)
 
         buttons = QDialogButtonBox(self)
         preview_btn = buttons.addButton(_rt("Pré-visualizar"), QDialogButtonBox.ActionRole)
         load_btn = buttons.addButton(_rt("Carregar"), QDialogButtonBox.AcceptRole)
         cancel_btn = buttons.addButton(QDialogButtonBox.Cancel)
+        _apply_walker_dialog_buttons(
+            primary=[load_btn],
+            secondary=[preview_btn, cancel_btn, self.test_btn, self.browser_sync_btn],
+        )
         layout.addWidget(buttons)
 
         preview_btn.clicked.connect(lambda: self._retrieve(preview=True))
@@ -1515,15 +1555,27 @@ class DatabaseImportDialog(SlimDialogBase):
         try:
             port = int(self.port_edit.text().strip())
         except ValueError:
-            port = 5432 if driver == "PostgreSQL" else 1433
+            port = self._default_port_for_driver(driver)
+        normalized_driver = "PostgreSQL" if driver == "PostGIS" else driver
         return {
-            "driver": driver,
+            "driver": normalized_driver,
+            "source_driver": driver,
             "host": self.host_edit.text().strip(),
             "port": port,
             "database": self.database_edit.text().strip(),
             "user": self.user_edit.text().strip(),
             "password": self.password_edit.text(),
         }
+
+    def _default_port_for_driver(self, driver: str) -> int:
+        mapping = {
+            "PostgreSQL": 5432,
+            "PostGIS": 5432,
+            "SQL Server": 1433,
+            "Oracle": 1521,
+            "MySQL": 3306,
+        }
+        return int(mapping.get(driver, 5432))
 
     def _load_last_params(self) -> Dict[str, Dict]:
         raw = self.settings.value(LAST_DB_PARAMS_KEY, "")
@@ -1539,6 +1591,7 @@ class DatabaseImportDialog(SlimDialogBase):
 
     def _remember_last_params(self, params: Dict):
         driver = params.get("driver")
+        source_driver = params.get("source_driver")
         if not driver:
             return
         record = {
@@ -1549,6 +1602,8 @@ class DatabaseImportDialog(SlimDialogBase):
             "password": params.get("password", ""),
         }
         self._last_params[driver] = record
+        if source_driver:
+            self._last_params[source_driver] = record
         try:
             self.settings.setValue(LAST_DB_PARAMS_KEY, json.dumps(self._last_params))
         except Exception:
@@ -1576,7 +1631,7 @@ class DatabaseImportDialog(SlimDialogBase):
 
     def _build_connection_payload(self, params: Dict) -> Dict:
         payload = {
-            "driver": params.get("driver"),
+            "driver": params.get("source_driver") or params.get("driver"),
             "host": params.get("host"),
             "port": params.get("port"),
             "database": params.get("database"),
@@ -1608,15 +1663,20 @@ class DatabaseImportDialog(SlimDialogBase):
 
         conn_name = f"integ_{id(self)}_{QDateTime.currentMSecsSinceEpoch()}"
         driver = params.get("driver")
+        available_drivers = set(QSqlDatabase.drivers())
 
         if driver == "PostgreSQL":
+            if "QPSQL" not in available_drivers:
+                return False, _rt("Driver PostgreSQL (QPSQL) não está disponível nesta instalação.")
             db = QSqlDatabase.addDatabase("QPSQL", conn_name)
             db.setHostName(params.get("host"))
             db.setPort(params.get("port") or 5432)
             db.setDatabaseName(params.get("database"))
             db.setUserName(params.get("user"))
             db.setPassword(params.get("password"))
-        else:
+        elif driver == "SQL Server":
+            if "QODBC" not in available_drivers:
+                return False, _rt("Driver SQL Server (QODBC) não está disponível nesta instalação.")
             db = QSqlDatabase.addDatabase("QODBC", conn_name)
             connection_string = (
                 "Driver={ODBC Driver 17 for SQL Server};"
@@ -1626,6 +1686,26 @@ class DatabaseImportDialog(SlimDialogBase):
                 f"Pwd={params.get('password')};"
             )
             db.setDatabaseName(connection_string)
+        elif driver == "Oracle":
+            if "QOCI" not in available_drivers:
+                return False, _rt("Driver Oracle (QOCI) não está disponível nesta instalação.")
+            db = QSqlDatabase.addDatabase("QOCI", conn_name)
+            db.setHostName(params.get("host"))
+            db.setPort(params.get("port") or 1521)
+            db.setDatabaseName(params.get("database"))
+            db.setUserName(params.get("user"))
+            db.setPassword(params.get("password"))
+        elif driver == "MySQL":
+            if "QMYSQL" not in available_drivers:
+                return False, _rt("Driver MySQL (QMYSQL) não está disponível nesta instalação.")
+            db = QSqlDatabase.addDatabase("QMYSQL", conn_name)
+            db.setHostName(params.get("host"))
+            db.setPort(params.get("port") or 3306)
+            db.setDatabaseName(params.get("database"))
+            db.setUserName(params.get("user"))
+            db.setPassword(params.get("password"))
+        else:
+            return False, _rt("Conector de banco de dados não suportado nesta instalação.")
 
         if not db.open():
             error = db.lastError().text()
@@ -1645,9 +1725,22 @@ class DatabaseImportDialog(SlimDialogBase):
                 "WHERE table_type = 'BASE TABLE' "
                 "ORDER BY 1"
             )
-        else:
+        elif driver == "SQL Server":
             query.exec_(
                 "SELECT TABLE_SCHEMA + '.' + TABLE_NAME "
+                "FROM INFORMATION_SCHEMA.TABLES "
+                "WHERE TABLE_TYPE = 'BASE TABLE' "
+                "ORDER BY 1"
+            )
+        elif driver == "Oracle":
+            query.exec_(
+                "SELECT OWNER || '.' || TABLE_NAME "
+                "FROM ALL_TABLES "
+                "ORDER BY 1"
+            )
+        else:
+            query.exec_(
+                "SELECT CONCAT(TABLE_SCHEMA, '.', TABLE_NAME) "
                 "FROM INFORMATION_SCHEMA.TABLES "
                 "WHERE TABLE_TYPE = 'BASE TABLE' "
                 "ORDER BY 1"
@@ -1668,18 +1761,61 @@ class DatabaseImportDialog(SlimDialogBase):
         parts = [part.strip() for part in value.split(".") if part.strip()]
         if len(parts) not in (1, 2):
             return None
-        if driver == "PostgreSQL":
+        if driver in ("PostgreSQL", "Oracle"):
             quoted_parts = []
             for part in parts:
                 quoted_parts.append('"{}"'.format(part.replace('"', '""')))
             return ".".join(quoted_parts)
+        if driver == "MySQL":
+            return ".".join(f"`{part.replace('`', '``')}`" for part in parts)
         return ".".join(f'[{part.replace("]", "]]")}]' for part in parts)
+
+    def _split_table_name(self, table_name: str) -> Tuple[str, str]:
+        value = str(table_name or "").strip()
+        parts = [part.strip() for part in value.split(".") if part.strip()]
+        if len(parts) >= 2:
+            return parts[0], parts[1]
+        if len(parts) == 1:
+            return "", parts[0]
+        return "", ""
+
+    def _detect_postgres_geometry(self, db, table_name: str) -> Dict:
+        schema, name = self._split_table_name(table_name)
+        if not name or QSqlQuery is None:
+            return {}
+        if not schema:
+            schema = "public"
+        safe_schema = schema.replace("'", "''")
+        safe_name = name.replace("'", "''")
+        query = QSqlQuery(db)
+        sql = (
+            "SELECT f_geometry_column, srid, type "
+            "FROM public.geometry_columns "
+            f"WHERE f_table_schema = '{safe_schema}' "
+            f"AND f_table_name = '{safe_name}' "
+            "LIMIT 1"
+        )
+        if not query.exec_(sql):
+            return {}
+        if not query.next():
+            return {}
+        return {
+            "schema": schema,
+            "table_name": name,
+            "geometry_column": str(query.value(0) or ""),
+            "srid": int(query.value(1) or 0),
+            "geometry_type": str(query.value(2) or ""),
+        }
 
     def _build_select_sql(self, quoted_table: str, driver: str, preview: bool) -> str:
         if not preview:
             # Table identifiers are selected from metadata and quoted per driver.
             return f"SELECT * FROM {quoted_table}"  # nosec B608
         if driver == "PostgreSQL":
+            return f"SELECT * FROM {quoted_table} LIMIT 120"  # nosec B608
+        if driver == "Oracle":
+            return f"SELECT * FROM {quoted_table} WHERE ROWNUM <= 120"  # nosec B608
+        if driver == "MySQL":
             return f"SELECT * FROM {quoted_table} LIMIT 120"  # nosec B608
         return f"SELECT TOP 120 * FROM {quoted_table}"  # nosec B608
 
@@ -1729,12 +1865,29 @@ class DatabaseImportDialog(SlimDialogBase):
             if preview:
                 self._fill_preview(df)
             else:
+                spatial_meta = {}
+                source_driver = params.get("source_driver") or params["driver"]
+                if source_driver in ("PostgreSQL", "PostGIS"):
+                    spatial_meta = self._detect_postgres_geometry(db, table)
                 self._df = df
                 self._metadata = {
-                    "connector": params["driver"],
+                    "connector": source_driver,
                     "display_name": table,
                     "database": params["database"],
                     "host": params["host"],
+                    "table_name": spatial_meta.get("table_name") or self._split_table_name(table)[1],
+                    "schema": spatial_meta.get("schema") or self._split_table_name(table)[0],
+                    "geometry_column": spatial_meta.get("geometry_column", ""),
+                    "geometry_type": spatial_meta.get("geometry_type", ""),
+                    "db_connection": {
+                        "driver": params["driver"],
+                        "source_driver": source_driver,
+                        "host": params.get("host", ""),
+                        "port": params.get("port", 5432),
+                        "database": params.get("database", ""),
+                        "user": params.get("user", ""),
+                        "password": params.get("password", ""),
+                    },
                 }
                 self._session_connection = self._build_connection_payload(params)
                 if self.remember_box.isChecked():
@@ -1820,6 +1973,7 @@ class GoogleSheetsDialog(SlimDialogBase):
         preview_btn = buttons.addButton(_rt("Pré-visualizar"), QDialogButtonBox.ActionRole)
         load_btn = buttons.addButton(_rt("Carregar"), QDialogButtonBox.AcceptRole)
         cancel_btn = buttons.addButton(QDialogButtonBox.Cancel)
+        _apply_walker_dialog_buttons(primary=[load_btn], secondary=[preview_btn, cancel_btn])
         layout.addWidget(buttons)
 
         self.preview_table = QTableWidget(self)
@@ -1868,22 +2022,31 @@ class GoogleSheetsDialog(SlimDialogBase):
 class ExtendedConnectorsDialog(SlimDialogBase):
     def __init__(self, connectors: Dict[str, ConnectorConfig], parent: QWidget):
         super().__init__(parent, geometry_key="Summarizer/integration/extendedConnectors")
-        self.setWindowTitle("Conectores disponíveis")
-        self.resize(520, 360)
+        self.setWindowTitle("Catálogo de fontes disponíveis")
+        self.resize(760, 420)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(18, 18, 18, 18)
         layout.setSpacing(12)
 
         info = QLabel(
-            "Lista completa de conectores suportados pelo plugin. Recursos opcionais podem exigir configuração adicional.",
+            "Lista completa de fontes suportadas pelo plugin. Algumas exigem configuração adicional, mas todas refletem cenários úteis para o ecossistema QGIS.",
             self,
         )
         info.setWordWrap(True)
         layout.addWidget(info)
 
         lst = QListWidget(self)
+        category_labels = {
+            "files": "Arquivos",
+            "database": "Banco de dados",
+            "spatial": "Espacial",
+            "web": "Web",
+            "quick": "Rápido",
+            "primary": "Geral",
+        }
         for config in connectors.values():
-            item = QListWidgetItem(f"{config.title} • {config.microcopy}")
+            category = category_labels.get(config.category, "Geral")
+            item = QListWidgetItem(f"[{category}] {config.title} • {config.microcopy}")
             item.setToolTip(config.description or config.caption)
             lst.addItem(item)
         layout.addWidget(lst, 1)

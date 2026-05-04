@@ -44,12 +44,18 @@ class DashboardProjectStore:
         if directory:
             os.makedirs(directory, exist_ok=True)
 
+        base_name = os.path.splitext(os.path.basename(final_path))[0]
+        if base_name:
+            try:
+                project.name = str(base_name)
+            except Exception:
+                pass
         payload = project.to_dict()
         with open(final_path, "w", encoding="utf-8") as handler:
             json.dump(payload, handler, ensure_ascii=False, indent=2)
 
         self.settings.setValue(LAST_DIR_SETTINGS_KEY, directory or self.default_directory())
-        self.record_recent_project(final_path, project.name)
+        self.record_recent_project(final_path, base_name or project.name)
         return final_path
 
     def load_project(self, path: str) -> DashboardProject:

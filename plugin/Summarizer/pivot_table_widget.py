@@ -931,6 +931,7 @@ class PivotTableWidget(QWidget):
         self.edit_mode_btn.setCheckable(True)
         self.edit_mode_btn.setChecked(True)
         self.sidebar_toggle_btn = self.edit_mode_btn
+        self.clear_filters_btn.setProperty("variant", "secondary")
 
         for button in (
             self.undo_btn,
@@ -1008,6 +1009,18 @@ class PivotTableWidget(QWidget):
             }
             QPushButton#summaryToolbarButton:disabled {
                 color: #C7CDD6;
+            }
+            QPushButton[variant="secondary"] {
+                background: #FFFFFF;
+                border: 1px solid #D1D5DB;
+                color: #111827;
+                border-radius: 8px;
+                padding: 0 12px;
+                min-height: 30px;
+            }
+            QPushButton[variant="secondary"]:hover {
+                background: #F9FAFB;
+                border-color: #9CA3AF;
             }
             QLineEdit#summarySearch {
                 min-height: 30px;

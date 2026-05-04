@@ -427,6 +427,11 @@ class ModelTab(QWidget):
         self.mode_toggle.setToolTip(_rt("Alternar entre modo de edição e pré-visualização"))
         mode_layout.addWidget(self.mode_state_label, 0)
         mode_layout.addWidget(self.mode_toggle, 0)
+        self.clear_filters_btn = QPushButton(_rt("Limpar filtros"))
+        self.clear_filters_btn.setObjectName("ModelActionButton")
+        self.clear_filters_btn.setVisible(False)
+        self.clear_filters_btn.clicked.connect(self._clear_model_filters)
+        toolbar_layout.addWidget(self.clear_filters_btn, 0)
         toolbar_layout.addWidget(self.mode_switch_wrap, 0)
         toolbar_layout.addSpacing(8)
         toolbar_layout.addWidget(self.close_project_btn, 0)
@@ -454,10 +459,7 @@ class ModelTab(QWidget):
         self.filters_label.setObjectName("ModelFiltersLabel")
         self.filters_label.setWordWrap(True)
         filters_layout.addWidget(self.filters_label, 1)
-        self.clear_filters_btn = QPushButton(_rt("Limpar filtros"))
-        self.clear_filters_btn.setObjectName("ModelActionButton")
-        self.clear_filters_btn.clicked.connect(self._clear_model_filters)
-        filters_layout.addWidget(self.clear_filters_btn, 0)
+        self.filters_bar.setVisible(False)
         root.addWidget(self.filters_bar, 0)
 
         self.body_stack = QStackedWidget(self)
@@ -846,6 +848,14 @@ class ModelTab(QWidget):
                 max-height: 30px;
                 padding: 0;
             }
+            QPushButton#ModelToolbarButton[toolbarMode="label"] {
+                min-width: 78px;
+                max-width: 78px;
+                min-height: 30px;
+                max-height: 30px;
+                padding: 0 10px;
+                text-align: left;
+            }
             QPushButton#ModelZoomButton {
                 min-height: 16px;
                 color: #374151;
@@ -1113,6 +1123,14 @@ class ModelTab(QWidget):
         if isinstance(button, QToolButton):
             button.setToolButtonStyle(Qt.ToolButtonIconOnly)
             button.setAutoRaise(False)
+
+    def _configure_toolbar_text_icon_button(self, button, icon_name: str, text: str, tooltip: str, icon_size: int = 18):
+        self._configure_toolbar_icon_button(button, icon_name, tooltip, icon_size=icon_size)
+        button.setProperty("toolbarMode", "label")
+        try:
+            button.setText(text)
+        except Exception:
+            pass
 
     def _create_toolbar_separator(self, parent: QWidget) -> QFrame:
         separator = QFrame(parent)
@@ -2673,6 +2691,19 @@ class ModelTab(QWidget):
             button.setVisible(show_project_actions)
         self.create_chart_btn.setVisible(show_project_actions and bool(self.edit_mode_btn.isChecked()))
         self.mode_switch_wrap.setVisible(show_project_actions)
+        if has_project:
+            self._configure_toolbar_icon_button(self.new_btn, "Walker-New.svg", _rt("Novo"))
+            self._configure_toolbar_icon_button(self.open_btn, "Walker-Open.svg", _rt("Abrir"))
+        else:
+            self._configure_toolbar_text_icon_button(self.new_btn, "Walker-New.svg", _rt("Novo"), _rt("Novo"))
+            self._configure_toolbar_text_icon_button(self.open_btn, "Walker-Open.svg", _rt("Abrir"), _rt("Abrir"))
+        try:
+            self.new_btn.style().unpolish(self.new_btn)
+            self.new_btn.style().polish(self.new_btn)
+            self.open_btn.style().unpolish(self.open_btn)
+            self.open_btn.style().polish(self.open_btn)
+        except Exception:
+            pass
         self._update_undo_redo_buttons()
 
     def _handle_canvas_changed(self, page_id: Optional[str] = None):
@@ -2700,24 +2731,13 @@ class ModelTab(QWidget):
         summary = summary or {"items": [], "count": 0}
         items = list(summary.get("items") or [])
         if not self.edit_mode_btn.isChecked() or not items:
-            self.filters_label.setText(_rt("Filtros ativos: nenhum"))
+            self.filters_label.clear()
+            self.clear_filters_btn.setVisible(False)
             self.filters_bar.setVisible(False)
             return
-        parts = []
-        for item in items:
-            source_name = str(item.get("source_name") or "")
-            field = str(item.get("field") or "")
-            label = str(item.get("label") or field or item.get("filter_key") or source_name or _rt("Filtro"))
-            values = [str(value) for value in list(item.get("values") or []) if str(value).strip()]
-            value_text = ", ".join(values) if values else _rt("seleção ativa")
-            if source_name and source_name != label:
-                parts.append(f"{label} ({source_name}) = {value_text}")
-            elif field:
-                parts.append(f"{label} = {value_text}")
-            else:
-                parts.append(f"{label}: {value_text}")
-        self.filters_label.setText(_rt("Filtros ativos: ") + " | ".join(parts))
-        self.filters_bar.setVisible(True)
+        self.filters_label.clear()
+        self.clear_filters_btn.setVisible(True)
+        self.filters_bar.setVisible(False)
 
     def _clear_model_filters(self):
         try:
@@ -2744,7 +2764,7 @@ class ModelTab(QWidget):
         self.recents_container.setVisible(True)
         for recent in recents:
             path = str(recent.get("path") or "")
-            name = str(recent.get("name") or os.path.splitext(os.path.basename(path))[0])
+            name = str(os.path.splitext(os.path.basename(path))[0] or recent.get("name") or "")
             card = _ModelRecentCard(name, path, self.recents_container)
             card.setMinimumHeight(68)
             card.clicked.connect(lambda selected_path=path: self.open_project(selected_path))

@@ -232,8 +232,12 @@ QPushButton[navIcon="true"]:checked,
 QToolButton[navIcon="true"]:checked {
     background: #FFFFFF;
     border: none;
-    padding-left: 6px;
-    border-left: 3px solid ${color_brand};
+    padding-left: 4px;
+}
+
+#sidebarActiveIndicator {
+    background: ${color_brand};
+    border-radius: 1px;
 }
 
 /* Tables and lists --------------------------------------------------------- */
@@ -328,8 +332,9 @@ QProgressBar::chunk {
 
 /* Tooltip ------------------------------------------------------------------ */
 QToolTip {
-    background-color: ${color_text_primary};
+    background-color: #111827;
     color: #ffffff;
+    border: 1px solid #111827;
     border-radius: 6px;
     padding: 6px 8px;
     font-size: ${font_caption_px}px;

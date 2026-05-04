@@ -32,7 +32,7 @@ QDialog#SlimDialog {
 }
 QLabel {
     color: #0F172A;
-    font-size: 12px;
+    font-size: 11px;
 }
 QLabel[sublabel="true"] {
     color: #475569;
@@ -43,11 +43,11 @@ QLabel[caption="true"] {
     font-size: 11px;
 }
 QLineEdit, QComboBox, QSpinBox {
-    min-height: 36px;
+    min-height: 34px;
     border: 1px solid #E2E8F0;
-    border-radius: 12px;
-    padding: 0 12px;
-    font-size: 12.5px;
+    border-radius: 8px;
+    padding: 0 10px;
+    font-size: 11px;
     background-color: #FFFFFF;
     color: #0F172A;
     selection-background-color: rgba(90, 63, 230, 0.18);
@@ -61,17 +61,17 @@ QComboBox::drop-down {
 }
 QComboBox QAbstractItemView {
     border: 1px solid #E2E8F0;
-    border-radius: 12px;
+    border-radius: 8px;
     background-color: #FFFFFF;
     selection-background-color: rgba(90, 63, 230, 0.12);
     padding: 6px;
 }
 QPushButton {
-    min-height: 34px;
+    min-height: 32px;
     border: 1px solid #E2E8F0;
-    border-radius: 12px;
-    padding: 0 14px;
-    font-size: 12px;
+    border-radius: 8px;
+    padding: 0 12px;
+    font-size: 11px;
     font-weight: 400;
     background-color: #FFFFFF;
     color: #0F172A;
@@ -81,14 +81,14 @@ QPushButton:hover {
     border-color: #CBD5E1;
 }
 QPushButton#SlimPrimaryButton {
-    border: 1px solid #D1D5DB;
-    background-color: #FFFFFF;
-    color: #111827;
-    font-weight: 500;
+    border: 1px solid #111827;
+    background-color: #111827;
+    color: #FFFFFF;
+    font-weight: 600;
 }
 QPushButton#SlimPrimaryButton:hover {
-    background-color: #F9FAFB;
-    border-color: #9CA3AF;
+    background-color: #1F2937;
+    border-color: #1F2937;
 }
 QPushButton#SlimSecondaryButton {
     background-color: #FFFFFF;
@@ -99,10 +99,10 @@ QPushButton#SlimSecondaryButton:hover {
 }
 QListWidget {
     border: 1px solid #E2E8F0;
-    border-radius: 14px;
+    border-radius: 8px;
     padding: 6px;
     alternate-background-color: #F9FAFB;
-    font-size: 12px;
+    font-size: 11px;
 }
 QListWidget::item {
     height: 28px;
@@ -178,11 +178,11 @@ QLabel#SlimPopoverIcon {
     background: transparent;
 }
 QLineEdit#SlimDialogLineEdit {
-    min-height: 38px;
+    min-height: 34px;
     border: 1px solid #E2E8F0;
-    border-radius: 12px;
-    padding: 0 12px;
-    font-size: 13px;
+    border-radius: 8px;
+    padding: 0 10px;
+    font-size: 11px;
     background: #FFFFFF;
     color: #0F172A;
     selection-background-color: rgba(90, 63, 230, 0.18);
@@ -191,27 +191,27 @@ QLineEdit#SlimDialogLineEdit:focus {
     border: 1px solid #8B7CF6;
 }
 QPushButton#SlimPrimaryButton {
-    min-height: 34px;
-    border: 1px solid #D1D5DB;
-    border-radius: 12px;
-    padding: 0 14px;
-    background: #FFFFFF;
-    color: #111827;
-    font-size: 12px;
-    font-weight: 500;
+    min-height: 32px;
+    border: 1px solid #111827;
+    border-radius: 8px;
+    padding: 0 12px;
+    background: #111827;
+    color: #FFFFFF;
+    font-size: 11px;
+    font-weight: 600;
 }
 QPushButton#SlimPrimaryButton:hover {
-    background: #F9FAFB;
-    border-color: #9CA3AF;
+    background: #1F2937;
+    border-color: #1F2937;
 }
 QPushButton#SlimSecondaryButton {
-    min-height: 34px;
+    min-height: 32px;
     border: 1px solid #E2E8F0;
-    border-radius: 12px;
-    padding: 0 14px;
+    border-radius: 8px;
+    padding: 0 12px;
     background: #FFFFFF;
     color: #111827;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 400;
 }
 QPushButton#SlimSecondaryButton:hover {
@@ -244,7 +244,7 @@ def _build_dialog_font() -> QFont:
             base_size = 10.0
     except Exception:
         base_size = 10.0
-    font.setPointSizeF(max(10.0, base_size * 1.03))
+    font.setPointSizeF(max(9.5, base_size))
     return font
 
 
@@ -502,7 +502,7 @@ class SlimMessageDialog(SlimPopoverDialog):
         actions.addStretch(1)
 
         self.accept_button = QPushButton(accept_label, self.panel)
-        self.accept_button.setObjectName("SlimSecondaryButton")
+        self.accept_button.setObjectName("SlimPrimaryButton")
         self.accept_button.setDefault(True)
         actions.addWidget(self.accept_button, 0)
         self.panel_layout.addLayout(actions)

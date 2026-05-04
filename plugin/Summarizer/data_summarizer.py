@@ -18,8 +18,6 @@ from qgis.PyQt.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
     QLabel,
-    QListWidget,
-    QListWidgetItem,
     QMessageBox,
     QMenu,
     QPushButton,
@@ -65,7 +63,6 @@ from .browser_integration import (
     connection_registry,
 )
 from .model_view import ModelCanvasScene, ModelCanvasView, ModelManager
-from .cloud_session import cloud_session
 from .report_view import ReportsWidget
 from .utils.fonts import ensure_ui_fonts_registered
 from .utils.plugin_logging import log_error
@@ -248,7 +245,7 @@ class Summarizer:
         # Add Integration menu action (standalone page)
         self.integration_action = QAction(
             plugin_icon,
-            self.tr("Integração / Fontes Externas"),
+            self.tr("Conexão"),
             self.iface.mainWindow(),
         )
         self.integration_action.triggered.connect(self.open_integration_dialog)
@@ -298,7 +295,7 @@ class Summarizer:
                 except Exception:
                     pass
         except Exception as exc:
-            QMessageBox.critical(self.iface.mainWindow(), "Integração", f"Falha ao abrir: {exc}")
+            QMessageBox.critical(self.iface.mainWindow(), "Conexão", f"Falha ao abrir: {exc}")
 
     # Exposed to SidebarController to open the in-dialog full page
     def open_external_integration_dialog(self):
@@ -310,7 +307,7 @@ class Summarizer:
             if hasattr(self.dlg, "sidebar") and self.dlg.sidebar:
                 self.dlg.sidebar.show_integration_page()
         except Exception as exc:
-            QMessageBox.critical(self, "Integração", f"Falha ao abrir: {exc}")
+            QMessageBox.critical(self, "Conexão", f"Falha ao abrir: {exc}")
 
     def _get_layer_by_name(self, layer_name: str):
         """Retorna a primeira camada cujo nome corresponde exatamente ao informado."""
@@ -536,9 +533,6 @@ class SummarizerDialog(QDialog):
             scroll.setWidget(panel)
             self.integration_panel = panel
 
-            manage_btn = getattr(self.ui, "manage_connections_btn", None)
-            if manage_btn is not None:
-                manage_btn.clicked.connect(panel.open_connections_manager)
         except Exception:
             self.integration_panel = None
         try:
@@ -771,8 +765,6 @@ class SummarizerDialog(QDialog):
             self.on_export_format_changed
         )
         self.ui.export_path_edit.editingFinished.connect(self.on_export_path_edited)
-        self.ui.footer_about_btn.clicked.connect(self.show_about_dialog)
-
         # External integration connections removed (handled by dedicated dialog)
 
     def _set_results_view(self, mode: str):
@@ -806,7 +798,6 @@ class SummarizerDialog(QDialog):
 
     def show_summary_prompt(self):
         self._set_ribbon_visible(False)
-        self._set_integration_footer_visible(False)
         pivot = getattr(self, "pivot_widget", None)
         if pivot is not None:
             try:
@@ -840,11 +831,6 @@ class SummarizerDialog(QDialog):
                 pass
         self._active_numeric_field = None
 
-    def _set_integration_footer_visible(self, visible: bool):
-        btn = getattr(self.ui, "manage_connections_btn", None)
-        if btn is not None:
-            btn.setVisible(bool(visible))
-
     def show_integration_page(self):
         self._set_ribbon_visible(False)
         try:
@@ -861,7 +847,6 @@ class SummarizerDialog(QDialog):
                 scroll.verticalScrollBar().setValue(0)
             except Exception:
                 pass
-        self._set_integration_footer_visible(True)
         panel = getattr(self, "integration_panel", None)
         if panel is not None:
             try:
@@ -966,7 +951,6 @@ class SummarizerDialog(QDialog):
                 pass
 
         self.sidebar.show_results_page()
-        self._set_integration_footer_visible(False)
         return descriptor
 
     def _build_dataframe_summary(self, df: pd.DataFrame, descriptor: Dict) -> Dict:
@@ -1568,7 +1552,6 @@ class SummarizerDialog(QDialog):
         return summary
 
     def display_advanced_summary(self, summary_data):
-        self._set_integration_footer_visible(False)
         pivot = getattr(self, "pivot_widget", None)
         if pivot is not None:
             try:
@@ -2117,24 +2100,6 @@ class SummarizerDialog(QDialog):
                 "\n".join(summary_lines + [""] + detail_lines),
             )
 
-    def open_cloud_upload_tab(self):
-        """Open the Cloud dialog focusing the upload tab (admin only)."""
-        try:
-            from .cloud_dialogs import open_cloud_dialog
-            from .cloud_session import cloud_session
-
-            if not cloud_session.is_authenticated() or not cloud_session.is_admin():
-                QMessageBox.information(
-                    self,
-                "Summarizer Cloud",
-                    "Somente administradores conectados podem enviar camadas para o Cloud.",
-                )
-                return
-            open_cloud_dialog(self, initial_tab="upload")
-        except Exception:
-            # Safe fallback: ignore failures to open the dialog
-            pass
-
     def _prompt_layers_export_directory(self):
         settings = QSettings()
         last_dir = settings.value("Summarizer/export/gpkgDir", "")
@@ -2502,7 +2467,7 @@ class GetDataDialog(QDialog):
         layout.setSpacing(10)
 
         info = QLabel(
-            _rt_runtime("Escolha a fonte de dados (PostgreSQL ou Summarizer Cloud). ")
+            _rt_runtime("Escolha a fonte de dados disponível para importar.")
             + _rt_runtime("As tabelas selecionadas serão adicionadas ao modelo sem abrir camadas no mapa.")
         )
         info.setWordWrap(True)
@@ -2510,7 +2475,6 @@ class GetDataDialog(QDialog):
 
         self.source_combo = QComboBox(self)
         self.source_combo.addItem(_rt_runtime("PostgreSQL / SQL"), "database")
-        self.source_combo.addItem(_rt_runtime("Summarizer Cloud"), "cloud")
         self.source_combo.currentIndexChanged.connect(self._on_source_changed)
         layout.addWidget(self.source_combo)
 
@@ -2533,40 +2497,11 @@ class GetDataDialog(QDialog):
         self.db_import_btn.clicked.connect(self._open_db_dialog)
         self.stack.addWidget(db_page)
 
-        # Página Cloud
-        cloud_page = QFrame(self)
-        cloud_layout = QVBoxLayout(cloud_page)
-        cloud_layout.setContentsMargins(0, 0, 0, 0)
-        cloud_layout.setSpacing(8)
-        cloud_layout.addWidget(QLabel(_rt_runtime("Selecione camadas disponíveis no Summarizer Cloud:")))
-        self.cloud_list = QListWidget(cloud_page)
-        self.cloud_list.setSelectionMode(QListWidget.MultiSelection)
-        cloud_layout.addWidget(self.cloud_list, 1)
-        cloud_buttons = QHBoxLayout()
-        cloud_buttons.setSpacing(6)
-        self.cloud_refresh_btn = QPushButton(_rt_runtime("Atualizar"))
-        self.cloud_refresh_btn.setProperty("variant", "ghost")
-        self.cloud_load_btn = QPushButton(_rt_runtime("Carregar selecionados"))
-        for btn in (self.cloud_refresh_btn, self.cloud_load_btn):
-            btn.setCursor(Qt.PointingHandCursor)
-        cloud_buttons.addWidget(self.cloud_refresh_btn)
-        cloud_buttons.addStretch(1)
-        cloud_buttons.addWidget(self.cloud_load_btn)
-        cloud_layout.addLayout(cloud_buttons)
-        self.cloud_status = QLabel("")
-        self.cloud_status.setProperty("role", "helper")
-        cloud_layout.addWidget(self.cloud_status)
-        cloud_layout.addStretch(1)
-        self.cloud_refresh_btn.clicked.connect(self._populate_cloud_layers)
-        self.cloud_load_btn.clicked.connect(self._load_selected_cloud_layers)
-        self.stack.addWidget(cloud_page)
-
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, self)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
-        self._populate_cloud_layers()
         self._on_source_changed(0)
         _apply_i18n_widgets(self)
 
@@ -2601,51 +2536,6 @@ class GetDataDialog(QDialog):
                 connection_registry.register_runtime_connection(session_connection)
             except Exception:
                 pass
-
-    def _populate_cloud_layers(self):
-        self.cloud_list.clear()
-        connections = cloud_session.cloud_connections()
-        total_layers = 0
-        for conn in connections:
-            conn_name = conn.get("name") or conn.get("id") or "Conexão"
-            for layer_payload in conn.get("layers", []):
-                label = f"{conn_name} - {layer_payload.get('name', layer_payload.get('id', _rt_runtime('Camada')))}"
-                item = QListWidgetItem(label)
-                item.setData(Qt.UserRole, layer_payload)
-                self.cloud_list.addItem(item)
-                total_layers += 1
-        self.cloud_status.setText(
-            _rt_runtime("{total_layers} camada(s) disponíveis.", total_layers=total_layers)
-        )
-
-    def _load_selected_cloud_layers(self):
-        selected = self.cloud_list.selectedItems()
-        if not selected:
-            QMessageBox.information(self, _rt_runtime("Cloud"), _rt_runtime("Selecione ao menos uma camada."))
-            return
-        loaded = 0
-        for item in selected:
-            payload = item.data(Qt.UserRole) or {}
-            source = payload.get("source") or payload.get("uri") or ""
-            provider = payload.get("provider") or "ogr"
-            if not source:
-                continue
-            layer_name = payload.get("name") or payload.get("id") or _rt_runtime("Camada")
-            layer = QgsVectorLayer(source, layer_name, provider)
-            if not layer.isValid():
-                continue
-            df = _vector_layer_to_dataframe(layer)
-            if df is None:
-                continue
-            metadata = {
-                "connector": _rt_runtime("Summarizer Cloud"),
-                "display_name": layer_name,
-                "source_path": source,
-                "record_count": len(df),
-            }
-            self._datasets.append((df, metadata))
-            loaded += 1
-        self.cloud_status.setText(_rt_runtime("{loaded} camada(s) carregadas.", loaded=loaded))
 
     # ------------------------------------------------------------------ API
     def results(self) -> List:

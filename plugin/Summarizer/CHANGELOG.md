@@ -4,5 +4,5 @@
 
 - Finalized the public release branding as `Summarizer`.
 - Standardized the distributable package so the ZIP root contains only `Summarizer/`.
-- Clarified optional cloud and AI-assisted dependencies in the public documentation.
+- Clarified optional AI-assisted dependencies in the public documentation.
 - Kept the plugin logic and QGIS runtime flow unchanged for release publication.

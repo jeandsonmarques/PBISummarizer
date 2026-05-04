@@ -189,11 +189,6 @@ _TOOLBAR_SVG_ICONS = {
 <path d="M46.5 21.5H50.5" stroke="#7A5800" stroke-width="1.5" stroke-linecap="round"/>
 <path d="M48.5 19.5V23.5" stroke="#7A5800" stroke-width="1.5" stroke-linecap="round"/>
 </svg>""",
-    "source_cloud": """<svg width="56" height="56" viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path d="M18.8 35.4H34.7C38.438 35.4 41.468 32.37 41.468 28.632C41.468 25.204 38.935 22.367 35.632 21.892C34.602 18.055 31.109 15.283 26.923 15.283C21.946 15.283 17.807 19.199 17.529 24.17C14.25 24.829 11.768 27.723 11.768 31.198C11.768 33.534 13.662 35.4 15.971 35.4H18.8Z" stroke="__COLOR__" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-<path d="M24.5 28H35.5" stroke="__COLOR__" stroke-width="2" stroke-linecap="round"/>
-<path d="M31.6 24.1L35.5 28L31.6 31.9" stroke="__COLOR__" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>""",
     "back_arrow": """<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
 <path d="M14.5 6L8.5 12L14.5 18" stroke="__COLOR__" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>""",
@@ -901,7 +896,6 @@ class PivotTableWidget(QWidget):
         self.source_cards: Dict[str, _SummarySourceCard] = {}
         source_specs = (
             ("map", "Camada do mapa", "source_map", "Abrir a camada do mapa e iniciar a edição do Resumo."),
-            ("cloud", "Cloud Beta", "source_cloud", "Acessar a integração cloud em fase beta."),
         )
         for key, title, icon_key, tooltip_text in source_specs:
             card = _SummarySourceCard(
@@ -2332,9 +2326,6 @@ class PivotTableWidget(QWidget):
             self._open_spreadsheet_source_menu()
         elif key == "postgres":
             self._open_postgres_source()
-        elif key == "cloud":
-            self._open_cloud_source()
-
     def _open_map_layer_source(self):
         self._entry_layer_selection_active = True
         self._set_content_mode(False)
@@ -2377,16 +2368,6 @@ class PivotTableWidget(QWidget):
             slim_message(self, _rt("Resumo"), _rt("O fluxo de PostgreSQL não está disponível no momento."))
             return
         panel._handle_sql_database()
-
-    def _open_cloud_source(self):
-        host = self._plugin_host()
-        try:
-            from .cloud_dialogs import open_cloud_dialog
-
-            open_cloud_dialog(host or self)
-        except Exception as exc:
-            slim_message(self, _rt("Cloud Beta"), _rt("Não foi possível abrir a integração cloud.\n{exc}", exc=exc))
-        self._apply_runtime_i18n()
 
     def show_welcome_prompt(self):
         self._entry_layer_selection_active = False

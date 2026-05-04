@@ -562,7 +562,7 @@ class OperationPlanner:
         if asks_connections:
             if layer_is_connections:
                 score += 0.22
-                reasons.append("camada parece ser de ligacoes")
+                reasons.append("camada compativel com a entidade perguntada")
             elif layer.geometry_type == "line":
                 score -= 0.10
 

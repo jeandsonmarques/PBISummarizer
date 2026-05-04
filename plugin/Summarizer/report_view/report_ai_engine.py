@@ -105,8 +105,8 @@ class ReportAIEngine:
         interface_mode = str(self.interface_mode or "auto").strip().lower()
         raw_question = self._strip_ui_context_suffix(question)
         runtime_layer_ids = tuple(str(layer_id) for layer_id in (layer_ids or []) if str(layer_id).strip())
-        use_deep_validation = interface_mode == "analytic" or bool(runtime_layer_ids)
-        initial_include_profiles = bool(runtime_layer_ids)
+        use_deep_validation = interface_mode == "analytic"
+        initial_include_profiles = interface_mode == "analytic"
         log_info(
             "[Relatorios][debug][engine] "
             f"runtime_engine_file='{__file__}' engine_class_file='{inspect.getsourcefile(self.__class__) or ''}' "
@@ -243,6 +243,11 @@ class ReportAIEngine:
                 schema_level=schema_level,
                 force=interface_mode == "ollama",
             )
+        interpretation = self._maybe_require_boundary_assist_confirmation(
+            interpretation,
+            brief,
+            active_context,
+        )
         interpretation = self._enforce_explicit_location_guard(interpretation, brief, active_context)
         log_info(
             "[Relatorios][debug][engine] "
@@ -726,6 +731,104 @@ class ReportAIEngine:
             if filter_field in location_field_names:
                 return True
         return False
+
+    def _maybe_require_boundary_assist_confirmation(
+        self,
+        interpretation: InterpretationResult,
+        brief: PlanningBrief,
+        schema_context: ProjectSchemaContext,
+    ) -> InterpretationResult:
+        plan = getattr(interpretation, "plan", None)
+        if plan is None or not plan.boundary_layer_id:
+            return interpretation
+        if str(getattr(interpretation, "status", "") or "").lower() not in {"ok", "confirm"}:
+            return interpretation
+
+        explicit_locations = self._explicit_location_values(brief)
+        if not explicit_locations:
+            return interpretation
+
+        if not self._uses_boundary_for_explicit_location(plan, explicit_locations, schema_context):
+            return interpretation
+
+        primary_layer_name = self._primary_layer_name_for_plan(plan)
+        boundary_layer_name = str(plan.boundary_layer_name or "outra camada selecionada").strip()
+        location_text = ", ".join(explicit_locations[:2]).strip() or "o local pedido"
+        message = (
+            f"Nao encontrei um campo de localizacao confiavel na camada {primary_layer_name}. "
+            f"Posso usar a camada poligonal {boundary_layer_name} para localizar {location_text} "
+            "e aplicar esse filtro na analise?"
+        ).strip()
+
+        interpretation.status = "confirm"
+        interpretation.needs_confirmation = True
+        interpretation.clarification_question = message
+        interpretation.message = message
+        interpretation.confidence = min(float(interpretation.confidence or 0.0), 0.79)
+
+        trace = dict(plan.planning_trace or {})
+        trace["boundary_assist_confirmation"] = {
+            "status": "awaiting_user_confirmation",
+            "primary_layer": primary_layer_name,
+            "boundary_layer": boundary_layer_name,
+            "locations": list(explicit_locations),
+        }
+        plan.planning_trace = trace
+        return interpretation
+
+    def _uses_boundary_for_explicit_location(
+        self,
+        plan: QueryPlan,
+        explicit_locations: Sequence[str],
+        schema_context: ProjectSchemaContext,
+    ) -> bool:
+        normalized_locations = {
+            normalize_text(value)
+            for value in explicit_locations
+            if normalize_text(value)
+        }
+        if not normalized_locations:
+            return False
+
+        layer_context_by_role = {
+            "target": schema_context.layer_by_id(plan.target_layer_id),
+            "source": schema_context.layer_by_id(plan.source_layer_id),
+            "boundary": schema_context.layer_by_id(plan.boundary_layer_id),
+        }
+        boundary_match = False
+        for filter_spec in plan.filters or []:
+            filter_value = normalize_text(filter_spec.value or "")
+            if filter_value not in normalized_locations:
+                continue
+            role = str(filter_spec.layer_role or "target").lower()
+            if role == "boundary":
+                boundary_match = True
+                continue
+            filter_field = normalize_text(filter_spec.field or "")
+            if any(token in filter_field for token in ("municipio", "cidade", "bairro", "localidade", "setor", "distrito", "comunidade", "povoado")):
+                return False
+            layer_context = layer_context_by_role.get(role)
+            if layer_context is None:
+                continue
+            location_field_names = {
+                normalize_text(field_name)
+                for field_name in (
+                    list(layer_context.location_field_names or [])
+                    + list(layer_context.categorical_field_names or [])
+                )
+            }
+            if filter_field in location_field_names:
+                return False
+        return boundary_match
+
+    def _primary_layer_name_for_plan(self, plan: QueryPlan) -> str:
+        if str(plan.intent or "").lower() == "spatial_aggregate" and str(plan.source_layer_name or "").strip():
+            return str(plan.source_layer_name).strip()
+        if str(plan.target_layer_name or "").strip():
+            return str(plan.target_layer_name).strip()
+        if str(plan.source_layer_name or "").strip():
+            return str(plan.source_layer_name).strip()
+        return "camada principal"
 
     def _strip_ui_context_suffix(self, question: str) -> str:
         text = str(question or "").strip()

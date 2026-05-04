@@ -24,7 +24,6 @@ from qgis.PyQt.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QFileDialog,
-    QFormLayout,
     QFrame,
     QGridLayout,
     QGraphicsDropShadowEffect,
@@ -45,20 +44,13 @@ from qgis.PyQt.QtWidgets import (
 )
 from qgis.core import QgsVectorLayer
 
-from .slim_dialogs import SlimDialogBase, slim_message
+from .slim_dialogs import SlimDialogBase
 from .browser_integration import connection_registry
-from .cloud_session import cloud_session
-from .cloud_dialogs import open_cloud_dialog
 from .utils.fonts import ui_font, ui_font_stack
 from .utils.i18n_runtime import apply_widget_translations as _apply_i18n_widgets, tr_text as _rt
 from .utils.resources import svg_icon
 
 _ICON_DIR = os.path.join(os.path.dirname(__file__), "resources", "icons")
-
-
-def _cloud_popup_icon() -> QIcon:
-    path = os.path.join(_ICON_DIR, "cloud.svg")
-    return QIcon(path) if os.path.exists(path) else QIcon()
 
 try:  # pragma: no cover - handles platforms without QtSql
     from qgis.PyQt.QtSql import QSqlDatabase, QSqlQuery
@@ -299,11 +291,6 @@ class IntegrationPanel(QWidget):
         connection_registry.connectionsChanged.connect(self._on_registry_connections_changed)
         self._mirror_all_connections_to_browser()
 
-        self.cloud_session = cloud_session
-        self.cloud_session.sessionChanged.connect(lambda *_: self._refresh_cloud_summary())
-        self.cloud_session.configChanged.connect(lambda *_: self._refresh_cloud_summary())
-        self.cloud_session.layersChanged.connect(self._on_cloud_layers_changed)
-
         self._build_ui()
         self._register_shortcuts()
         self._populate_recents()
@@ -358,8 +345,6 @@ class IntegrationPanel(QWidget):
         wrapper_layout.addWidget(self.grid_widget)
 
         self._build_connectors()
-        self._build_cloud_section(wrapper_layout, wrapper)
-
         recents_frame = QFrame(wrapper)
         recents_frame.setObjectName("recentsFrame")
         recents_frame.setProperty("card", True)
@@ -397,7 +382,7 @@ class IntegrationPanel(QWidget):
 
         bottom_row = QHBoxLayout()
         bottom_row.addStretch(1)
-        self.extended_connectors_link = QLabel("<a href='#'>Obter dados de outra fonte →</a>", wrapper)
+        self.extended_connectors_link = QLabel("<a href='#'>Ver outras fontes disponíveis →</a>", wrapper)
         self.extended_connectors_link.setTextFormat(Qt.RichText)
         self.extended_connectors_link.setTextInteractionFlags(Qt.TextBrowserInteraction)
         self.extended_connectors_link.linkActivated.connect(self._show_extended_connectors)
@@ -478,127 +463,6 @@ class IntegrationPanel(QWidget):
                 icon_path=os.path.join(_ICON_DIR, "card_gsheets.svg"),
             )
         )
-
-    def _build_cloud_section(self, wrapper_layout: QVBoxLayout, parent: QWidget):
-        self.cloud_section = QFrame(parent)
-        self.cloud_section.setObjectName("cloudSectionFrame")
-        self.cloud_section.setProperty("card", True)
-        section_layout = QVBoxLayout(self.cloud_section)
-        section_layout.setContentsMargins(16, 16, 16, 16)
-        section_layout.setSpacing(10)
-
-        header_layout = QHBoxLayout()
-        header_layout.setSpacing(8)
-        title = QLabel("Summarizer Cloud (beta)", self.cloud_section)
-        title.setProperty("cardTitle", True)
-        title.setFont(ui_font(13, QFont.DemiBold))
-        header_layout.addWidget(title)
-        header_layout.addStretch(1)
-        self.cloud_status_badge = QLabel("Desconectado", self.cloud_section)
-        self.cloud_status_badge.setObjectName("cloudStatusBadge")
-        header_layout.addWidget(self.cloud_status_badge, 0, Qt.AlignRight)
-        section_layout.addLayout(header_layout)
-
-        self.cloud_summary_label = QLabel(
-            "Gerencie login e endpoints clicando no popup. Replica o fluxo do QFieldCloud para nos proprios.",
-            self.cloud_section,
-        )
-        self.cloud_summary_label.setWordWrap(True)
-        self.cloud_summary_label.setProperty("role", "helper")
-        section_layout.addWidget(self.cloud_summary_label)
-
-        buttons_row = QHBoxLayout()
-        buttons_row.setSpacing(8)
-        self.cloud_open_btn = QPushButton("Abrir Summarizer Cloud...", self.cloud_section)
-        self.cloud_refresh_btn = QPushButton("Atualizar catálogo", self.cloud_section)
-        self.cloud_refresh_btn.setProperty("variant", "ghost")
-        self.cloud_browser_btn = QPushButton("Abrir no Navegador", self.cloud_section)
-        self.cloud_browser_btn.setProperty("variant", "ghost")
-        buttons_row.addWidget(self.cloud_open_btn)
-        buttons_row.addWidget(self.cloud_refresh_btn)
-        buttons_row.addWidget(self.cloud_browser_btn)
-        buttons_row.addStretch(1)
-        section_layout.addLayout(buttons_row)
-
-        info_layout = QHBoxLayout()
-        info_layout.setSpacing(6)
-        info_layout.addWidget(QLabel("Ultima atualizacao:", self.cloud_section))
-        self.cloud_last_sync_label = QLabel("-", self.cloud_section)
-        info_layout.addWidget(self.cloud_last_sync_label)
-        info_layout.addStretch(1)
-        section_layout.addLayout(info_layout)
-
-        self.cloud_warning_label = QLabel(
-            "Cloud em preparação. Camadas reais serão liberadas assim que a hospedagem estiver ativa.",
-            self.cloud_section,
-        )
-        self.cloud_warning_label.setWordWrap(True)
-        self.cloud_warning_label.setProperty("role", "helper")
-        section_layout.addWidget(self.cloud_warning_label)
-
-        wrapper_layout.addWidget(self.cloud_section)
-
-        self.cloud_open_btn.clicked.connect(self._open_cloud_popup)
-        self.cloud_refresh_btn.clicked.connect(self._refresh_cloud_layers)
-        self.cloud_browser_btn.clicked.connect(self._open_cloud_browser_hint)
-
-        self._refresh_cloud_summary()
-
-    def _set_cloud_status_badge(self, state: str, text: str):
-        colors = {"online": "#2F8D46", "offline": "#B3261E", "sync": "#F2994A"}
-        color = colors.get(state, "#5D5A58")
-        self.cloud_status_badge.setText(text)
-        self.cloud_status_badge.setStyleSheet(
-            f"""
-            QLabel#cloudStatusBadge {{
-                padding: 3px 12px;
-                border-radius: 12px;
-                font-weight: 600;
-                color: #FFFFFF;
-                background-color: {color};
-            }}
-            """
-        )
-
-    def _show_cloud_message(self, title: str, text: str, helper_text: str = ""):
-        slim_message(
-            self,
-            title=_rt(title),
-            text=_rt(text),
-            helper_text=_rt(helper_text),
-            icon=_cloud_popup_icon(),
-        )
-
-    def _open_cloud_popup(self):
-        open_cloud_dialog(self)
-        self._apply_runtime_i18n()
-
-    def _refresh_cloud_layers(self):
-        from .browser_integration import reload_cloud_catalog
-
-        reload_cloud_catalog()
-        self._on_cloud_layers_changed()
-        self._show_cloud_message("Summarizer Cloud", "Catálogo Cloud atualizado.")
-
-    def _open_cloud_browser_hint(self):
-        self._show_cloud_message(
-            "Summarizer Cloud",
-            "Abra o Navegador do QGIS e expanda Summarizer → Summarizer Cloud para carregar as camadas disponiveis.",
-        )
-
-    def _refresh_cloud_summary(self):
-        payload = self.cloud_session.status_payload()
-        state = payload.get("level") or "offline"
-        text = payload.get("text") or "Desconectado"
-        self._set_cloud_status_badge(state, _rt(text))
-        self.cloud_summary_label.setText(_rt(text))
-        self.cloud_warning_label.setVisible(not self.cloud_session.hosting_ready())
-        self._apply_runtime_i18n()
-
-    def _on_cloud_layers_changed(self, *_):
-        stamp = QDateTime.currentDateTime().toString("dd/MM HH:mm")
-        self.cloud_last_sync_label.setText(stamp)
-        self._refresh_cloud_summary()
 
     def _register_shortcuts(self):
         shortcut_open = QShortcut(QKeySequence("Ctrl+O"), self)
@@ -842,28 +706,9 @@ class IntegrationPanel(QWidget):
             list_widget.setCurrentRow(0)
         layout.addWidget(list_widget, 1)
 
-        cloud_hint = QLabel(
-            _rt(
-                "Defina o campo abaixo para preencher automaticamente o login Cloud relativo a cada conexão."
-            ),
-            dialog,
-        )
-        cloud_hint.setWordWrap(True)
-        layout.addWidget(cloud_hint)
-
-        cloud_form = QFormLayout()
-        cloud_form.setLabelAlignment(Qt.AlignLeft)
-        cloud_user_edit = QLineEdit(dialog)
-        cloud_user_edit.setPlaceholderText("usuario@empresa.com")
-        cloud_form.addRow(_rt("Usuário Cloud padrão"), cloud_user_edit)
-        layout.addLayout(cloud_form)
-
         button_box = QDialogButtonBox(QDialogButtonBox.Close, dialog)
         remove_btn = button_box.addButton(_rt("Remover"), QDialogButtonBox.ActionRole)
-        save_btn = button_box.addButton(_rt("Salvar usuário Cloud"), QDialogButtonBox.ActionRole)
         remove_btn.setEnabled(False)
-        save_btn.setEnabled(False)
-        cloud_user_edit.setEnabled(False)
         layout.addWidget(button_box)
 
         def _current_connection():
@@ -876,17 +721,6 @@ class IntegrationPanel(QWidget):
             conn = _current_connection()
             has_selection = conn is not None
             remove_btn.setEnabled(has_selection)
-            save_btn.setEnabled(has_selection)
-            cloud_user_edit.setEnabled(has_selection)
-            if has_selection:
-                # Guardamos o usuário Cloud padrão junto com a conexão no QSettings.
-                cloud_user_edit.setText(conn.get("cloud_default_user", ""))
-                fingerprint = conn.get("fingerprint", "")
-                if fingerprint:
-                    self.cloud_session.set_active_connection_fingerprint(fingerprint)
-            else:
-                cloud_user_edit.clear()
-                self.cloud_session.set_active_connection_fingerprint(None)
 
         def remove_selected():
             conn = _current_connection()
@@ -899,28 +733,7 @@ class IntegrationPanel(QWidget):
             self._save_connections()
             update_state_from_selection()
 
-        def save_cloud_user():
-            conn = _current_connection()
-            if not conn:
-                return
-            email = cloud_user_edit.text().strip()
-            # Persistimos o usuário Cloud padrão no registro de conexões/QSettings.
-            conn["cloud_default_user"] = email
-            fingerprint = conn.get("fingerprint")
-            for idx, existing in enumerate(self._saved_connections):
-                if existing is conn or existing.get("fingerprint") == fingerprint:
-                    self._saved_connections[idx]["cloud_default_user"] = email
-                    break
-            self._save_connections()
-            slim_message(
-                dialog,
-                title="Summarizer Cloud",
-                text="Usuário Cloud padrão atualizado para esta conexão.",
-                icon=_cloud_popup_icon(),
-            )
-
         list_widget.currentItemChanged.connect(lambda *_: update_state_from_selection())
-        save_btn.clicked.connect(save_cloud_user)
         remove_btn.clicked.connect(remove_selected)
         button_box.rejected.connect(dialog.reject)
 
@@ -933,11 +746,7 @@ class IntegrationPanel(QWidget):
         config = self._connectors.get(key)
         if config is None:
             return
-        try:
-            QApplication.setOverrideCursor(QCursor(Qt.WaitCursor))
-            config.handler()
-        finally:
-            QApplication.restoreOverrideCursor()
+        config.handler()
 
     def _handle_excel(self):
         dialog = ExcelImportDialog(
@@ -976,10 +785,6 @@ class IntegrationPanel(QWidget):
                 (connection_meta or {}).get("fingerprint")
                 or (session_connection or {}).get("fingerprint")
             )
-            if fingerprint:
-                # Mantemos qual conexão foi usada por último para preencher o login Cloud.
-                self.cloud_session.set_active_connection_fingerprint(fingerprint)
-
     def _handle_clipboard(self):
         dialog = ClipboardImportDialog(self)
         if dialog.exec_() == QDialog.Accepted:
@@ -1057,7 +862,7 @@ class IntegrationPanel(QWidget):
     # ------------------------------------------------------------------ Helpers
     def _finalize_import(self, df: pd.DataFrame, metadata: Dict):
         if df is None or df.empty:
-            QMessageBox.information(self, _rt("Integração"), _rt("Nenhum dado encontrado para carregar."))
+            QMessageBox.information(self, _rt("Conexão"), _rt("Nenhum dado encontrado para carregar."))
             return
         metadata = dict(metadata)
         metadata.setdefault("record_count", len(df))
@@ -1070,17 +875,17 @@ class IntegrationPanel(QWidget):
                     _rt("Dados carregados: {count} linhas.", count=descriptor.get("record_count", len(df)))
                 )
         except Exception as exc:  # pragma: no cover - runtime safeguard
-            QMessageBox.critical(self, _rt("Integração"), _rt("Falha ao enviar dados para o plugin: {exc}", exc=exc))
+            QMessageBox.critical(self, _rt("Conexão"), _rt("Falha ao enviar dados para o plugin: {exc}", exc=exc))
 
     def _toast_success(self, message: str):
         bar = getattr(self.iface, "messageBar", None)
         if callable(bar):
             try:
-                self.iface.messageBar().pushSuccess(_rt("Integração"), message)
+                self.iface.messageBar().pushSuccess(_rt("Conexão"), message)
                 return
             except Exception:
                 pass
-        QMessageBox.information(self, _rt("Integração"), message)
+        QMessageBox.information(self, _rt("Conexão"), message)
 
     def _sample_dataset(self) -> pd.DataFrame:
         data = {
@@ -1565,7 +1370,8 @@ class DatabaseImportDialog(SlimDialogBase):
         self._last_params: Dict[str, Dict] = self._load_last_params()
         self._suspend_defaults = False
         self.setWindowTitle(_rt("Importar dados do banco de dados"))
-        self.resize(720, 580)
+        self.resize(640, 520)
+        self.setMinimumWidth(620)
         self._build_ui()
         self._apply_runtime_i18n()
 
@@ -1581,40 +1387,66 @@ class DatabaseImportDialog(SlimDialogBase):
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(18, 18, 18, 18)
-        layout.setSpacing(12)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+        self.setStyleSheet(
+            """
+            QDialog {
+                background: #FFFFFF;
+            }
+            QLabel[role="dbLabel"] {
+                color: #1F2937;
+                font-weight: 500;
+            }
+            QLineEdit, QComboBox, QTableWidget {
+                border: 1px solid #D8DEE8;
+                border-radius: 10px;
+                background: #FFFFFF;
+            }
+            QTableWidget {
+                gridline-color: #E9EDF3;
+            }
+            """
+        )
 
         form = QGridLayout()
-        form.setHorizontalSpacing(12)
+        form.setHorizontalSpacing(10)
         form.setVerticalSpacing(8)
+        form.setColumnMinimumWidth(0, 88)
+        form.setColumnStretch(1, 1)
+
+        def _field_label(text: str) -> QLabel:
+            label = QLabel(_rt(text), self)
+            label.setProperty("role", "dbLabel")
+            return label
 
         self.driver_combo = QComboBox(self)
         self.driver_combo.addItems(["PostgreSQL", "SQL Server"])
         self.driver_combo.currentTextChanged.connect(self._on_driver_changed)
-        form.addWidget(QLabel(_rt("Banco de dados:")), 0, 0)
+        form.addWidget(_field_label("Banco de dados:"), 0, 0)
         form.addWidget(self.driver_combo, 0, 1)
 
         self.host_edit = QLineEdit(self)
         self.host_edit.setPlaceholderText("servidor.empresa.com")
-        form.addWidget(QLabel(_rt("Host:")), 1, 0)
+        form.addWidget(_field_label("Host:"), 1, 0)
         form.addWidget(self.host_edit, 1, 1)
 
         self.port_edit = QLineEdit(self)
         self.port_edit.setPlaceholderText("5432 ou 1433…")
-        form.addWidget(QLabel(_rt("Porta:")), 2, 0)
+        form.addWidget(_field_label("Porta:"), 2, 0)
         form.addWidget(self.port_edit, 2, 1)
 
         self.database_edit = QLineEdit(self)
-        form.addWidget(QLabel(_rt("Banco:")), 3, 0)
+        form.addWidget(_field_label("Banco:"), 3, 0)
         form.addWidget(self.database_edit, 3, 1)
 
         self.user_edit = QLineEdit(self)
-        form.addWidget(QLabel(_rt("Usuário:")), 4, 0)
+        form.addWidget(_field_label("Usuário:"), 4, 0)
         form.addWidget(self.user_edit, 4, 1)
 
         self.password_edit = QLineEdit(self)
         self.password_edit.setEchoMode(QLineEdit.Password)
-        form.addWidget(QLabel(_rt("Senha:")), 5, 0)
+        form.addWidget(_field_label("Senha:"), 5, 0)
         form.addWidget(self.password_edit, 5, 1)
 
         layout.addLayout(form)
@@ -1753,17 +1585,15 @@ class DatabaseImportDialog(SlimDialogBase):
         }
         payload["name"] = f"{payload.get('database')} ({payload.get('driver')})"
         payload["fingerprint"] = f"{payload.get('driver')}::{payload.get('host')}::{payload.get('database')}::{payload.get('user')}"
-        for saved in self.saved_connections:
-            if saved.get("fingerprint") == payload["fingerprint"]:
-                payload["cloud_default_user"] = saved.get("cloud_default_user", "")
-                break
-        else:
-            payload["cloud_default_user"] = params.get("cloud_default_user", "")
         return payload
 
     def _test_connection(self):
         params = self._params()
-        ok, db_or_error = self._create_connection(params)
+        QApplication.setOverrideCursor(QCursor(Qt.WaitCursor))
+        try:
+            ok, db_or_error = self._create_connection(params)
+        finally:
+            QApplication.restoreOverrideCursor()
         if ok:
             QMessageBox.information(self, _rt("Conexão"), _rt("Conexão estabelecida com sucesso."))
             self._remember_last_params(params)
@@ -1855,13 +1685,18 @@ class DatabaseImportDialog(SlimDialogBase):
 
     def _retrieve(self, preview: bool):
         params = self._params()
-        ok, db_or_error = self._create_connection(params)
+        QApplication.setOverrideCursor(QCursor(Qt.WaitCursor))
+        try:
+            ok, db_or_error = self._create_connection(params)
+        finally:
+            QApplication.restoreOverrideCursor()
         if not ok:
             QMessageBox.warning(self, _rt("Importar"), db_or_error)
             return
         db = db_or_error
         self._remember_last_params(params)
         try:
+            QApplication.setOverrideCursor(QCursor(Qt.WaitCursor))
             if self.tables_combo.count() == 0:
                 self._populate_tables(db, params["driver"])
             table = self.tables_combo.currentText()
@@ -1906,6 +1741,7 @@ class DatabaseImportDialog(SlimDialogBase):
                     self._connection_meta = dict(self._session_connection)
                 self.accept()
         finally:
+            QApplication.restoreOverrideCursor()
             db.close()
 
     def _fill_preview(self, df: pd.DataFrame):

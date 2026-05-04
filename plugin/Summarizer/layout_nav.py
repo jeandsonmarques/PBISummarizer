@@ -1,11 +1,10 @@
 import os
-from typing import Dict, Optional
+from typing import Dict
 
 from qgis.PyQt.QtCore import QSize, Qt
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QPushButton, QToolTip, QVBoxLayout, QWidget
 
-from .cloud_session import cloud_session
 from .utils.resources import svg_icon
 
 
@@ -16,7 +15,7 @@ class SidebarController:
         "relatorios": ("Relatorios", "icone_chat_exato_cropped.png"),
         "resumo": ("Resumo", "Table.svg"),
         "model": ("Model", "Model.svg"),
-        "integracao": ("Integracao", "Linked-Entity.svg"),
+        "integracao": ("Conexão", "Linked-Entity.svg"),
     }
 
     PAGE_MAP = {
@@ -35,16 +34,10 @@ class SidebarController:
             self.ui = ui_or_host
 
         self.buttons: Dict[str, QPushButton] = {}
-        self.upload_button: Optional[QPushButton] = None
         self.current_mode: Optional[str] = None
         self._all_nav_buttons = []
 
         self._build_sidebar()
-        try:
-            cloud_session.sessionChanged.connect(lambda *_: self._update_upload_button_state())
-        except Exception:
-            pass
-        self._update_upload_button_state()
         self._set_mode("relatorios")
         self._refresh_nav_styles()
 
@@ -85,41 +78,6 @@ class SidebarController:
             self._all_nav_buttons.append(btn)
 
         layout.addStretch(1)
-
-        self.upload_button = QPushButton("")
-        self.upload_button.setCursor(Qt.PointingHandCursor)
-        self.upload_button.setToolTip("Enviar camadas para o Summarizer Cloud (apenas admin)")
-        self.upload_button.setFixedSize(36, 36)
-        self.upload_button.setIconSize(QSize(20, 20))
-        self.upload_button.setProperty("navIcon", "true")
-        self.upload_button.setProperty("active", False)
-        upload_icon_path = os.path.join(os.path.dirname(__file__), "resources", "icons", "cloud_database.svg")
-        if os.path.exists(upload_icon_path):
-            self.upload_button.setIcon(QIcon(upload_icon_path))
-        layout.addWidget(self.upload_button, 0, Qt.AlignBottom)
-        if self.host is not None:
-            self.upload_button.clicked.connect(self._trigger_upload)
-        self._all_nav_buttons.append(self.upload_button)
-
-    def _trigger_upload(self):
-        host = self.host
-        if host is None:
-            return
-        try:
-            host.open_cloud_upload_tab()
-        except Exception:
-            pass
-
-    def _update_upload_button_state(self):
-        if self.upload_button is None:
-            return
-        is_admin = False
-        try:
-            is_admin = cloud_session.is_admin()
-        except Exception:
-            is_admin = False
-        self.upload_button.setEnabled(is_admin)
-        self.upload_button.setVisible(is_admin)
 
     def _handle_nav_click(self, mode: str):
         btn = self.buttons.get(mode)

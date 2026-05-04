@@ -94,6 +94,9 @@ _FALLBACK = {
         "Cancelando...": "Cancelling...",
         "Análise cancelada. Você pode ajustar a pergunta e tentar novamente.": "Analysis cancelled. You can adjust the question and try again.",
         "A análise foi cancelada pelo usuário.": "The analysis was cancelled by the user.",
+        "Tentar outra opção": "Try another option",
+        "Vamos tentar outra leitura da sua pergunta.": "Let's try another reading of your question.",
+        "Nao encontrei outra interpretacao pronta. Escolha a coluna que mais combina com a pergunta para eu recalcular.": "I did not find another ready interpretation. Choose the column that best matches the question so I can recalculate.",
         (
             "Aba Resumo\n"
             "Objetivo: explorar uma camada em formato de tabela dinâmica, com agrupamentos, totais e leitura rápida dos campos.\n"
@@ -185,29 +188,6 @@ _FALLBACK = {
             "4. Return to the Reports tab and choose the correct context at the top of the chat.\n"
             "5. Ask your question and select the layers that should be analyzed.\n"
             "Tip: the connection prepares the source; the analysis happens in the Reports tab."
-        ),
-        (
-            "Área Cloud\n"
-            "Objetivo: acessar dados e conexões disponíveis na nuvem do plugin.\n"
-            "Quando usar: use Cloud quando os dados não estiverem apenas no projeto local ou quando a organização disponibilizar fontes online.\n"
-            "Como fazer:\n"
-            "1. Abra a área de Cloud ou Integrações.\n"
-            "2. Faça login quando o plugin solicitar autenticação.\n"
-            "3. Escolha a conexão, projeto ou camada disponível na nuvem.\n"
-            "4. No chat, selecione o contexto Cloud antes de fazer perguntas sobre esses dados.\n"
-            "5. Se nenhuma conexão aparecer, confirme login, permissões e disponibilidade da fonte.\n"
-            "Dica: se a pergunta for sobre dados locais, use Projeto atual; se for sobre dados online, use Cloud."
-        ): (
-            "Cloud Area\n"
-            "Purpose: access data and connections available in the plugin cloud.\n"
-            "When to use it: use Cloud when the data is not only in the local project or when the organization provides online sources.\n"
-            "How to use it:\n"
-            "1. Open the Cloud or Integrations area.\n"
-            "2. Sign in when the plugin asks for authentication.\n"
-            "3. Choose the available connection, project, or layer in the cloud.\n"
-            "4. In the chat, select the Cloud context before asking questions about that data.\n"
-            "5. If no connection appears, check sign-in, permissions, and source availability.\n"
-            "Tip: if the question is about local data, use Current project; if it is about online data, use Cloud."
         ),
         (
             "Aba Sobre\n"
@@ -369,7 +349,7 @@ _FALLBACK = {
             "1. Se a pergunta for sobre uma funcionalidade, o chat responde com explicação e passo a passo.\n"
             "2. Se a pergunta for sobre dados, o chat solicita as camadas que devem ser analisadas.\n"
             "3. As camadas escolhidas permanecem em foco até você clicar em Limpar.\n"
-            "4. Você pode perguntar sobre Relatórios, Resumo, Modelo/Dashboard, Conexões, PostgreSQL, Cloud ou Sobre.\n"
+            "4. Você pode perguntar sobre Relatórios, Resumo, Modelo/Dashboard, Conexão, PostgreSQL ou Sobre.\n"
             "Dica: para obter uma orientação mais precisa, cite o nome da aba ou do comando que deseja entender."
         ): (
             "Summarizer Help\n"
@@ -378,7 +358,7 @@ _FALLBACK = {
             "1. If the question is about a feature, the chat answers with an explanation and step-by-step guidance.\n"
             "2. If the question is about data, the chat asks which layers should be analyzed.\n"
             "3. The selected layers stay in focus until you click Clear.\n"
-            "4. You can ask about Reports, Summary, Model/Dashboard, Connections, PostgreSQL, Cloud, or About.\n"
+            "4. You can ask about Reports, Summary, Model/Dashboard, Connections, PostgreSQL, or About.\n"
             "Tip: for more precise guidance, mention the tab or command you want to understand."
         ),
     },
@@ -443,6 +423,9 @@ _FALLBACK = {
         "Cancelando...": "Cancelando...",
         "Análise cancelada. Você pode ajustar a pergunta e tentar novamente.": "Análisis cancelado. Puede ajustar la pregunta e intentarlo nuevamente.",
         "A análise foi cancelada pelo usuário.": "El análisis fue cancelado por el usuario.",
+        "Tentar outra opção": "Probar otra opción",
+        "Vamos tentar outra leitura da sua pergunta.": "Probemos otra lectura de su pregunta.",
+        "Nao encontrei outra interpretacao pronta. Escolha a coluna que mais combina com a pergunta para eu recalcular.": "No encontré otra interpretación lista. Elija la columna que mejor coincide con la pregunta para que pueda recalcular.",
         (
             "Aba Resumo\n"
             "Objetivo: explorar uma camada em formato de tabela dinâmica, com agrupamentos, totais e leitura rápida dos campos.\n"
@@ -534,29 +517,6 @@ _FALLBACK = {
             "4. Vuelva a Informes y elija el contexto correcto en la parte superior del chat.\n"
             "5. Haga la pregunta y seleccione las capas que deben analizarse.\n"
             "Consejo: la conexión prepara la fuente; el análisis ocurre en Informes."
-        ),
-        (
-            "Área Cloud\n"
-            "Objetivo: acessar dados e conexões disponíveis na nuvem do plugin.\n"
-            "Quando usar: use Cloud quando os dados não estiverem apenas no projeto local ou quando a organização disponibilizar fontes online.\n"
-            "Como fazer:\n"
-            "1. Abra a área de Cloud ou Integrações.\n"
-            "2. Faça login quando o plugin solicitar autenticação.\n"
-            "3. Escolha a conexão, projeto ou camada disponível na nuvem.\n"
-            "4. No chat, selecione o contexto Cloud antes de fazer perguntas sobre esses dados.\n"
-            "5. Se nenhuma conexão aparecer, confirme login, permissões e disponibilidade da fonte.\n"
-            "Dica: se a pergunta for sobre dados locais, use Projeto atual; se for sobre dados online, use Cloud."
-        ): (
-            "Área Cloud\n"
-            "Objetivo: acceder a datos y conexiones disponibles en la nube del plugin.\n"
-            "Cuándo usarla: use Cloud cuando los datos no estén solo en el proyecto local o cuando la organización ofrezca fuentes online.\n"
-            "Cómo hacerlo:\n"
-            "1. Abra el área Cloud o Integraciones.\n"
-            "2. Inicie sesión cuando el plugin solicite autenticación.\n"
-            "3. Elija la conexión, proyecto o capa disponible en la nube.\n"
-            "4. En el chat, seleccione el contexto Cloud antes de preguntar sobre esos datos.\n"
-            "5. Si no aparece ninguna conexión, confirme inicio de sesión, permisos y disponibilidad de la fuente.\n"
-            "Consejo: si la pregunta es sobre datos locales, use Proyecto actual; si es sobre datos online, use Cloud."
         ),
         (
             "Aba Sobre\n"
@@ -718,7 +678,7 @@ _FALLBACK = {
             "1. Se a pergunta for sobre uma funcionalidade, o chat responde com explicação e passo a passo.\n"
             "2. Se a pergunta for sobre dados, o chat solicita as camadas que devem ser analisadas.\n"
             "3. As camadas escolhidas permanecem em foco até você clicar em Limpar.\n"
-            "4. Você pode perguntar sobre Relatórios, Resumo, Modelo/Dashboard, Conexões, PostgreSQL, Cloud ou Sobre.\n"
+            "4. Você pode perguntar sobre Relatórios, Resumo, Modelo/Dashboard, Conexão, PostgreSQL ou Sobre.\n"
             "Dica: para obter uma orientação mais precisa, cite o nome da aba ou do comando que deseja entender."
         ): (
             "Ayuda de Summarizer\n"
@@ -727,7 +687,7 @@ _FALLBACK = {
             "1. Si la pregunta es sobre una funcionalidad, el chat responde con explicación y pasos.\n"
             "2. Si la pregunta es sobre datos, el chat solicita las capas que deben analizarse.\n"
             "3. Las capas elegidas permanecen en foco hasta que haga clic en Limpiar.\n"
-            "4. Puede preguntar sobre Informes, Resumen, Modelo/Dashboard, Conexiones, PostgreSQL, Cloud o Acerca de.\n"
+            "4. Puede preguntar sobre Informes, Resumen, Modelo/Dashboard, Conexiones, PostgreSQL o Acerca de.\n"
             "Consejo: para una orientación más precisa, cite el nombre de la pestaña o comando que desea entender."
         ),
     },
@@ -795,7 +755,6 @@ _PT_HINT_WORDS = (
     "senha",
     "catalogo",
     "catálogo",
-    "nuvem",
 )
 _PHRASE_GLOSSARY = {
     "en": [
@@ -809,8 +768,6 @@ _PHRASE_GLOSSARY = {
         ("Atualizar lista", "Refresh list"),
         ("Atualizar catálogo", "Update catalog"),
         ("Atualizar", "Update"),
-        ("Configurar Summarizer Cloud...", "Configure Summarizer Cloud..."),
-        ("Configurar Summarizer Cloud", "Configure Summarizer Cloud"),
         ("Nova conexão PostgreSQL...", "New PostgreSQL connection..."),
         ("Nova conexao PostgreSQL...", "New PostgreSQL connection..."),
         ("Nova conexão PostgreSQL", "New PostgreSQL connection"),
@@ -820,7 +777,6 @@ _PHRASE_GLOSSARY = {
         ("Abrir no Navegador", "Open in Browser"),
         ("Conexão '{name}' salva. Expanda o nó novamente para ver as tabelas.", "Connection '{name}' saved. Expand the node again to see the tables."),
         ("Conexão PostgreSQL adicionada via Navegador.", "PostgreSQL connection added via Browser."),
-        ("Nó Summarizer Cloud carregado no Navegador.", "Summarizer Cloud node loaded in the Browser."),
         ("Camada '{layer_name}' foi excluída com sucesso.", "Layer '{layer_name}' was deleted successfully."),
         ("Nenhuma conexão local disponível.", "No local connection available."),
         ("Não foi possível acessar o registro de providers do Navegador.", "Could not access the Browser provider registry."),
@@ -916,7 +872,6 @@ _PHRASE_GLOSSARY = {
         ("Filtros por Categoria", "Filtros por categoría"),
         ("Limpar filtros", "Limpiar filtros"),
         ("Visão de Categorias", "Vista de categorías"),
-        ("Configurar Summarizer Cloud...", "Configurar Summarizer Cloud..."),
         ("Nova conexão PostgreSQL...", "Nueva conexión PostgreSQL..."),
         ("Nova conexão PostgreSQL", "Nueva conexión PostgreSQL"),
         ("Salvar senha junto com a conexão", "Guardar contraseña junto con la conexión"),
@@ -940,7 +895,6 @@ _PHRASE_GLOSSARY = {
         ("Conexão PostgreSQL", "Conexión PostgreSQL"),
         ("Conexão '{name}' salva. Expanda o nó novamente para ver as tabelas.", "Conexión '{name}' guardada. Expande el nodo nuevamente para ver las tablas."),
         ("Conexão PostgreSQL adicionada via Navegador.", "Conexión PostgreSQL agregada vía Navegador."),
-        ("Nó Summarizer Cloud carregado no Navegador.", "Nodo Summarizer Cloud cargado en el Navegador."),
         ("Converse com os dados do projeto", "Conversa con los datos del proyecto"),
         ("Faça perguntas sobre suas camadas e gere gráficos automaticamente", "Haz preguntas sobre tus capas y genera gráficos automáticamente"),
         ("Faça perguntas sobre suas camadas e gere graficos automaticamente", "Haz preguntas sobre tus capas y genera gráficos automáticamente"),

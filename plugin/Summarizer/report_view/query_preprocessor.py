@@ -480,13 +480,17 @@ class QueryPreprocessor:
             return "sum"
         if excel_mode == "averageif":
             return "avg"
-        if any(token in tokens for token in ("metragem", "metros", "metro", "comprimento", "extensao")):
+        if any(token in tokens for token in ("metragem", "metros", "metro", "comprimento", "extensao", "length", "extension")):
             return "length"
         if "area" in tokens:
             return "area"
-        if "media" in tokens:
+        if any(token in tokens for token in ("media", "average", "avg", "mean")):
             return "avg"
-        if any(token in tokens for token in ("total", "soma")):
+        if any(token in tokens for token in ("maximo", "maior", "maximum", "highest", "largest", "max")):
+            return "max"
+        if any(token in tokens for token in ("minimo", "menor", "minimum", "lowest", "smallest", "min")):
+            return "min"
+        if any(token in tokens for token in ("total", "soma", "somar", "somatorio", "sum")):
             return "sum"
         return "count"
 
@@ -628,9 +632,9 @@ class QueryPreprocessor:
     def _extract_ratio_descriptors(self, text: str):
         normalized = normalize_text(text)
         if self._has_any_term(normalized, self.connection_terms) and re.search(r"\bpor\s+(metro|metros|km|quilometro|quilometros)\b", normalized):
-            return self.ratio_descriptor_overrides.get("count_per_length", ("quantidade de ligacoes", "extensao da rede"))
+            return self.ratio_descriptor_overrides.get("count_per_length", ("quantidade", "medida"))
         if self._has_any_term(normalized, self.length_terms) and self._has_connection_denominator(normalized):
-            return self.ratio_descriptor_overrides.get("length_per_count", ("extensao da rede", "quantidade de ligacoes"))
+            return self.ratio_descriptor_overrides.get("length_per_count", ("medida", "quantidade"))
         patterns = (
             r"\b(.+?)\s+dividid[oa]\s+por\s+(.+)$",
             r"\b(?:razao|relacao|relação|proporcao|proporção)\s+entre\s+(.+?)\s+e\s+(.+)$",

@@ -272,30 +272,6 @@ class Ui_SummarizerDialog(object):
 
         self.verticalLayout.addWidget(self.central_frame, 1)
 
-        self.footer_bar = QFrame()
-        self.footer_bar.setObjectName("footerBar")
-        self.footer_bar.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
-        self.footer_bar.setFixedHeight(42)
-        footer_layout = QHBoxLayout(self.footer_bar)
-        footer_layout.setContentsMargins(8, 4, 8, 4)
-        footer_layout.setSpacing(8)
-
-        footer_layout.addStretch()
-        self.manage_connections_btn = QPushButton(_rt("Gerenciar conexões"))
-        self.manage_connections_btn.setProperty("variant", "secondary")
-        self.manage_connections_btn.setMinimumHeight(26)
-        self.manage_connections_btn.setMaximumHeight(26)
-        self.manage_connections_btn.setVisible(False)
-        footer_layout.addWidget(self.manage_connections_btn)
-
-        self.footer_about_btn = QPushButton(_rt("Sobre"))
-        self.footer_about_btn.setProperty("variant", "secondary")
-        self.footer_about_btn.setFixedSize(58, 24)
-        self.footer_about_btn.setStyleSheet("padding: 0 8px; font-size: 9px;")
-        footer_layout.addWidget(self.footer_about_btn)
-
-        self.verticalLayout.addWidget(self.footer_bar)
-
         self.stackedWidget.setCurrentWidget(self.pageResultados)
 
 

@@ -539,13 +539,13 @@ class _DerivedRatioJob(ReportExecutionJob):
         self._step_source(batch_size)
 
     def _step_target(self, batch_size: int):
-        self.phase_label = "analisando rede"
+        self.phase_label = "analisando dados principais"
         for _ in range(batch_size):
             try:
                 feature = next(self.target_iterator)
             except StopIteration:
                 self.source_iterator = iter(self.source_layer.getFeatures())
-                self.phase_label = "analisando ligacoes"
+                self.phase_label = "analisando dados relacionados"
                 return
 
             self.processed += 1
@@ -563,7 +563,7 @@ class _DerivedRatioJob(ReportExecutionJob):
             self.target_processed += 1
 
     def _step_source(self, batch_size: int):
-        self.phase_label = "analisando ligacoes"
+        self.phase_label = "analisando dados relacionados"
         for _ in range(batch_size):
             try:
                 feature = next(self.source_iterator)

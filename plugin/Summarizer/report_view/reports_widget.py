@@ -112,8 +112,6 @@ PLUGIN_HELP_SUBJECT_TERMS = (
     "integracoes",
     "integration",
     "integrations",
-    "cloud",
-    "nuvem",
     "connection",
     "connections",
     "modelo",
@@ -151,6 +149,13 @@ REPORTS_FONT_SCALE = 1.0
 
 class AnalysisCancelled(RuntimeError):
     pass
+
+
+def _make_label_selectable(label: QLabel):
+    if label is None:
+        return
+    label.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.TextSelectableByKeyboard)
+    label.setCursor(Qt.IBeamCursor)
 
 
 REPORTS_STYLE_TEMPLATE = Template(
@@ -757,6 +762,7 @@ class UserMessageWidget(QWidget):
         label = QLabel(text, self.bubble)
         label.setObjectName("userBubbleText")
         label.setWordWrap(True)
+        _make_label_selectable(label)
         bubble_layout.addWidget(label)
 
         row.addWidget(self.bubble, 0)
@@ -849,6 +855,7 @@ class AssistantMessageWidget(QWidget):
         self.status_label = QLabel(_rt("Pensando na sua pergunta..."), self.content_widget)
         self.status_label.setObjectName("assistantStatus")
         self.status_label.setWordWrap(True)
+        _make_label_selectable(self.status_label)
         self.content_layout.addWidget(self.status_label)
 
     def update_loading_text(self, message: str):
@@ -872,6 +879,7 @@ class AssistantMessageWidget(QWidget):
         label = QLabel(message, self.content_widget)
         label.setObjectName(message_object_name)
         label.setWordWrap(True)
+        _make_label_selectable(label)
         self.content_layout.addWidget(label)
 
     def show_ambiguity(self, question: str, message: str, options):
@@ -885,6 +893,7 @@ class AssistantMessageWidget(QWidget):
         label = QLabel(message, self.content_widget)
         label.setObjectName("assistantText")
         label.setWordWrap(True)
+        _make_label_selectable(label)
         self.content_layout.addWidget(label)
 
         buttons_column = QVBoxLayout()
@@ -919,6 +928,7 @@ class AssistantMessageWidget(QWidget):
         label = QLabel(message, self.content_widget)
         label.setObjectName("assistantText")
         label.setWordWrap(True)
+        _make_label_selectable(label)
         self.content_layout.addWidget(label)
 
         buttons_column = QVBoxLayout()
@@ -950,6 +960,7 @@ class AssistantMessageWidget(QWidget):
         label = QLabel(message, self.content_widget)
         label.setObjectName("assistantText")
         label.setWordWrap(True)
+        _make_label_selectable(label)
         self.content_layout.addWidget(label)
 
         buttons_column = QVBoxLayout()
@@ -1009,6 +1020,7 @@ class AssistantMessageWidget(QWidget):
         label = QLabel(message, self.content_widget)
         label.setObjectName("assistantText")
         label.setWordWrap(True)
+        _make_label_selectable(label)
         self.content_layout.addWidget(label)
 
         buttons_row = QHBoxLayout()
@@ -1025,6 +1037,11 @@ class AssistantMessageWidget(QWidget):
             )
         )
         buttons_row.addWidget(confirm_button, 0)
+
+        try_other_button = QPushButton(_rt("Tentar outra opção"), self.content_widget)
+        try_other_button.setProperty("actionButton", True)
+        try_other_button.clicked.connect(lambda checked=False: self._choose_interpretation())
+        buttons_row.addWidget(try_other_button, 0)
 
         cancel_button = QPushButton(_rt("Cancelar"), self.content_widget)
         cancel_button.setProperty("actionButton", True)
@@ -1048,6 +1065,7 @@ class AssistantMessageWidget(QWidget):
         )
         summary_label.setObjectName("assistantSummary")
         summary_label.setWordWrap(True)
+        _make_label_selectable(summary_label)
         self.content_layout.addWidget(summary_label)
 
         helper_text = self._build_helper_text(result)
@@ -1055,6 +1073,7 @@ class AssistantMessageWidget(QWidget):
             helper_label = QLabel(helper_text, self.content_widget)
             helper_label.setObjectName("assistantHelper")
             helper_label.setWordWrap(True)
+            _make_label_selectable(helper_label)
             self.content_layout.addWidget(helper_label)
 
         self._add_filter_selector()
@@ -1165,6 +1184,7 @@ class AssistantMessageWidget(QWidget):
 
         label = QLabel(_rt("Selecionar filtro"), self.content_widget)
         label.setObjectName("assistantHelper")
+        _make_label_selectable(label)
         self.content_layout.addWidget(label)
 
         filters_row = QHBoxLayout()
@@ -1423,6 +1443,7 @@ class ActiveResultPanel(QFrame):
         text = QLabel(message, self.content)
         text.setObjectName("visualPanelText")
         text.setWordWrap(True)
+        _make_label_selectable(text)
         self.content_layout.addWidget(text)
         self.content_layout.addStretch(1)
 
@@ -1442,11 +1463,13 @@ class ActiveResultPanel(QFrame):
         summary = QLabel(result.summary.text or _rt("Visualizacao gerada."), self.content)
         summary.setObjectName("visualPanelSummary")
         summary.setWordWrap(True)
+        _make_label_selectable(summary)
         self.content_layout.addWidget(summary)
 
         helper = QLabel(self._helper_text(result), self.content)
         helper.setObjectName("visualPanelMeta")
         helper.setWordWrap(True)
+        _make_label_selectable(helper)
         self.content_layout.addWidget(helper)
 
         if result.chart_payload is not None:
@@ -1841,9 +1864,6 @@ class ReportsWidget(QWidget):
         postgres_action.triggered.connect(lambda: self._set_context_source("postgres"))
         menu.addAction(postgres_action)
 
-        cloud_action = QAction(_rt("Cloud do plugin"), menu)
-        cloud_action.triggered.connect(lambda: self._set_context_source("cloud"))
-        menu.addAction(cloud_action)
         return menu
 
     def _build_engine_menu(self):
@@ -2049,7 +2069,6 @@ class ReportsWidget(QWidget):
         return {
             "project": _rt("Projeto atual"),
             "postgres": _rt("Banco PostgreSQL"),
-            "cloud": _rt("Cloud do plugin"),
         }.get(self.context_source, _rt("Projeto atual"))
 
     def _ai_mode_label(self) -> str:
@@ -2074,20 +2093,6 @@ class ReportsWidget(QWidget):
             except Exception:
                 pass
             return _rt("PostgreSQL ativo · sem conexão configurada")
-
-        if self.context_source == "cloud":
-            try:
-                from ..cloud_session import cloud_session
-
-                if cloud_session.is_authenticated():
-                    total = sum(
-                        len(connection.get("layers") or [])
-                        for connection in (cloud_session.cloud_connections() or [])
-                    )
-                    return _rt("Cloud ativo · {total} camada(s)", total=total)
-            except Exception:
-                pass
-            return _rt("Cloud ativo · login necessário")
 
         try:
             total_layers = len(self._project_layers())
@@ -2207,20 +2212,6 @@ class ReportsWidget(QWidget):
                 "Dica: conexão prepara a origem; a análise acontece na aba Relatórios."
             )
 
-        if has_any("cloud", "nuvem"):
-            return _rt(
-                "Área Cloud\n"
-                "Objetivo: acessar dados e conexões disponíveis na nuvem do plugin.\n"
-                "Quando usar: use Cloud quando os dados não estiverem apenas no projeto local ou quando a organização disponibilizar fontes online.\n"
-                "Como fazer:\n"
-                "1. Abra a área de Cloud ou Integrações.\n"
-                "2. Faça login quando o plugin solicitar autenticação.\n"
-                "3. Escolha a conexão, projeto ou camada disponível na nuvem.\n"
-                "4. No chat, selecione o contexto Cloud antes de fazer perguntas sobre esses dados.\n"
-                "5. Se nenhuma conexão aparecer, confirme login, permissões e disponibilidade da fonte.\n"
-                "Dica: se a pergunta for sobre dados locais, use Projeto atual; se for sobre dados online, use Cloud."
-            )
-
         if has_any("sobre", "about"):
             return _rt(
                 "Aba Sobre\n"
@@ -2322,9 +2313,9 @@ class ReportsWidget(QWidget):
             "1. Se a pergunta for sobre uma funcionalidade, o chat responde com explicação e passo a passo.\n"
             "2. Se a pergunta for sobre dados, o chat solicita as camadas que devem ser analisadas.\n"
             "3. As camadas escolhidas permanecem em foco até você clicar em Limpar.\n"
-            "4. Você pode perguntar sobre Relatórios, Resumo, Modelo/Dashboard, Conexões, PostgreSQL, Cloud ou Sobre.\n"
-            "Dica: para obter uma orientação mais precisa, cite o nome da aba ou do comando que deseja entender."
-        )
+                "4. Você pode perguntar sobre Relatórios, Resumo, Modelo/Dashboard, Conexão, PostgreSQL ou Sobre.\n"
+                "Dica: para obter uma orientação mais precisa, cite o nome da aba ou do comando que deseja entender."
+            )
 
     def _project_layers(self, source_filter: Optional[str] = None) -> List[Dict[str, str]]:
         source_filter = str(source_filter or "").strip().lower()
@@ -2539,8 +2530,20 @@ class ReportsWidget(QWidget):
         return plan
 
     def _operation_for_field_choice(self, question: str, kind: str) -> str:
+        normalized = normalize_text(question)
+        tokens = set(normalized.split())
         if kind not in {"integer", "numeric"}:
             return "count"
+        if any(token in tokens for token in ("registros", "registro", "linhas", "linha", "rows", "records", "features")):
+            return "count"
+        if any(token in tokens for token in ("media", "average", "avg", "mean")):
+            return "avg"
+        if any(token in tokens for token in ("maior", "maximo", "maximum", "highest", "largest", "max")):
+            return "max"
+        if any(token in tokens for token in ("menor", "minimo", "minimum", "lowest", "smallest", "min")):
+            return "min"
+        if any(token in tokens for token in ("area", "extensao", "comprimento", "metragem", "metros", "metro", "length", "extension")):
+            return "sum"
         return "sum"
 
     def _prompt_layers_for_question(self, question: str) -> Optional[List[Dict[str, str]]]:
@@ -2978,10 +2981,7 @@ class ReportsWidget(QWidget):
         response_widget.show_loading(question)
         response_widget.set_execution_context(question, plan, [])
         self._show_visual_loading(_rt("Executando a consulta na coluna selecionada..."))
-        self.clear_chat_btn.setEnabled(False)
-        self.generate_btn.setEnabled(False)
-        self.generate_btn.setText(_rt("Analisando..."))
-        self.question_edit.setEnabled(False)
+        self._prepare_ui_for_analysis()
         QTimer.singleShot(
             0,
             lambda: self._execute_plan(
@@ -3025,10 +3025,7 @@ class ReportsWidget(QWidget):
         response_widget.cancel_callback = self._cancel_active_run
         response_widget.show_loading(question)
         self._show_visual_loading(_rt("Analisando e preparando o resultado visual..."))
-        self.clear_chat_btn.setEnabled(False)
-        self.generate_btn.setEnabled(False)
-        self.generate_btn.setText(_rt("Analisando..."))
-        self.question_edit.setEnabled(False)
+        self._prepare_ui_for_analysis()
         QTimer.singleShot(
             0,
             lambda: self._run_query(
@@ -3254,7 +3251,8 @@ class ReportsWidget(QWidget):
         memory_handle=None,
     ):
         try:
-            self.analysis_cancel_requested = False
+            if self.analysis_cancel_requested or not getattr(self, "analysis_running", False):
+                return
             self.active_response_widget = response_widget
             response_widget.cancel_callback = self._cancel_active_run
             self.active_execution_job = self._ensure_ai_engine().create_execution_job(plan)
@@ -3440,7 +3438,7 @@ class ReportsWidget(QWidget):
         self._scroll_to_bottom()
 
     def _clear_chat_history(self):
-        if not self.generate_btn.isEnabled():
+        if getattr(self, "analysis_running", False):
             return
 
         for index in reversed(range(self.history_layout.count())):
@@ -3760,30 +3758,79 @@ class ReportsWidget(QWidget):
                 notes="Usuário marcou a resposta como incorreta.",
                 user_action_json={"action": "mark_incorrect"},
             )
+            if self._request_alternative_solution(
+                response_widget,
+                reason_note="Usuário marcou a resposta como incorreta e pediu uma nova tentativa.",
+                action_name="retry_after_incorrect_feedback",
+                picker_message=_rt("Vamos tentar outra leitura da sua pergunta."),
+                fallback_message=_rt(
+                    "Nao encontrei outra interpretacao pronta. "
+                    "Escolha a coluna que mais combina com a pergunta para eu recalcular."
+                ),
+            ):
+                return
             response_widget.set_feedback_state("incorrect")
 
-    def _show_candidate_picker(self, response_widget: AssistantMessageWidget):
+    def _request_alternative_solution(
+        self,
+        response_widget: AssistantMessageWidget,
+        reason_note: str,
+        action_name: str,
+        picker_message: str,
+        fallback_message: str,
+    ) -> bool:
         current_plan = response_widget.feedback_plan()
         current_signature = response_widget.plan_signature(current_plan)
+        question = getattr(response_widget, "current_question", "") or ""
         candidates = [
             candidate
             for candidate in getattr(response_widget, "available_candidates", []) or []
             if candidate.plan is not None and response_widget.plan_signature(candidate.plan) != current_signature
         ]
-        if not candidates:
-            return
-        self._safe_register_implicit_feedback(
+        if candidates:
+            self._safe_register_implicit_feedback(
+                response_widget,
+                feedback_type="requested_alternative_interpretation",
+                notes=reason_note,
+                user_action_json={"action": action_name},
+            )
+            response_widget.show_plan_choices(
+                question,
+                picker_message,
+                candidates,
+            )
+            self._scroll_to_bottom()
+            return True
+
+        field_options = self._field_choice_options(question)
+        if field_options:
+            self._safe_register_implicit_feedback(
+                response_widget,
+                feedback_type="requested_manual_field_resolution",
+                notes=reason_note,
+                user_action_json={"action": f"{action_name}_field_choice"},
+            )
+            response_widget.show_field_choices(
+                question,
+                fallback_message,
+                field_options,
+            )
+            self._show_visual_empty(_rt("Escolha uma coluna para recalcular a análise."))
+            self._scroll_to_bottom()
+            return True
+        return False
+
+    def _show_candidate_picker(self, response_widget: AssistantMessageWidget):
+        self._request_alternative_solution(
             response_widget,
-            feedback_type="requested_alternative_interpretation",
-            notes="Usuário pediu para escolher outra interpretação após ver a resposta.",
-            user_action_json={"action": "open_candidate_picker"},
+            reason_note="Usuário pediu para escolher outra interpretação após ver a resposta.",
+            action_name="open_candidate_picker",
+            picker_message="Escolha a interpretação que mais combina com a sua pergunta.",
+            fallback_message=_rt(
+                "Nao encontrei outra interpretacao pronta. "
+                "Escolha a coluna que mais combina com a pergunta para eu recalcular."
+            ),
         )
-        response_widget.show_plan_choices(
-            getattr(response_widget, "current_question", "") or "",
-            "Escolha a interpretação que mais combina com a sua pergunta.",
-            candidates,
-        )
-        self._scroll_to_bottom()
 
     def _format_error_detail(self, exc: Exception) -> str:
         text = str(exc).strip() or exc.__class__.__name__

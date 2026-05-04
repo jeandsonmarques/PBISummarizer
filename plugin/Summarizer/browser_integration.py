@@ -1,8 +1,6 @@
 ﻿from __future__ import annotations
 
 import json
-import re
-from collections import defaultdict
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional
 
@@ -24,7 +22,6 @@ from qgis.core import (
 )
 from qgis.gui import QgsGui
 
-from .cloud_session import cloud_session
 from .quick_connect_dialogs import PostgresQuickConnectDialog
 from .utils.plugin_logging import log_info, log_warning
 from .utils.i18n_runtime import tr_text as _rt
@@ -43,18 +40,7 @@ ROOT_ICON = svg_icon("PowerPages.svg")
 CONNECTION_ICON = ROOT_ICON
 TABLE_ICON = svg_icon("Table.svg")
 OFFLINE_ICON = QgsApplication.getThemeIcon("/mIconDisconnected.svg")
-CLOUD_ICON = svg_icon("Streaming-Dataset.svg")
-GROUP_ICON = QgsApplication.getThemeIcon("/mIconFolder.svg")
-if CLOUD_ICON.isNull():
-    fallback_cloud = QgsApplication.getThemeIcon("/mIconCloud.svg")
-    if not fallback_cloud.isNull():
-        CLOUD_ICON = fallback_cloud
-if CLOUD_ICON.isNull():
-    CLOUD_ICON = ROOT_ICON
-if GROUP_ICON.isNull():
-    GROUP_ICON = CONNECTION_ICON
 ROOT_PATH = "/Summarizer"
-_CLOUD_NODE_LOGGED = False
 
 
 def _fingerprint(conn: Dict) -> str:
@@ -116,7 +102,6 @@ class IntegrationConnectionRegistry(QObject):
         sanitized.setdefault("user", "")
         sanitized.setdefault("password", "")
         sanitized.setdefault("schema", "")
-        sanitized.setdefault("cloud_default_user", "")
         if not sanitized.get("fingerprint"):
             sanitized["fingerprint"] = _fingerprint(sanitized)
         return sanitized
@@ -224,7 +209,7 @@ class SummarizerRootItem(QgsDataCollectionItem):
         connection_registry.connectionsChanged.connect(self.refresh)
 
     def createChildren(self) -> List[QgsDataItem]:
-        items: List[QgsDataItem] = [SummarizerCloudRootItem(self)]
+        items: List[QgsDataItem] = []
         local_items: List[QgsDataItem] = []
         for conn in connection_registry.all_connections():
             if not _is_supported_driver(conn.get("driver", "")):
@@ -239,16 +224,6 @@ class SummarizerRootItem(QgsDataCollectionItem):
     def actions(self, parent: Optional[QWidget]) -> List[QAction]:  # type: ignore[override]
         widget = parent
         actions: List[QAction] = []
-
-        cloud_action = QAction(_rt("Configurar Summarizer Cloud..."), widget)
-
-        def _open_cloud_dialog():
-            from .cloud_dialogs import open_cloud_dialog  # Import tardio evita ciclo
-
-            open_cloud_dialog(widget)
-
-        cloud_action.triggered.connect(_open_cloud_dialog)
-        actions.append(cloud_action)
 
         pg_action = QAction(_rt("Nova conexão PostgreSQL..."), widget)
         pg_action.triggered.connect(lambda: self._open_quick_postgres(widget))
@@ -279,197 +254,6 @@ class SummarizerRootItem(QgsDataCollectionItem):
             _rt("Conexão '{name}' salva. Expanda o nó novamente para ver as tabelas.", name=payload.get("name")),
         )
 
-
-class SummarizerCloudRootItem(QgsDataCollectionItem):
-    """Top node for the Summarizer Cloud hierarchy."""
-
-    def __init__(self, parent: Optional[QgsDataItem]):
-        super().__init__(
-            parent,
-            _rt("Summarizer Cloud (beta)"),
-            f"{ROOT_PATH}/cloud",
-            SummarizerBrowserProvider.PROVIDER_NAME,
-        )
-        self.setIcon(CLOUD_ICON)
-        self.setState(Qgis.BrowserItemState.Populated)
-        cloud_session.sessionChanged.connect(self.refresh)
-        cloud_session.layersChanged.connect(self.refresh)
-        global _CLOUD_NODE_LOGGED
-        if not _CLOUD_NODE_LOGGED:
-            log_info("Nó Summarizer Cloud carregado no Navegador.")
-            _CLOUD_NODE_LOGGED = True
-
-    def createChildren(self) -> List[QgsDataItem]:
-        if not cloud_session.is_authenticated():
-            return [SummarizerCloudLoginItem(self)]
-        connections = cloud_session.cloud_connections()
-        layers: List[Dict] = []
-        for connection in connections:
-            layers.extend(connection.get("layers") or [])
-        if not layers:
-            return [SummarizerCloudPlaceholderItem(self)]
-        grouped: Dict[str, List[Dict]] = defaultdict(list)
-        for layer in layers:
-            key = (layer.get("group_name") or "").strip()
-            grouped[key].append(layer)
-        items: List[QgsDataItem] = []
-        for group_key in sorted(grouped.keys(), key=lambda value: (value == "", value.lower())):
-            items.append(SummarizerCloudGroupItem(self, group_key, grouped[group_key]))
-        return items
-
-
-class SummarizerCloudLoginItem(QgsDataCollectionItem):
-    """Guides the user to log-in through the integration panel."""
-
-    def __init__(self, parent: QgsDataItem):
-        super().__init__(
-            parent,
-            _rt("Faça login na aba Integração."),
-            f"{parent.path()}/login",
-            SummarizerBrowserProvider.PROVIDER_NAME,
-        )
-        self.setState(Qgis.BrowserItemState.Populated)
-        self.setCapabilities(int(Qgis.BrowserItemCapability.NoCapabilities))
-        self.setCapabilities(int(Qgis.BrowserItemCapability.NoCapabilities))
-
-    def createChildren(self) -> List[QgsDataItem]:
-        return []
-
-
-class SummarizerCloudPlaceholderItem(QgsDataCollectionItem):
-    """Displayed when there are no mock layers to show yet."""
-
-    def __init__(self, parent: QgsDataItem):
-        super().__init__(
-            parent,
-            _rt("Nenhuma camada Cloud disponível."),
-            f"{parent.path()}/placeholder",
-            SummarizerBrowserProvider.PROVIDER_NAME,
-        )
-        self.setState(Qgis.BrowserItemState.Populated)
-        self.setCapabilities(int(Qgis.BrowserItemCapability.NoCapabilities))
-
-    def createChildren(self) -> List[QgsDataItem]:
-        return []
-
-
-class SummarizerCloudGroupItem(QgsDataCollectionItem):
-    """Represents a logical group/folder for Cloud layers."""
-
-    def __init__(self, parent: QgsDataItem, group_name: str, layers: List[Dict]):
-        display = group_name or _rt("Sem Grupo")
-        safe_segment = re.sub(r"[^A-Za-z0-9_.-]+", "_", display).strip("_") or "sem_grupo"
-        path = f"{parent.path()}/{safe_segment}"
-        super().__init__(parent, display, path, SummarizerBrowserProvider.PROVIDER_NAME)
-        self._layers = list(layers)
-        self.setIcon(GROUP_ICON)
-
-    def createChildren(self) -> List[QgsDataItem]:
-        items: List[QgsDataItem] = []
-        for layer in sorted(self._layers, key=lambda payload: (payload.get("name") or "").lower()):
-            items.append(SummarizerCloudLayerItem(self, layer))
-        if not items:
-            return [SummarizerCloudPlaceholderItem(self)]
-        return items
-
-
-class SummarizerCloudLayerItem(QgsLayerItem):
-    """Layer entry that references local mock datasets."""
-
-    def __init__(self, parent: QgsDataItem, layer_meta: Dict):
-        self.meta = dict(layer_meta or {})
-        layer_id = self.meta.get("id") or f"layer_{id(self)}"
-        name = self.meta.get("name") or layer_id
-        path = f"{parent.path()}/{layer_id}"
-        raw_source = self.meta.get("source") or ""
-        provider = (self.meta.get("provider") or "ogr").lower()
-        source = raw_source
-        provider = self.meta.get("provider") or "ogr"
-        layer_type = Qgis.BrowserLayerType.Vector
-        super().__init__(parent, name, path, source, layer_type, provider)
-        self.setIcon(TABLE_ICON)
-        tooltip_parts = [self.meta.get("description", "")]
-        geometry = self.meta.get("geometry")
-        if geometry:
-            tooltip_parts.append(_rt("Geometria: {geometry}", geometry=geometry))
-        tags = self.meta.get("tags") or []
-        if tags:
-            tooltip_parts.append(_rt("Tags: {tags}", tags=", ".join(tags)))
-        self.setToolTip("\n".join(part for part in tooltip_parts if part))
-
-    def actions(self, parent: Optional[QWidget]) -> List[QAction]:  # type: ignore[override]
-        widget = parent
-        actions: List[QAction] = []
-
-        warn_action = QAction(_rt("Abrir camada real"), widget)
-        warn_action.triggered.connect(self._warn_real_access)
-        actions.append(warn_action)
-
-        if self._can_delete_layer():
-            delete_action = QAction(_rt("Gerenciar → Deletar Camada"), widget)
-            delete_action.triggered.connect(self._delete_layer)
-            actions.append(delete_action)
-
-        return actions
-
-    def _warn_real_access(self):
-        if cloud_session.hosting_ready():
-            message = _rt("As camadas do Summarizer Cloud são abertas diretamente do servidor configurado no plugin.")
-        else:
-            message = _rt("Ative 'Hospedagem ativa' nas Configurações Cloud para usar apenas camadas reais do servidor.")
-        QMessageBox.information(None, _rt("Summarizer Cloud"), message)
-
-    def _can_delete_layer(self) -> bool:
-        if self.meta.get("mock_only", True):
-            return False
-        provider_raw = (self.meta.get("provider_raw") or self.meta.get("provider") or "").lower()
-        if provider_raw != "gpkg":
-            return False
-        return cloud_session.is_authenticated() and cloud_session.is_admin()
-
-    def _delete_layer(self):
-        layer_id = self.meta.get("id")
-        if not layer_id:
-            QMessageBox.warning(None, _rt("Summarizer Cloud"), _rt("Identificador da camada inválido."))
-            return
-        layer_name = self.meta.get("name") or str(layer_id)
-        confirm = QMessageBox.question(
-            None,
-            _rt("Summarizer Cloud"),
-            _rt("Tem certeza que deseja excluir a camada '{layer_name}'?", layer_name=layer_name),
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No,
-        )
-        if confirm != QMessageBox.Yes:
-            return
-        QgsMessageLog.logMessage(
-            _rt("Summarizer Cloud solicitando exclusão da camada {layer_name} (id={layer_id})", layer_name=layer_name, layer_id=layer_id),
-            _rt("Summarizer"),
-            Qgis.Info,
-        )
-        try:
-            cloud_session.delete_cloud_layer(layer_id)
-        except Exception as exc:
-            log_warning(_rt("Summarizer Cloud falha ao excluir camada {layer_name}: {exc}", layer_name=layer_name, exc=exc))
-            QMessageBox.warning(None, _rt("Summarizer Cloud"), _rt("Falha ao excluir camada:\n{exc}", exc=exc))
-            return
-        parent_item = self.parent()
-        try:
-            if parent_item is not None:
-                remover = getattr(parent_item, "removeChildItem", None)
-                if callable(remover):
-                    remover(self)
-                elif hasattr(parent_item, "deleteChildren"):
-                    parent_item.deleteChildren()
-        except Exception:
-            pass
-        reload_cloud_catalog(force_remote_only=True)
-        QgsMessageLog.logMessage(
-            _rt("Summarizer Cloud camada {layer_name} excluída com sucesso.", layer_name=layer_name),
-            _rt("Summarizer"),
-            Qgis.Info,
-        )
-        QMessageBox.information(None, _rt("Summarizer Cloud"), _rt("Camada '{layer_name}' foi excluída com sucesso.", layer_name=layer_name))
 
 class SummarizerPlaceholderItem(QgsDataCollectionItem):
     """Displayed when there are no saved connections."""
@@ -724,18 +508,6 @@ def _refresh_browser_model():
                 model.refresh()
     except Exception:
         pass
-
-
-def reload_cloud_catalog(force_remote_only: Optional[bool] = None) -> None:
-    """
-    {note}
-    """
-    force_remote = cloud_session.hosting_ready() if force_remote_only is None else bool(force_remote_only)
-    try:
-        cloud_session.reload_cloud_layers(force_remote_only=force_remote)
-    except Exception as exc:
-        log_warning(f"Summarizer Cloud falhou ao recarregar catálogo: {exc}")
-    _refresh_browser_model()
 
 
 def register_browser_provider() -> SummarizerBrowserProvider:
